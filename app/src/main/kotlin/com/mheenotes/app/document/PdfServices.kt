@@ -16,6 +16,7 @@ import android.provider.OpenableColumns
 import com.mheenotes.core.model.InkStroke
 import com.mheenotes.core.model.PageState
 import com.mheenotes.core.model.ObjectCrop
+import com.mheenotes.core.model.PageTemplate
 import com.mheenotes.core.model.ShapeKind
 import com.mheenotes.core.model.TextAlignment
 import com.mheenotes.ink.engine.PressureNormalizer
@@ -179,6 +180,9 @@ object PageExporter {
         val background: Bitmap? = null,
         val widthMicrons: Float = 210_000f,
         val heightMicrons: Float = 297_000f,
+        val template: PageTemplate = PageTemplate.Blank,
+        val backgroundArgb: Int = 0xFFFFFEFA.toInt(),
+        val templateLineArgb: Int = 0x402563EB,
         val objects: List<ExportObject> = emptyList(),
     )
 
@@ -190,7 +194,7 @@ object PageExporter {
                 val height = (width * exportPage.heightMicrons / exportPage.widthMicrons).roundToInt()
                     .coerceAtLeast(1)
                 val page = document.startPage(PdfDocument.PageInfo.Builder(width, height, index + 1).create())
-                page.canvas.drawColor(Color.WHITE)
+                drawPaper(exportPage, page.canvas, width, height)
                 exportPage.background?.let { page.canvas.drawBitmap(it, null, Rect(0, 0, width, height), null) }
                 val scale = width / exportPage.widthMicrons
                 drawStrokes(exportPage.page.strokes, page.canvas, scale)
@@ -207,11 +211,61 @@ object PageExporter {
         val height = (width * page.heightMicrons / page.widthMicrons).roundToInt().coerceAtLeast(1)
         return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
             val canvas = android.graphics.Canvas(bitmap)
-            canvas.drawColor(Color.WHITE)
+            drawPaper(page, canvas, width, height)
             page.background?.let { canvas.drawBitmap(it, null, Rect(0, 0, width, height), null) }
             val scale = width / page.widthMicrons
             drawStrokes(page.page.strokes, canvas, scale)
             drawObjects(page.objects, canvas, scale)
+        }
+    }
+
+    private fun drawPaper(page: ExportPage, canvas: android.graphics.Canvas, width: Int, height: Int) {
+        canvas.drawColor(page.backgroundArgb)
+        if (page.background != null) return
+        val scaleX = width / page.widthMicrons
+        val scaleY = height / page.heightMicrons
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = page.templateLineArgb
+            strokeWidth = 1f
+        }
+        fun horizontal(y: Float) = canvas.drawLine(0f, y * scaleY, width.toFloat(), y * scaleY, paint)
+        fun vertical(x: Float) = canvas.drawLine(x * scaleX, 0f, x * scaleX, height.toFloat(), paint)
+        when (page.template) {
+            PageTemplate.Blank -> Unit
+            PageTemplate.Ruled -> {
+                var y = 9_000f
+                while (y < page.heightMicrons) { horizontal(y); y += 9_000f }
+            }
+            PageTemplate.Grid -> {
+                var y = 8_000f
+                while (y < page.heightMicrons) { horizontal(y); y += 8_000f }
+                var x = 8_000f
+                while (x < page.widthMicrons) { vertical(x); x += 8_000f }
+            }
+            PageTemplate.Dotted -> {
+                var y = 8_000f
+                while (y < page.heightMicrons) {
+                    var x = 8_000f
+                    while (x < page.widthMicrons) {
+                        canvas.drawCircle(x * scaleX, y * scaleY, (500f * scaleX).coerceAtLeast(.7f), paint)
+                        x += 8_000f
+                    }
+                    y += 8_000f
+                }
+            }
+            PageTemplate.Cornell -> {
+                var y = 36_000f
+                while (y < page.heightMicrons) { horizontal(y); y += 9_000f }
+                vertical(45_000f)
+                horizontal(27_000f)
+            }
+            PageTemplate.MusicStaff -> {
+                var top = 18_000f
+                while (top < page.heightMicrons) {
+                    repeat(5) { line -> horizontal(top + line * 2_500f) }
+                    top += 24_000f
+                }
+            }
         }
     }
 

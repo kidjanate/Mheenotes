@@ -108,6 +108,7 @@ import androidx.compose.material.icons.outlined.NoteAdd
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Redo
 import androidx.compose.material.icons.outlined.RotateRight
 import androidx.compose.material.icons.outlined.FormatColorFill
@@ -314,6 +315,20 @@ private enum class LibrarySection { Main, Recent, Favorites, Trash }
 private enum class LibraryLayout { Grid, List }
 private enum class LibrarySort { Name, Recent, PageCount }
 private enum class PdfImportDestination { NewNotebook, CurrentNotebook }
+private enum class ExportFormat(val extension: String, val mediaType: String) {
+    Pdf("pdf", "application/pdf"),
+    Image("png", "image/png"),
+    Notebook("mynote", "application/x-mheenote"),
+}
+private data class ExportDialogRequest(
+    val format: ExportFormat,
+    val tabId: Int,
+    val pageIndex: Int = 0,
+)
+private data class PendingSaveExport(
+    val request: ExportDialogRequest,
+    val pageIndices: List<Int> = emptyList(),
+)
 private enum class DockEdge { Top, Left, Right }
 private enum class EditorMode { Ink, Lasso, Object, Text, Shape, Audio }
 private enum class AppSettingsSection { General, Appearance, Drawing, Fonts, Input }
@@ -344,6 +359,15 @@ private fun replaceFolderRoot(path: String, oldRoot: String, newRoot: String): S
     if (path == oldRoot) newRoot else newRoot + path.removePrefix(oldRoot)
 
 private fun folderTrashMembersKey(folder: String) = "trashed-folder-members::$folder"
+
+private fun normalizedExportFileName(requested: String, format: ExportFormat): String {
+    val leaf = requested.trim()
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .replace(Regex("[\\p{Cntrl}:*?\"<>|]"), "_")
+        .ifBlank { "Export" }
+    return if (leaf.endsWith(".${format.extension}", ignoreCase = true)) leaf else "$leaf.${format.extension}"
+}
 private enum class PaperPreset(val label: String, val widthMm: Float, val heightMm: Float) {
     A3("A3", 297f, 420f),
     A4("A4", 210f, 297f),
@@ -506,6 +530,9 @@ private fun PageEntry.toExportPage() = PageExporter.ExportPage(
     background = pdfBackground,
     widthMicrons = size.widthMicrons,
     heightMicrons = size.heightMicrons,
+    template = template,
+    backgroundArgb = backgroundArgb,
+    templateLineArgb = templateLineArgb,
     objects = objects.mapNotNull(SceneObject::toExportObject),
 )
 
@@ -1315,13 +1342,12 @@ fun MheenotesEditor(
     var showAppSettings by remember { mutableStateOf(false) }
     var showFloatingNotes by remember { mutableStateOf(false) }
     var lastFloatingNotesTriggerAt by remember { mutableLongStateOf(0L) }
-    var showExportPdf by remember { mutableStateOf(false) }
-    var pendingPdfExportPages by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var exportDialogRequest by remember { mutableStateOf<ExportDialogRequest?>(null) }
+    var pendingSaveExport by remember { mutableStateOf<PendingSaveExport?>(null) }
     var importError by remember { mutableStateOf<String?>(null) }
     var pdfImportDestination by remember { mutableStateOf(PdfImportDestination.CurrentNotebook) }
     var showDiagnostics by remember { mutableStateOf(false) }
     var openingNoteTitle by remember { mutableStateOf<String?>(null) }
-    var pendingBackupTab by remember { mutableStateOf<EditorTab?>(null) }
     val currentTab = { tabs.firstOrNull { it.id == selectedTabId } ?: tabs.first() }
     val sharingScope = rememberCoroutineScope()
 
@@ -1349,7 +1375,7 @@ fun MheenotesEditor(
             val generated = withContext(Dispatchers.IO) {
                 runCatching {
                     val directory = context.cacheDir.resolve("shared").apply { mkdirs() }
-                    val target = directory.resolve(fileName.replace(Regex("[^A-Za-z0-9._-]"), "_"))
+                    val target = directory.resolve(fileName)
                     target.outputStream().buffered().use(writer)
                     target
                 }
@@ -1362,6 +1388,21 @@ fun MheenotesEditor(
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }, "Share with"))
             }.onFailure { importError = it.message ?: "The file could not be shared." }
+        }
+    }
+
+    fun shareExport(request: ExportDialogRequest, requestedName: String, pageIndices: List<Int>) {
+        val tab = tabs.firstOrNull { it.id == request.tabId } ?: return
+        val fileName = normalizedExportFileName(requestedName, request.format)
+        when (request.format) {
+            ExportFormat.Pdf -> shareGeneratedFile(fileName, request.format.mediaType) { output ->
+                PageExporter.writePdf(pageIndices.mapNotNull { tab.pages.getOrNull(it)?.toExportPage() }, output)
+            }
+            ExportFormat.Image -> shareGeneratedFile(fileName, request.format.mediaType) { output ->
+                val page = tab.pages[request.pageIndex.coerceIn(0, tab.pages.lastIndex)]
+                PageExporter.renderImage(page.toExportPage()).compress(Bitmap.CompressFormat.PNG, 100, output)
+            }
+            ExportFormat.Notebook -> shareGeneratedFile(fileName, request.format.mediaType, tab::backup)
         }
     }
 
@@ -1453,21 +1494,34 @@ fun MheenotesEditor(
         }
     }
     val exportPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
-        if (uri != null) context.contentResolver.openOutputStream(uri)?.use { output ->
-            val tab = currentTab()
-            val selected = pendingPdfExportPages.ifEmpty { tab.pages.indices.toList() }
-            PageExporter.writePdf(selected.mapNotNull { tab.pages.getOrNull(it)?.toExportPage() }, output)
-        }
+        val pending = pendingSaveExport
+        if (uri != null && pending?.request?.format == ExportFormat.Pdf) runCatching {
+            val tab = tabs.first { it.id == pending.request.tabId }
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                PageExporter.writePdf(pending.pageIndices.mapNotNull { tab.pages.getOrNull(it)?.toExportPage() }, output)
+            } ?: error("The selected PDF location could not be opened.")
+        }.onFailure { importError = it.message ?: "The PDF could not be saved." }
+        pendingSaveExport = null
     }
     val exportImage = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
-        if (uri != null) context.contentResolver.openOutputStream(uri)?.use { output ->
-            val page = currentTab().pages[currentTab().selectedPageIndex]
-            PageExporter.renderImage(page.toExportPage()).compress(Bitmap.CompressFormat.PNG, 100, output)
-        }
+        val pending = pendingSaveExport
+        if (uri != null && pending?.request?.format == ExportFormat.Image) runCatching {
+            val tab = tabs.first { it.id == pending.request.tabId }
+            val page = tab.pages[pending.request.pageIndex.coerceIn(tab.pages.indices)]
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                PageExporter.renderImage(page.toExportPage()).compress(Bitmap.CompressFormat.PNG, 100, output)
+            } ?: error("The selected image location could not be opened.")
+        }.onFailure { importError = it.message ?: "The page image could not be saved." }
+        pendingSaveExport = null
     }
     val backup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        if (uri != null) context.contentResolver.openOutputStream(uri)?.use((pendingBackupTab ?: currentTab())::backup)
-        pendingBackupTab = null
+        val pending = pendingSaveExport
+        if (uri != null && pending?.request?.format == ExportFormat.Notebook) runCatching {
+            val tab = tabs.first { it.id == pending.request.tabId }
+            context.contentResolver.openOutputStream(uri)?.use(tab::backup)
+                ?: error("The selected notebook location could not be opened.")
+        }.onFailure { importError = it.message ?: "The editable notebook could not be saved." }
+        pendingSaveExport = null
     }
     val openNote = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -1581,8 +1635,7 @@ fun MheenotesEditor(
                 onOpenNote = { openNote.launch(arrayOf("application/zip", "application/octet-stream")) },
                 onSettings = { showAppSettings = true },
                 onExportNotebook = { target ->
-                    pendingBackupTab = target
-                    backup.launch("${target.title}.mynote")
+                    exportDialogRequest = ExportDialogRequest(ExportFormat.Notebook, target.id)
                 },
                 onDuplicate = { source ->
                     val id = nextTabId++
@@ -1639,24 +1692,12 @@ fun MheenotesEditor(
                     pdfImportDestination = PdfImportDestination.CurrentNotebook
                     importPdf.launch(arrayOf("application/pdf"))
                 },
-                onExportPdf = { showExportPdf = true },
-                onExportImage = { exportImage.launch("${currentTab().title}-${currentTab().selectedPageIndex + 1}.png") },
-                onBackup = { backup.launch("${currentTab().title}.mynote") },
-                onSharePdf = {
+                onExportPdf = { exportDialogRequest = ExportDialogRequest(ExportFormat.Pdf, currentTab().id) },
+                onExportImage = {
                     val tab = currentTab()
-                    shareGeneratedFile("${tab.title}.pdf", "application/pdf") { output -> PageExporter.writePdf(tab.pages.map(PageEntry::toExportPage), output) }
+                    exportDialogRequest = ExportDialogRequest(ExportFormat.Image, tab.id, tab.selectedPageIndex)
                 },
-                onShareImage = {
-                    val tab = currentTab()
-                    val page = tab.pages[tab.selectedPageIndex]
-                    shareGeneratedFile("${tab.title}-${tab.selectedPageIndex + 1}.png", "image/png") { output ->
-                        PageExporter.renderImage(page.toExportPage()).compress(Bitmap.CompressFormat.PNG, 100, output)
-                    }
-                },
-                onShareNotebook = {
-                    val tab = currentTab()
-                    shareGeneratedFile("${tab.title}.mynote", "application/x-mheenote") { output -> tab.backup(output) }
-                },
+                onExportNotebook = { exportDialogRequest = ExportDialogRequest(ExportFormat.Notebook, currentTab().id) },
                 onSettings = { showSettings = true },
                 actionMappings = actionMappings,
                 actionRecognizer = actionRecognizer,
@@ -1727,16 +1768,30 @@ fun MheenotesEditor(
         onSettingsChanged = onAppSettingsChanged,
         onDismiss = { showAppSettings = false },
     )
-    if (showExportPdf) ExportPdfDialog(
-        pageCount = currentTab().pages.size,
-        currentPage = currentTab().selectedPageIndex,
-        onExport = { indices ->
-            pendingPdfExportPages = indices
-            showExportPdf = false
-            exportPdf.launch("${currentTab().title}.pdf")
-        },
-        onDismiss = { showExportPdf = false },
-    )
+    exportDialogRequest?.let { request ->
+        val target = tabs.firstOrNull { it.id == request.tabId }
+        if (target != null) ExportFileDialog(
+            request = request,
+            notebookTitle = target.title,
+            pageCount = target.pages.size,
+            currentPage = request.pageIndex.coerceIn(0, target.pages.lastIndex),
+            onSave = { requestedName, indices ->
+                val fileName = normalizedExportFileName(requestedName, request.format)
+                pendingSaveExport = PendingSaveExport(request, indices)
+                exportDialogRequest = null
+                when (request.format) {
+                    ExportFormat.Pdf -> exportPdf.launch(fileName)
+                    ExportFormat.Image -> exportImage.launch(fileName)
+                    ExportFormat.Notebook -> backup.launch(fileName)
+                }
+            },
+            onShare = { requestedName, indices ->
+                exportDialogRequest = null
+                shareExport(request, requestedName, indices)
+            },
+            onDismiss = { exportDialogRequest = null },
+        )
+    }
     importError?.let { message ->
         AlertDialog(
             onDismissRequest = { importError = null },
@@ -3022,8 +3077,7 @@ private fun EditorScreen(
     tab: EditorTab, mode: EditorMode, onMode: (EditorMode) -> Unit,
     dockEdge: DockEdge, onDockEdge: (DockEdge) -> Unit,
     onHome: () -> Unit, onImage: () -> Unit, onImportPdf: () -> Unit,
-    onExportPdf: () -> Unit, onExportImage: () -> Unit, onBackup: () -> Unit,
-    onSharePdf: () -> Unit, onShareImage: () -> Unit, onShareNotebook: () -> Unit,
+    onExportPdf: () -> Unit, onExportImage: () -> Unit, onExportNotebook: () -> Unit,
     onSettings: () -> Unit,
     actionMappings: List<ActionMapping>, actionRecognizer: ActionMapRecognizer,
     showDiagnostics: Boolean,
@@ -3061,7 +3115,7 @@ private fun EditorScreen(
         DocumentTabs(tabs, selectedTabId, onSelectTab, onMoveTab, onCloseTab)
         EditorCommandBar(
             tab, onHome, { sidebarVisible = !sidebarVisible }, onImportPdf, onExportPdf,
-            onExportImage, onBackup, onSharePdf, onShareImage, onShareNotebook,
+            onExportImage, onExportNotebook,
             { showPdfNavigation = true }, onSettings,
         )
         if (dockEdge == DockEdge.Top) ToolPalette(
@@ -3185,8 +3239,7 @@ private fun DocumentTabs(
 private fun EditorCommandBar(
     tab: EditorTab, onHome: () -> Unit, onSidebar: () -> Unit,
     onImportPdf: () -> Unit, onExportPdf: () -> Unit, onExportImage: () -> Unit,
-    onBackup: () -> Unit, onSharePdf: () -> Unit, onShareImage: () -> Unit,
-    onShareNotebook: () -> Unit, onPdfNavigation: () -> Unit, onSettings: () -> Unit,
+    onExportNotebook: () -> Unit, onPdfNavigation: () -> Unit, onSettings: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
@@ -3209,13 +3262,9 @@ private fun EditorCommandBar(
                     .background(MaterialTheme.colorScheme.surface),
             ) {
                 MenuItem(Icons.Outlined.PictureAsPdf, "Import PDF") { menu = false; onImportPdf() }
-                MenuItem(Icons.Outlined.PictureAsPdf, "Export notebook as PDF") { menu = false; onExportPdf() }
-                MenuItem(Icons.Outlined.Image, "Export current page") { menu = false; onExportImage() }
-                MenuItem(Icons.Outlined.FileOpen, "Back up editable notebook") { menu = false; onBackup() }
-                HorizontalDivider()
-                MenuItem(Icons.Outlined.PictureAsPdf, "Share PDF") { menu = false; onSharePdf() }
-                MenuItem(Icons.Outlined.Image, "Share current page image") { menu = false; onShareImage() }
-                MenuItem(Icons.Outlined.ContentCopy, "Share editable notebook") { menu = false; onShareNotebook() }
+                MenuItem(Icons.Outlined.PictureAsPdf, "Export PDF") { menu = false; onExportPdf() }
+                MenuItem(Icons.Outlined.Image, "Export current page image") { menu = false; onExportImage() }
+                MenuItem(Icons.Outlined.FileOpen, "Export editable notebook") { menu = false; onExportNotebook() }
                 MenuItem(Icons.Outlined.Search, "Search PDF and bookmarks") { menu = false; onPdfNavigation() }
                 HorizontalDivider()
                 MenuItem(Icons.Outlined.Settings, "Editor settings") { menu = false; onSettings() }
@@ -3883,6 +3932,16 @@ private data class MixedSelection(
     val objectIds: Set<ObjectId>,
 )
 
+private data class LassoCaptureRegion(
+    val pageIndex: Int,
+    val bounds: PageRect,
+)
+
+private data class LassoScreenshot(
+    val region: LassoCaptureRegion,
+    val bitmap: Bitmap,
+)
+
 private data class SelectionClipboard(
     val strokes: List<InkStroke>,
     val objects: List<SceneObject>,
@@ -3951,6 +4010,11 @@ private fun ContinuousPageCanvas(
     var selectionClipboard by remember(tab.id) { mutableStateOf<SelectionClipboard?>(null) }
     var mixedSelection by remember(tab.id) { mutableStateOf<MixedSelection?>(null) }
     var lassoPoints by remember(tab.id) { mutableStateOf<List<PagePoint>>(emptyList()) }
+    var lassoCaptureRegion by remember(tab.id) { mutableStateOf<LassoCaptureRegion?>(null) }
+    var lassoScreenshot by remember(tab.id) { mutableStateOf<LassoScreenshot?>(null) }
+    var pendingLassoScreenshotSave by remember(tab.id) { mutableStateOf<Bitmap?>(null) }
+    var lassoScreenshotBusy by remember(tab.id) { mutableStateOf(false) }
+    var lassoScreenshotError by remember(tab.id) { mutableStateOf<String?>(null) }
     var selectionDrag by remember(tab.id) { mutableStateOf(PagePoint(0f, 0f)) }
     var movingSelection by remember(tab.id) { mutableStateOf(false) }
     var showCropEditor by remember(tab.id) { mutableStateOf(false) }
@@ -3975,12 +4039,35 @@ private fun ContinuousPageCanvas(
     val textRecognizer = remember { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
     DisposableEffect(textRecognizer) { onDispose { textRecognizer.close() } }
 
+    val saveLassoScreenshot = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("image/png"),
+    ) { uri ->
+        val bitmap = pendingLassoScreenshotSave
+        pendingLassoScreenshotSave = null
+        if (uri != null && bitmap != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                        "The screenshot could not be encoded."
+                    }
+                } ?: error("The selected file could not be opened.")
+            }.onFailure { error ->
+                lassoScreenshotError = "Screenshot could not be saved: ${error.message ?: "Unknown error"}"
+            }
+        }
+    }
+
     BackHandler(
-        enabled = mixedSelection != null || lassoPoints.isNotEmpty() || selectedObject >= 0 ||
+        enabled = lassoScreenshot != null || lassoCaptureRegion != null || mixedSelection != null ||
+            lassoPoints.isNotEmpty() || selectedObject >= 0 ||
             showCropEditor || showTextEditor || showShapeEditor || showAudioPlayer ||
             confirmSelectedDelete || confirmMixedDelete,
     ) {
         when {
+            lassoScreenshot != null -> {
+                lassoScreenshot?.bitmap?.takeUnless(Bitmap::isRecycled)?.recycle()
+                lassoScreenshot = null
+            }
             showCropEditor -> showCropEditor = false
             showTextEditor -> showTextEditor = false
             showShapeEditor -> showShapeEditor = false
@@ -3990,6 +4077,7 @@ private fun ContinuousPageCanvas(
             else -> {
                 mixedSelection = null
                 lassoPoints = emptyList()
+                lassoCaptureRegion = null
                 selectionDrag = PagePoint(0f, 0f)
                 movingSelection = false
                 selectedObject = -1
@@ -4166,6 +4254,85 @@ private fun ContinuousPageCanvas(
     val pageJumpPadding = with(LocalDensity.current) { 20.dp.toPx() }
     val objectHandleRadius = with(LocalDensity.current) { 30.dp.toPx() }
     val selectionColor = MaterialTheme.colorScheme.primary
+
+    fun captureLassoScreenshot() {
+        if (lassoScreenshotBusy) return
+        val region = lassoCaptureRegion ?: return
+        val page = tab.pages.getOrNull(region.pageIndex) ?: return
+        val exportPage = page.toExportPage()
+        lassoScreenshotBusy = true
+        actionScope.launch {
+            val result = withContext(Dispatchers.Default) {
+                runCatching {
+                    val rendered = PageExporter.renderImage(exportPage)
+                    val scaleX = rendered.width / page.size.widthMicrons
+                    val scaleY = rendered.height / page.size.heightMicrons
+                    val left = kotlin.math.floor(region.bounds.left * scaleX).toInt()
+                        .coerceIn(0, rendered.width - 1)
+                    val top = kotlin.math.floor(region.bounds.top * scaleY).toInt()
+                        .coerceIn(0, rendered.height - 1)
+                    val right = kotlin.math.ceil(region.bounds.right * scaleX).toInt()
+                        .coerceIn(left + 1, rendered.width)
+                    val bottom = kotlin.math.ceil(region.bounds.bottom * scaleY).toInt()
+                        .coerceIn(top + 1, rendered.height)
+                    val cropped = if (
+                        left == 0 && top == 0 && right == rendered.width && bottom == rendered.height
+                    ) rendered else Bitmap.createBitmap(rendered, left, top, right - left, bottom - top).also {
+                        rendered.recycle()
+                    }
+                    LassoScreenshot(region, cropped)
+                }
+            }
+            lassoScreenshotBusy = false
+            result.onSuccess { screenshot ->
+                if (lassoCaptureRegion == region) {
+                    lassoScreenshot?.bitmap?.takeIf { !it.isRecycled }?.recycle()
+                    lassoScreenshot = screenshot
+                } else {
+                    screenshot.bitmap.takeIf { !it.isRecycled }?.recycle()
+                }
+            }.onFailure { error ->
+                lassoScreenshotError = "Screenshot could not be created: ${error.message ?: "Unknown error"}"
+            }
+        }
+    }
+
+    fun insertLassoScreenshot() {
+        val screenshot = lassoScreenshot ?: return
+        val page = tab.pages.getOrNull(screenshot.region.pageIndex) ?: return
+        val stored = runCatching {
+            val encoded = java.io.ByteArrayOutputStream().use { output ->
+                check(screenshot.bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                    "The screenshot could not be encoded."
+                }
+                output.toByteArray()
+            }
+            java.io.ByteArrayInputStream(encoded).use(tab::storeImageAsset)
+        }.getOrElse { error ->
+            lassoScreenshotError = "Screenshot could not be inserted: ${error.message ?: "Unknown error"}"
+            return
+        }
+        val bounds = screenshot.region.bounds
+        tab.recordObjectEdit(page)
+        page.objects += SceneObject.Image(
+            bitmap = screenshot.bitmap,
+            asset = stored.second,
+            assetId = stored.first,
+            x = bounds.left,
+            y = bounds.top,
+            width = bounds.right - bounds.left,
+            height = bounds.bottom - bounds.top,
+            zIndex = (page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L,
+        )
+        lassoScreenshot = null
+        lassoCaptureRegion = null
+        mixedSelection = null
+        selectedObjectPage = screenshot.region.pageIndex
+        selectedObject = page.objects.lastIndex
+        tab.selectedPageIndex = screenshot.region.pageIndex
+        tab.persistObjects()
+    }
+
     val visibleWorldTop = -viewport.offsetY / viewport.scale
     val visibleWorldBottom = (viewportHeight - viewport.offsetY) / viewport.scale
     layout.pages.asSequence()
@@ -4264,6 +4431,7 @@ private fun ContinuousPageCanvas(
             tab.persistObjects()
         }
         mixedSelection = null
+        lassoCaptureRegion = null
     }
 
     fun pasteMixedSelection(targetPageIndex: Int = tab.selectedPageIndex) {
@@ -4280,7 +4448,15 @@ private fun ContinuousPageCanvas(
             page.reindexObjects()
             tab.persistObjects()
         }
-        mixedSelection = MixedSelection(targetPageIndex, newStrokeIds, newObjects.mapTo(linkedSetOf(), SceneObject::id))
+        val pastedSelection = MixedSelection(
+            targetPageIndex,
+            newStrokeIds,
+            newObjects.mapTo(linkedSetOf(), SceneObject::id),
+        )
+        mixedSelection = pastedSelection
+        lassoCaptureRegion = mixedSelectionBounds(pastedSelection, tab.pages)?.let {
+            LassoCaptureRegion(targetPageIndex, it)
+        }
     }
 
     fun transformMixedSelection(translation: PagePoint = PagePoint(0f, 0f), rotationRadians: Float = 0f) {
@@ -4323,7 +4499,11 @@ private fun ContinuousPageCanvas(
             }
             tab.persistObjects()
         }
-        mixedSelection = selection.copy(strokeIds = newStrokeIds.ifEmpty { selection.strokeIds })
+        val transformedSelection = selection.copy(strokeIds = newStrokeIds.ifEmpty { selection.strokeIds })
+        mixedSelection = transformedSelection
+        lassoCaptureRegion = mixedSelectionBounds(transformedSelection, tab.pages)?.let {
+            LassoCaptureRegion(transformedSelection.pageIndex, it)
+        }
     }
 
     fun commitPendingInk(strokes: List<PendingInkStroke> = pendingInk.toList()) {
@@ -4590,6 +4770,7 @@ private fun ContinuousPageCanvas(
                             selectionDrag = PagePoint(0f, 0f)
                             if (!movingSelection) {
                                 mixedSelection = null
+                                lassoCaptureRegion = null
                                 lassoPoints = listOf(point)
                             }
                             true
@@ -4768,6 +4949,19 @@ private fun ContinuousPageCanvas(
                             val placement = layout.pageAt(lassoPoints.first())
                             if (placement != null && lassoPoints.all(placement::contains)) {
                                 val polygon = lassoPoints.map(placement::toLocal)
+                                val captureBounds = PageRect(
+                                    polygon.minOf(PagePoint::x).coerceIn(0f, placement.page.size.widthMicrons),
+                                    polygon.minOf(PagePoint::y).coerceIn(0f, placement.page.size.heightMicrons),
+                                    polygon.maxOf(PagePoint::x).coerceIn(0f, placement.page.size.widthMicrons),
+                                    polygon.maxOf(PagePoint::y).coerceIn(0f, placement.page.size.heightMicrons),
+                                )
+                                if (
+                                    captureBounds.right - captureBounds.left >= 100f &&
+                                    captureBounds.bottom - captureBounds.top >= 100f
+                                ) {
+                                    lassoCaptureRegion = LassoCaptureRegion(placement.index, captureBounds)
+                                    tab.selectedPageIndex = placement.index
+                                }
                                 val strokes = LassoSelection.select(placement.page.session.page.strokes, polygon)
                                 val objects = placement.page.objects.filter { item ->
                                     val center = when (item) {
@@ -4784,7 +4978,6 @@ private fun ContinuousPageCanvas(
                                         strokes.mapTo(linkedSetOf(), InkStroke::id),
                                         objects.mapTo(linkedSetOf(), SceneObject::id),
                                     )
-                                    tab.selectedPageIndex = placement.index
                                 }
                             }
                         }
@@ -5032,7 +5225,7 @@ private fun ContinuousPageCanvas(
             },
             modifier = Modifier.fillMaxSize().graphicsLayer { clip = true },
         )
-        if (lassoPoints.isNotEmpty() || mixedSelection != null) {
+        if (lassoPoints.isNotEmpty() || mixedSelection != null || lassoCaptureRegion != null) {
             Canvas(Modifier.fillMaxSize().zIndex(30f)) {
                 if (lassoPoints.size >= 2) {
                     val path = Path()
@@ -5071,6 +5264,17 @@ private fun ContinuousPageCanvas(
                         drawRect(selectionColor, Offset(left, top), Size(width, height), style = Stroke(2.dp.toPx()))
                     }
                 }
+                if (mixedSelection == null) lassoCaptureRegion?.let { region ->
+                    val placement = layout.pages.getOrNull(region.pageIndex)
+                    if (placement != null) {
+                        val left = viewport.offsetX + (placement.left + region.bounds.left) * viewport.scale
+                        val top = viewport.offsetY + (placement.top + region.bounds.top) * viewport.scale
+                        val width = (region.bounds.right - region.bounds.left) * viewport.scale
+                        val height = (region.bounds.bottom - region.bounds.top) * viewport.scale
+                        drawRect(selectionColor.copy(alpha = .08f), Offset(left, top), Size(width, height))
+                        drawRect(selectionColor, Offset(left, top), Size(width, height), style = Stroke(2.dp.toPx()))
+                    }
+                }
             }
         }
         mixedSelection?.let { selection ->
@@ -5078,6 +5282,7 @@ private fun ContinuousPageCanvas(
                 hasClipboard = selectionClipboard != null,
                 canMovePrevious = selection.pageIndex > 0,
                 canMoveNext = selection.pageIndex < tab.pages.lastIndex,
+                onScreenshot = ::captureLassoScreenshot,
                 onCut = { copyMixedSelection(); deleteMixedSelection() },
                 onCopy = { copyMixedSelection() },
                 onPaste = { pasteMixedSelection(selection.pageIndex) },
@@ -5113,6 +5318,12 @@ private fun ContinuousPageCanvas(
                         pasteMixedSelection(targetIndex)
                     }
                 },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(46f),
+            )
+        }
+        if (mixedSelection == null && lassoCaptureRegion != null) {
+            LassoCaptureBar(
+                onScreenshot = ::captureLassoScreenshot,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(46f),
             )
         }
@@ -5282,6 +5493,43 @@ private fun ContinuousPageCanvas(
         ocrText?.let { result ->
             OcrResultDialog(result, onDismiss = { ocrText = null })
         }
+        if (lassoScreenshotBusy) {
+            Surface(
+                modifier = Modifier.align(Alignment.Center).zIndex(70f),
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xF020242B),
+            ) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Creating screenshot…")
+                }
+            }
+        }
+        lassoScreenshot?.let { screenshot ->
+            LassoScreenshotDialog(
+                bitmap = screenshot.bitmap,
+                onCancel = {
+                    screenshot.bitmap.takeIf { !it.isRecycled }?.recycle()
+                    lassoScreenshot = null
+                },
+                onSave = {
+                    pendingLassoScreenshotSave = screenshot.bitmap
+                    saveLassoScreenshot.launch(
+                        normalizedExportFileName("${tab.title}-screenshot", ExportFormat.Image),
+                    )
+                },
+                onInsert = ::insertLassoScreenshot,
+            )
+        }
+        lassoScreenshotError?.let { message ->
+            AlertDialog(
+                onDismissRequest = { lassoScreenshotError = null },
+                title = { Text("Lasso screenshot") },
+                text = { Text(message) },
+                confirmButton = { TextButton(onClick = { lassoScreenshotError = null }) { Text("OK") } },
+            )
+        }
         activeAudioRecording?.let { recording ->
             Surface(
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp).zIndex(70f),
@@ -5321,6 +5569,58 @@ private fun ContinuousPageCanvas(
                 shadowElevation = 8.dp,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp).zIndex(40f),
             ) { Text(message, Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun LassoScreenshotDialog(
+    bitmap: Bitmap,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+    onInsert: () -> Unit,
+) {
+    Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            Modifier.fillMaxWidth(.78f).fillMaxHeight(.82f),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 20.dp,
+        ) {
+            Column(Modifier.fillMaxSize().padding(18.dp)) {
+                Text("Screenshot preview", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "The rectangular area inside the lasso bounds.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Surface(
+                    Modifier.fillMaxWidth().weight(1f).padding(vertical = 14.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Canvas(Modifier.fillMaxSize().padding(12.dp)) {
+                        val scale = minOf(
+                            size.width / bitmap.width.coerceAtLeast(1),
+                            size.height / bitmap.height.coerceAtLeast(1),
+                        )
+                        val width = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
+                        val height = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
+                        drawImage(
+                            image = bitmap.asImageBitmap(),
+                            dstOffset = IntOffset(
+                                ((size.width - width) / 2f).roundToInt(),
+                                ((size.height - height) / 2f).roundToInt(),
+                            ),
+                            dstSize = IntSize(width, height),
+                        )
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onCancel) { Text("Cancel") }
+                    TextButton(onClick = onSave) { Text("Save") }
+                    TextButton(onClick = onInsert) { Text("Insert") }
+                }
+            }
         }
     }
 }
@@ -5392,14 +5692,23 @@ private fun StrokeSizePreviewOverlay(
 }
 
 @Composable
-private fun ExportPdfDialog(
+private fun ExportFileDialog(
+    request: ExportDialogRequest,
+    notebookTitle: String,
     pageCount: Int,
     currentPage: Int,
-    onExport: (List<Int>) -> Unit,
+    onSave: (String, List<Int>) -> Unit,
+    onShare: (String, List<Int>) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var scope by remember { mutableStateOf("all") }
-    var range by remember { mutableStateOf("1-$pageCount") }
+    val defaultName = when (request.format) {
+        ExportFormat.Pdf -> "$notebookTitle.pdf"
+        ExportFormat.Image -> "$notebookTitle-${currentPage + 1}.png"
+        ExportFormat.Notebook -> "$notebookTitle.mynote"
+    }
+    var fileName by remember(request) { mutableStateOf(defaultName) }
+    var scope by remember(request) { mutableStateOf("all") }
+    var range by remember(request) { mutableStateOf("1-$pageCount") }
     fun parsedRange(): List<Int> = range.split(',').flatMap { token ->
         val values = token.trim().split('-').mapNotNull(String::toIntOrNull)
         when (values.size) {
@@ -5408,27 +5717,60 @@ private fun ExportPdfDialog(
             else -> emptyList()
         }
     }.filter { it in 0 until pageCount }.distinct().sorted()
-    val pages = when (scope) {
+    val pages = if (request.format == ExportFormat.Pdf) when (scope) {
         "current" -> listOf(currentPage)
         "range" -> parsedRange()
         else -> (0 until pageCount).toList()
+    } else if (request.format == ExportFormat.Image) listOf(currentPage) else emptyList()
+    val title = when (request.format) {
+        ExportFormat.Pdf -> "Export PDF"
+        ExportFormat.Image -> "Export page image"
+        ExportFormat.Notebook -> "Export editable notebook"
     }
+    val canContinue = fileName.trim().isNotEmpty() && (request.format != ExportFormat.Pdf || pages.isNotEmpty())
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Export PDF") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SelectablePill("All pages", scope == "all") { scope = "all" }
-                    SelectablePill("Current", scope == "current") { scope = "current" }
-                    SelectablePill("Range", scope == "range") { scope = "range" }
-                }
-                if (scope == "range") OutlinedTextField(range, { range = it }, label = { Text("Pages, e.g. 1-3, 7") }, singleLine = true)
-                Text("${pages.size} page${if (pages.size == 1) "" else "s"} will be exported", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(
+                    value = fileName,
+                    onValueChange = { fileName = it },
+                    label = { Text("File name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (request.format == ExportFormat.Pdf) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SelectablePill("All pages", scope == "all") { scope = "all" }
+                        SelectablePill("Current", scope == "current") { scope = "current" }
+                        SelectablePill("Range", scope == "range") { scope = "range" }
+                    }
+                    if (scope == "range") OutlinedTextField(
+                        range,
+                        { range = it },
+                        label = { Text("Pages, e.g. 1-3, 7") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "${pages.size} page${if (pages.size == 1) "" else "s"} will be exported",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else Text(
+                    if (request.format == ExportFormat.Image) "Exports the current page as a PNG image."
+                    else "Exports a self-contained editable Mheenotes notebook.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-        confirmButton = { TextButton(enabled = pages.isNotEmpty(), onClick = { onExport(pages) }) { Text("Export") } },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TextButton(enabled = canContinue, onClick = { onSave(fileName, pages) }) { Text("Save") }
+                TextButton(enabled = canContinue, onClick = { onShare(fileName, pages) }) { Text("Share") }
+            }
+        },
     )
 }
 
@@ -5625,6 +5967,7 @@ private fun MixedSelectionBar(
     hasClipboard: Boolean,
     canMovePrevious: Boolean,
     canMoveNext: Boolean,
+    onScreenshot: () -> Unit,
     onCut: () -> Unit,
     onCopy: () -> Unit,
     onPaste: () -> Unit,
@@ -5639,6 +5982,7 @@ private fun MixedSelectionBar(
     modifier: Modifier = Modifier,
 ) {
     val actions = buildList {
+        add(ImageActionSpec(Icons.Outlined.PhotoCamera, "Screenshot", onScreenshot))
         add(ImageActionSpec(Icons.Outlined.ContentCut, stringResource(R.string.cut), onCut))
         add(ImageActionSpec(Icons.Outlined.ContentCopy, stringResource(R.string.copy), onCopy))
         if (hasClipboard) add(ImageActionSpec(Icons.Outlined.ContentPaste, stringResource(R.string.paste), onPaste))
@@ -5653,6 +5997,17 @@ private fun MixedSelectionBar(
         add(ImageActionSpec(Icons.Outlined.Delete, stringResource(R.string.delete), onDelete))
     }
     SelectionActionStrip(actions, modifier)
+}
+
+@Composable
+private fun LassoCaptureBar(
+    onScreenshot: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SelectionActionStrip(
+        listOf(ImageActionSpec(Icons.Outlined.PhotoCamera, "Screenshot", onScreenshot)),
+        modifier,
+    )
 }
 
 @Composable
