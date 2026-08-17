@@ -36,22 +36,24 @@ class InkHistoryWidgetProvider : AppWidgetProvider() {
         }
 
         private fun graph(values: List<Pair<String, Int>>, color: Int, dark: Boolean): Bitmap {
-            val bitmap = Bitmap.createBitmap(600, 240, Bitmap.Config.ARGB_8888)
+            // Keep the graph deliberately wide and shallow. The widget can be resized to
+            // several aspect ratios, so RemoteViews centers this bitmap without stretching it.
+            val bitmap = Bitmap.createBitmap(600, 180, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
-            val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; strokeWidth = 10f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+            val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; strokeWidth = 8f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
             val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.FILL }
-            val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = if (dark) 0xFFBBC2CD.toInt() else 0xFF535A64.toInt(); textSize = 26f; textAlign = Paint.Align.CENTER }
+            val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = if (dark) 0xFFBBC2CD.toInt() else 0xFF535A64.toInt(); textSize = 22f; textAlign = Paint.Align.CENTER }
             val maximum = values.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
             val points = values.mapIndexed { index, (_, count) ->
                 val x = 34f + index * (532f / 6f)
-                val y = 178f - count.toFloat() / maximum * 136f
+                val y = 122f - count.toFloat() / maximum * 82f
                 x to y
             }
             val path = android.graphics.Path()
             points.forEachIndexed { index, (x, y) -> if (index == 0) path.moveTo(x, y) else path.lineTo(x, y) }
             canvas.drawPath(path, line)
-            points.forEach { (x, y) -> canvas.drawCircle(x, y, 11f, dot) }
-            values.forEachIndexed { index, value -> canvas.drawText(value.first, points[index].first, 226f, text) }
+            points.forEach { (x, y) -> canvas.drawCircle(x, y, 9f, dot) }
+            values.forEachIndexed { index, value -> canvas.drawText(value.first, points[index].first, 169f, text) }
             return bitmap
         }
     }

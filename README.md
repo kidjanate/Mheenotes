@@ -19,6 +19,6 @@ The latest locally built APK is `app/build/outputs/apk/debug/app-debug.apk`.
 ./gradlew test assembleDebug lintDebug
 ```
 
-The architecture baseline is in [docs/TECHNICAL_DESIGN.md](docs/TECHNICAL_DESIGN.md), and the implementation/release-gate status is in [docs/MILESTONE_STATUS.md](docs/MILESTONE_STATUS.md).
+The complete user-facing feature inventory is in [docs/FEATURES.md](docs/FEATURES.md). The architecture baseline is in [docs/TECHNICAL_DESIGN.md](docs/TECHNICAL_DESIGN.md), and the implementation/release-gate status is in [docs/MILESTONE_STATUS.md](docs/MILESTONE_STATUS.md).
 
 The real-device acceptance checklist is in [docs/MILESTONE_1_DEVICE_TEST.md](docs/MILESTONE_1_DEVICE_TEST.md).

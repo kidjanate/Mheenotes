@@ -118,9 +118,10 @@ class EditorSession(
         private set
 
     private var penWidthMicrons by mutableStateOf(1_400f)
-    private var pencilWidthMicrons by mutableStateOf(1_800f)
-    private var highlighterWidthMicrons by mutableStateOf(5_000f)
+    private var pencilWidthMicrons by mutableStateOf(1_200f)
+    private var highlighterWidthMicrons by mutableStateOf(4_000f)
     private var eraserWidthMicrons by mutableStateOf(5_000f)
+    private var toolDefaultsInitialized = false
     var maximumToolWidthMicrons by mutableStateOf(5_000f)
         private set
 
@@ -216,6 +217,24 @@ class EditorSession(
     fun updateMaximumToolWidth(widthMicrons: Float) {
         maximumToolWidthMicrons = widthMicrons.coerceIn(1_000f, 20_000f)
         InkTool.entries.forEach { tool -> updateToolWidth(tool, toolWidthMicrons(tool)) }
+    }
+
+    fun initializeToolDefaults(
+        penWidthMicrons: Float,
+        pencilWidthMicrons: Float,
+        highlighterWidthMicrons: Float,
+        penArgb: Int,
+        pencilArgb: Int,
+        highlighterArgb: Int,
+    ) {
+        if (toolDefaultsInitialized) return
+        this.penWidthMicrons = penWidthMicrons.coerceIn(100f, maximumToolWidthMicrons)
+        this.pencilWidthMicrons = pencilWidthMicrons.coerceIn(100f, maximumToolWidthMicrons)
+        this.highlighterWidthMicrons = highlighterWidthMicrons.coerceIn(100f, maximumToolWidthMicrons)
+        penColor = penArgb
+        pencilColor = pencilArgb
+        highlighterColor = highlighterArgb
+        toolDefaultsInitialized = true
     }
 
     fun updatePressureExponent(exponent: Float) {

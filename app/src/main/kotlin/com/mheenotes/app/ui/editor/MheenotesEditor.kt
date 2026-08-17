@@ -23,11 +23,14 @@ import androidx.core.content.FileProvider
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -49,7 +52,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -69,8 +76,10 @@ import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentCut
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Crop
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileOpen
@@ -83,6 +92,8 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Highlight
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
@@ -146,13 +157,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -167,6 +182,9 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -180,6 +198,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Dp
@@ -190,6 +209,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -272,7 +292,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.Properties
 import java.util.UUID
+import kotlin.random.Random
 import kotlin.math.roundToInt
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -288,13 +310,40 @@ private val BackOutEasing = Easing { progress ->
     val shifted = progress - 1f
     1f + 2.70158f * shifted * shifted * shifted + 1.70158f * shifted * shifted
 }
-private enum class LibrarySection { All, Recent, Favorites, Folders, Trash }
+private enum class LibrarySection { Main, Recent, Favorites, Trash }
 private enum class LibraryLayout { Grid, List }
 private enum class LibrarySort { Name, Recent, PageCount }
 private enum class PdfImportDestination { NewNotebook, CurrentNotebook }
 private enum class DockEdge { Top, Left, Right }
 private enum class EditorMode { Ink, Lasso, Object, Text, Shape, Audio }
 private enum class AppSettingsSection { General, Appearance, Drawing, Fonts, Input }
+
+private fun normalizedFolderPaths(rawPaths: Iterable<String>): List<String> {
+    val result = linkedSetOf<String>()
+    rawPaths.forEach { rawPath ->
+        var current = ""
+        rawPath.trim().trim('/').split('/').filter(String::isNotBlank).forEach { segment ->
+            current = if (current.isEmpty()) segment else "$current/$segment"
+            result += current
+        }
+    }
+    return result.sortedBy(String::lowercase)
+}
+
+private fun immediateFolderChildren(paths: List<String>, parent: String?): List<String> {
+    val prefix = parent?.let { "$it/" }.orEmpty()
+    return paths.filter { path ->
+        path.startsWith(prefix) && path.removePrefix(prefix).let { it.isNotEmpty() && '/' !in it }
+    }
+}
+
+private fun isFolderOrDescendant(path: String?, root: String): Boolean =
+    path != null && (path == root || path.startsWith("$root/"))
+
+private fun replaceFolderRoot(path: String, oldRoot: String, newRoot: String): String =
+    if (path == oldRoot) newRoot else newRoot + path.removePrefix(oldRoot)
+
+private fun folderTrashMembersKey(folder: String) = "trashed-folder-members::$folder"
 private enum class PaperPreset(val label: String, val widthMm: Float, val heightMm: Float) {
     A3("A3", 297f, 420f),
     A4("A4", 210f, 297f),
@@ -505,6 +554,12 @@ private data class PageListSnapshot(
     val selectedPageId: PageId,
 )
 
+private data class SavedNotebookViewport(
+    val centerX: Float,
+    val centerY: Float,
+    val zoomRatio: Float,
+)
+
 private data class ObjectListSnapshot(
     val pageId: PageId,
     val objects: List<SceneObject>,
@@ -527,6 +582,9 @@ private class EditorTab(
     private val pageRedo = ArrayDeque<PageListSnapshot>()
     private val objectUndo = ArrayDeque<ObjectListSnapshot>()
     private val objectRedo = ArrayDeque<ObjectListSnapshot>()
+    private var savedViewport = loadSavedViewport()
+    private val viewportSaveRunnable = Runnable { persistViewportNow() }
+    private var toolDefaults: AppSettings? = null
     var flushPendingInk: () -> Unit = {}
     private val startingDocument = initialDocument ?: runCatching {
         NativeNotebookContainer.loadManifest(root)
@@ -568,6 +626,49 @@ private class EditorTab(
     }
     fun resetViewport() { viewportResetGeneration++ }
 
+    fun restoredViewport(): SavedNotebookViewport? = savedViewport
+
+    fun rememberViewport(transform: ViewportTransform, minimumScale: Float, viewWidth: Int, viewHeight: Int) {
+        if (minimumScale <= 0f || viewWidth <= 1 || viewHeight <= 1) return
+        val center = transform.toPage(viewWidth / 2f, viewHeight / 2f)
+        val candidate = SavedNotebookViewport(
+            centerX = center.x,
+            centerY = center.y,
+            zoomRatio = (transform.scale / minimumScale).coerceIn(1f, 8f),
+        )
+        if (!candidate.centerX.isFinite() || !candidate.centerY.isFinite() || !candidate.zoomRatio.isFinite()) return
+        savedViewport = candidate
+        mainHandler?.removeCallbacks(viewportSaveRunnable)
+        mainHandler?.postDelayed(viewportSaveRunnable, 500L)
+    }
+
+    private fun loadSavedViewport(): SavedNotebookViewport? = runCatching {
+        val file = root.resolve("viewport.properties")
+        if (!file.isFile) return@runCatching null
+        val values = Properties().apply { file.inputStream().buffered().use(::load) }
+        SavedNotebookViewport(
+            centerX = values.getProperty("centerX").toFloat(),
+            centerY = values.getProperty("centerY").toFloat(),
+            zoomRatio = values.getProperty("zoomRatio").toFloat().coerceIn(1f, 8f),
+        ).takeIf { it.centerX.isFinite() && it.centerY.isFinite() && it.zoomRatio.isFinite() }
+    }.getOrNull()
+
+    private fun persistViewportNow() {
+        val value = savedViewport ?: return
+        runCatching {
+            root.mkdirs()
+            val target = root.resolve("viewport.properties")
+            val temporary = root.resolve("viewport.properties.tmp")
+            Properties().apply {
+                setProperty("centerX", value.centerX.toString())
+                setProperty("centerY", value.centerY.toString())
+                setProperty("zoomRatio", value.zoomRatio.toString())
+            }.also { values -> temporary.outputStream().buffered().use { values.store(it, null) } }
+            if (target.exists()) target.delete()
+            check(temporary.renameTo(target)) { "Unable to save notebook viewport" }
+        }
+    }
+
     fun markOpened() {
         lastOpenedAtEpochMillis = System.currentTimeMillis()
         persistManifest()
@@ -603,6 +704,22 @@ private class EditorTab(
     fun updateMaximumToolWidth(widthMicrons: Float) {
         maximumToolWidthMicrons = widthMicrons
         pages.forEach { it.session.updateMaximumToolWidth(widthMicrons) }
+    }
+
+    fun updateToolDefaults(settings: AppSettings) {
+        toolDefaults = settings
+        pages.forEach { configureToolDefaults(it.session, settings) }
+    }
+
+    private fun configureToolDefaults(session: EditorSession, settings: AppSettings) {
+        session.initializeToolDefaults(
+            penWidthMicrons = settings.penWidthPresets.getOrElse(1) { 1_400f },
+            pencilWidthMicrons = settings.pencilWidthPresets.getOrElse(1) { 1_200f },
+            highlighterWidthMicrons = settings.highlighterWidthPresets.getOrElse(1) { 4_000f },
+            penArgb = settings.penColorPresets.firstOrNull() ?: 0xFF111827.toInt(),
+            pencilArgb = settings.pencilColorPresets.firstOrNull() ?: 0xFF30343B.toInt(),
+            highlighterArgb = settings.highlighterColorPresets.firstOrNull() ?: 0xFFF7D34A.toInt(),
+        )
     }
 
     init {
@@ -838,6 +955,7 @@ private class EditorTab(
     }
     fun backup(output: java.io.OutputStream) {
         persistManifest()
+        persistViewportNow()
         NativeNotebookContainer.pack(root, output)
     }
 
@@ -974,6 +1092,8 @@ private class EditorTab(
         )
     }
     fun close() {
+        mainHandler?.removeCallbacks(viewportSaveRunnable)
+        persistViewportNow()
         flushPendingInk()
         flushPendingInk = {}
         persistManifest()
@@ -993,6 +1113,7 @@ private class EditorTab(
             id,
             EditorSession(root.resolve("pages/${id.value}.journal"), id).apply {
                 updateMaximumToolWidth(maximumToolWidthMicrons)
+                toolDefaults?.let { configureToolDefaults(this, it) }
             },
         ).also(ownedPageEntries::add)
     }
@@ -1000,6 +1121,7 @@ private class EditorTab(
         id = page.id,
         session = EditorSession(root.resolve("pages/${page.id.value}.journal"), page.id).apply {
             updateMaximumToolWidth(maximumToolWidthMicrons)
+            toolDefaults?.let { configureToolDefaults(this, it) }
         },
         bookmarked = page.bookmarked,
         rotation = page.rotationDegrees,
@@ -1243,8 +1365,20 @@ fun MheenotesEditor(
         }
     }
 
-    LaunchedEffect(appSettings.maximumStrokeWidthMicrons, tabs.size) {
-        tabs.forEach { it.updateMaximumToolWidth(appSettings.maximumStrokeWidthMicrons) }
+    LaunchedEffect(
+        appSettings.maximumStrokeWidthMicrons,
+        appSettings.penWidthPresets,
+        appSettings.pencilWidthPresets,
+        appSettings.highlighterWidthPresets,
+        appSettings.penColorPresets,
+        appSettings.pencilColorPresets,
+        appSettings.highlighterColorPresets,
+        tabs.size,
+    ) {
+        tabs.forEach {
+            it.updateMaximumToolWidth(appSettings.maximumStrokeWidthMicrons)
+            it.updateToolDefaults(appSettings)
+        }
     }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -1395,7 +1529,18 @@ fun MheenotesEditor(
 
     DisposableEffect(Unit) { onDispose { tabs.forEach(EditorTab::close); pdf.close() } }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    val floatingNotesBlur by animateDpAsState(
+        targetValue = if (showFloatingNotes) 18.dp else 0.dp,
+        animationSpec = tween(360, easing = FastOutSlowInEasing),
+        label = "floating-notes-blur",
+    )
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .blur(floatingNotesBlur),
+        color = MaterialTheme.colorScheme.background,
+    ) {
         AnimatedContent(
             targetState = screen,
             transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
@@ -1619,6 +1764,11 @@ private fun LibraryScreen(
     val folders = remember {
         mutableStateListOf<String>().apply { addAll(folderPreferences.getStringSet("folders", emptySet()).orEmpty().sorted()) }
     }
+    val trashedFolderRoots = remember {
+        mutableStateListOf<String>().apply {
+            addAll(folderPreferences.getStringSet("trashed-folder-roots", emptySet()).orEmpty().sorted())
+        }
+    }
     val documentFolders = tabs.mapNotNull(EditorTab::folderPath).distinct().sorted()
     LaunchedEffect(documentFolders) {
         val missing = documentFolders.filterNot(folders::contains)
@@ -1631,26 +1781,120 @@ private fun LibraryScreen(
     var showCreate by remember { mutableStateOf(false) }
     var showNewFolder by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
-    var section by remember { mutableStateOf(LibrarySection.All) }
+    var section by remember { mutableStateOf(LibrarySection.Main) }
     var layout by remember { mutableStateOf(LibraryLayout.Grid) }
     var sort by remember { mutableStateOf(LibrarySort.Name) }
     var sortMenu by remember { mutableStateOf(false) }
     var selectedFolder by remember { mutableStateOf<String?>(null) }
-    var allNotesBounds by remember { mutableStateOf<Rect?>(null) }
-    val folderBounds = remember { mutableStateMapOf<String, Rect>() }
+    var mainExpanded by rememberSaveable { mutableStateOf(true) }
+    val expandedFolders = remember { mutableStateMapOf<String, Boolean>() }
+    var mainBounds by remember { mutableStateOf<Rect?>(null) }
+    val folderDropTargets = remember { mutableStateMapOf<String, Pair<String, Rect>>() }
     var dragTargetFolder by remember { mutableStateOf<String?>(null) }
     var dragTargetsRoot by remember { mutableStateOf(false) }
     var draggedTabId by remember { mutableStateOf<Int?>(null) }
+    var draggedFolderPath by remember { mutableStateOf<String?>(null) }
     var draggedNotePoint by remember { mutableStateOf(Offset.Zero) }
-    LaunchedEffect(section, selectedFolder) { folderBounds.clear() }
+    val allFolders = normalizedFolderPaths(folders + documentFolders)
+    val activeFolders = allFolders.filterNot { path -> trashedFolderRoots.any { isFolderOrDescendant(path, it) } }
+
+    fun persistFolders(updated: List<String>) {
+        folders.clear()
+        folders.addAll(updated.distinct().sortedBy(String::lowercase))
+        folderPreferences.edit().putStringSet("folders", folders.toSet()).apply()
+    }
+
+    fun persistTrashedFolderRoots(updated: List<String>) {
+        trashedFolderRoots.clear()
+        trashedFolderRoots.addAll(updated.distinct().sortedBy(String::lowercase))
+        folderPreferences.edit().putStringSet("trashed-folder-roots", trashedFolderRoots.toSet()).apply()
+    }
+
+    fun relocateFolder(source: String, desiredDestination: String) {
+        if (source == desiredDestination || isFolderOrDescendant(desiredDestination, source)) return
+        val occupied = allFolders.filterNot { isFolderOrDescendant(it, source) }.toSet()
+        var destination = desiredDestination
+        var suffix = 2
+        while (destination in occupied) {
+            destination = "$desiredDestination ($suffix)"
+            suffix++
+        }
+        val updatedFolders = allFolders.map { path ->
+            if (isFolderOrDescendant(path, source)) replaceFolderRoot(path, source, destination) else path
+        }
+        tabs.filter { isFolderOrDescendant(it.folderPath, source) }.forEach { tab ->
+            tab.moveToFolder(replaceFolderRoot(tab.folderPath!!, source, destination))
+        }
+        val updatedTrashedRoots = trashedFolderRoots.map { root ->
+            if (isFolderOrDescendant(root, source)) {
+                val movedRoot = replaceFolderRoot(root, source, destination)
+                val members = folderPreferences.getStringSet(folderTrashMembersKey(root), emptySet()).orEmpty()
+                folderPreferences.edit()
+                    .remove(folderTrashMembersKey(root))
+                    .putStringSet(folderTrashMembersKey(movedRoot), members)
+                    .apply()
+                movedRoot
+            } else root
+        }
+        persistFolders(updatedFolders)
+        persistTrashedFolderRoots(updatedTrashedRoots)
+        selectedFolder = selectedFolder?.let { path ->
+            if (isFolderOrDescendant(path, source)) replaceFolderRoot(path, source, destination) else path
+        }
+        val expandedSnapshot = expandedFolders.toMap()
+        expandedFolders.clear()
+        expandedSnapshot.forEach { (path, expanded) ->
+            expandedFolders[if (isFolderOrDescendant(path, source)) replaceFolderRoot(path, source, destination) else path] = expanded
+        }
+    }
+
+    fun moveFolderTree(source: String, destinationParent: String?) {
+        if (destinationParent != null && isFolderOrDescendant(destinationParent, source)) return
+        val leaf = source.substringAfterLast('/')
+        val destination = listOfNotNull(destinationParent, leaf).joinToString("/")
+        relocateFolder(source, destination)
+    }
+
+    fun renameFolderTree(source: String, requestedName: String) {
+        val leaf = requestedName.trim().trim('/').substringAfterLast('/').takeIf(String::isNotBlank) ?: return
+        val parent = source.substringBeforeLast('/', missingDelimiterValue = "").takeIf(String::isNotBlank)
+        relocateFolder(source, listOfNotNull(parent, leaf).joinToString("/"))
+    }
+
+    fun trashFolderTree(folder: String) {
+        val nestedTrashRoots = trashedFolderRoots.filter { isFolderOrDescendant(it, folder) }
+        val movedIds = linkedSetOf<String>()
+        nestedTrashRoots.forEach { nested ->
+            movedIds += folderPreferences.getStringSet(folderTrashMembersKey(nested), emptySet()).orEmpty()
+        }
+        tabs.filter { it.trashedAtEpochMillis == null && isFolderOrDescendant(it.folderPath, folder) }.forEach { tab ->
+            movedIds += tab.persistentId
+            tab.moveToTrash()
+        }
+        val editor = folderPreferences.edit()
+        nestedTrashRoots.forEach { editor.remove(folderTrashMembersKey(it)) }
+        editor.putStringSet(folderTrashMembersKey(folder), movedIds).apply()
+        persistTrashedFolderRoots(trashedFolderRoots.filterNot { it in nestedTrashRoots } + folder)
+        if (selectedFolder?.let { isFolderOrDescendant(it, folder) } == true) selectedFolder = null
+    }
+
+    fun restoreFolderTree(folder: String) {
+        val members = folderPreferences.getStringSet(folderTrashMembersKey(folder), emptySet()).orEmpty()
+        tabs.filter { it.persistentId in members }.forEach(EditorTab::restoreFromTrash)
+        folderPreferences.edit().remove(folderTrashMembersKey(folder)).apply()
+        persistTrashedFolderRoots(trashedFolderRoots - folder)
+    }
+
+    LaunchedEffect(section, selectedFolder, mainExpanded, activeFolders) { folderDropTargets.clear() }
     val visibleTabs = tabs.asSequence()
         .filter { tab ->
             when (section) {
-                LibrarySection.All, LibrarySection.Recent -> tab.trashedAtEpochMillis == null
+                LibrarySection.Main -> tab.trashedAtEpochMillis == null &&
+                    (query.isNotBlank() || tab.folderPath == selectedFolder)
+                LibrarySection.Recent -> tab.trashedAtEpochMillis == null
                 LibrarySection.Favorites -> tab.trashedAtEpochMillis == null && tab.favorite
-                LibrarySection.Folders -> tab.trashedAtEpochMillis == null &&
-                    (if (selectedFolder == null) tab.folderPath == null else tab.folderPath == selectedFolder)
-                LibrarySection.Trash -> tab.trashedAtEpochMillis != null
+                LibrarySection.Trash -> tab.trashedAtEpochMillis != null &&
+                    trashedFolderRoots.none { isFolderOrDescendant(tab.folderPath, it) }
             }
         }
         .filter { it.title.contains(query, ignoreCase = true) || it.folderPath.orEmpty().contains(query, ignoreCase = true) }
@@ -1661,10 +1905,9 @@ private fun LibraryScreen(
         } }
         .toList()
     val heading = when (section) {
-        LibrarySection.All -> stringResource(R.string.all_notes)
+        LibrarySection.Main -> selectedFolder ?: stringResource(R.string.main)
         LibrarySection.Recent -> stringResource(R.string.recently_opened)
         LibrarySection.Favorites -> stringResource(R.string.favorites)
-        LibrarySection.Folders -> selectedFolder ?: stringResource(R.string.folders)
         LibrarySection.Trash -> stringResource(R.string.trash)
     }
     BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -1679,20 +1922,38 @@ private fun LibraryScreen(
             ) {
                 Text(if (compact) "M" else "Mheenotes", style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(if (compact) 8.dp else 20.dp))
-                NavigationItem(
-                    Icons.Outlined.LibraryBooks, stringResource(R.string.all_notes), section == LibrarySection.All || dragTargetsRoot,
-                    compact = compact,
-                    modifier = Modifier.onGloballyPositioned { allNotesBounds = it.boundsInRoot() },
-                ) { section = LibrarySection.All; selectedFolder = null }
-                NavigationItem(Icons.Outlined.History, stringResource(R.string.recent), section == LibrarySection.Recent, compact = compact) { section = LibrarySection.Recent }
-                NavigationItem(Icons.Outlined.Star, stringResource(R.string.favorites), section == LibrarySection.Favorites, compact = compact) { section = LibrarySection.Favorites }
-                NavigationItem(Icons.Outlined.Folder, stringResource(R.string.folders), section == LibrarySection.Folders, compact = compact) { section = LibrarySection.Folders; selectedFolder = null }
-                NavigationItem(Icons.Outlined.Delete, stringResource(R.string.trash), section == LibrarySection.Trash, compact = compact) { section = LibrarySection.Trash }
-                if (!compact && section == LibrarySection.Folders) {
-                    TextButton(onClick = { selectedFolder = null }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.folder_grid), maxLines = 1, modifier = Modifier.fillMaxWidth()) }
-                    TextButton(onClick = { showNewFolder = true }, modifier = Modifier.fillMaxWidth()) { Text("+ ${stringResource(R.string.new_folder)}") }
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    MainNavigationItem(
+                        expanded = mainExpanded,
+                        selected = section == LibrarySection.Main && selectedFolder == null,
+                        highlighted = dragTargetsRoot,
+                        compact = compact,
+                        modifier = Modifier.onGloballyPositioned { mainBounds = it.boundsInRoot() },
+                        onToggle = { mainExpanded = !mainExpanded },
+                        onClick = { section = LibrarySection.Main; selectedFolder = null },
+                    )
+                    if (mainExpanded && !compact) {
+                        LibraryHierarchy(
+                            tabs = tabs.filter { it.trashedAtEpochMillis == null },
+                            folderPaths = activeFolders,
+                            selectedFolder = selectedFolder.takeIf { section == LibrarySection.Main },
+                            expandedFolders = expandedFolders,
+                            dragTargetFolder = dragTargetFolder,
+                            onSelectFolder = { folder ->
+                                section = LibrarySection.Main
+                                selectedFolder = folder
+                            },
+                            onToggleFolder = { folder -> expandedFolders[folder] = expandedFolders[folder] != true },
+                            onOpenNote = onOpen,
+                            onFolderPositioned = { folder, bounds ->
+                                folderDropTargets["tree:$folder"] = folder to bounds
+                            },
+                        )
+                    }
+                    NavigationItem(Icons.Outlined.History, stringResource(R.string.recent), section == LibrarySection.Recent, compact = compact) { section = LibrarySection.Recent }
+                    NavigationItem(Icons.Outlined.Star, stringResource(R.string.favorites), section == LibrarySection.Favorites, compact = compact) { section = LibrarySection.Favorites }
+                    NavigationItem(Icons.Outlined.Delete, stringResource(R.string.trash), section == LibrarySection.Trash, compact = compact) { section = LibrarySection.Trash }
                 }
-                Spacer(Modifier.weight(1f))
                 NavigationItem(Icons.Outlined.Settings, stringResource(R.string.settings), false, compact = compact, onClick = onSettings)
             }
             Column(Modifier.weight(1f).fillMaxHeight().padding(if (compact) 12.dp else 28.dp)) {
@@ -1729,17 +1990,20 @@ private fun LibraryScreen(
                     }
                 }
                 Spacer(Modifier.height(if (compact) 14.dp else 28.dp))
-                val folderCards = if (
-                    section == LibrarySection.All || (section == LibrarySection.Folders && selectedFolder == null)
-                ) (folders + documentFolders).distinct().sorted() else emptyList()
+                val folderCards = when {
+                    section == LibrarySection.Main && query.isBlank() -> immediateFolderChildren(activeFolders, selectedFolder)
+                    section == LibrarySection.Trash -> trashedFolderRoots.filter {
+                        query.isBlank() || it.contains(query, ignoreCase = true)
+                    }
+                    else -> emptyList()
+                }
                 if (visibleTabs.isEmpty() && folderCards.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(stringResource(if (section == LibrarySection.Trash) R.string.trash_empty else R.string.no_notebooks), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (section == LibrarySection.Folders) TextButton(onClick = { showNewFolder = true }) { Text(stringResource(R.string.create_folder)) }
                         }
                     }
-                } else if (layout == LibraryLayout.Grid || section == LibrarySection.Folders) {
+                } else if (layout == LibraryLayout.Grid || folderCards.isNotEmpty()) {
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(if (compact) 140.dp else 190.dp),
                         contentPadding = PaddingValues(bottom = 96.dp),
@@ -1747,22 +2011,72 @@ private fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp),
                     ) {
                         items(folderCards, key = { "folder:$it" }) { folder ->
+                            val folderIsTrashed = section == LibrarySection.Trash
                             FolderCard(
                                 folder = folder,
-                                noteCount = tabs.count { it.trashedAtEpochMillis == null && it.folderPath == folder },
+                                noteCount = if (folderIsTrashed) {
+                                    tabs.count { it.trashedAtEpochMillis != null && isFolderOrDescendant(it.folderPath, folder) }
+                                } else tabs.count {
+                                    it.trashedAtEpochMillis == null && isFolderOrDescendant(it.folderPath, folder)
+                                },
                                 highlighted = dragTargetFolder == folder,
-                                modifier = Modifier.onGloballyPositioned { folderBounds[folder] = it.boundsInRoot() },
-                                onClick = { section = LibrarySection.Folders; selectedFolder = folder },
+                                trashed = folderIsTrashed,
+                                modifier = if (folderIsTrashed) Modifier else Modifier.onGloballyPositioned {
+                                    folderDropTargets["grid:$folder"] = folder to it.boundsInRoot()
+                                },
+                                onClick = {
+                                    if (!folderIsTrashed) {
+                                        section = LibrarySection.Main
+                                        selectedFolder = folder
+                                        mainExpanded = true
+                                        expandedFolders[folder] = true
+                                    }
+                                },
+                                onRename = { name -> renameFolderTree(folder, name) },
+                                onTrash = { trashFolderTree(folder) },
+                                onRestore = { restoreFolderTree(folder) },
+                                onDragPosition = { point ->
+                                    if (!folderIsTrashed) {
+                                        draggedFolderPath = folder
+                                        draggedNotePoint = point
+                                        dragTargetsRoot = mainBounds?.contains(point) == true
+                                        dragTargetFolder = if (dragTargetsRoot) null else {
+                                            folderDropTargets.values.firstOrNull { (target, bounds) ->
+                                                bounds.contains(point) && target != folder && !isFolderOrDescendant(target, folder)
+                                            }?.first
+                                        }
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (!folderIsTrashed) {
+                                        when {
+                                            dragTargetsRoot -> moveFolderTree(folder, null)
+                                            dragTargetFolder != null -> moveFolderTree(folder, dragTargetFolder)
+                                        }
+                                    }
+                                    draggedFolderPath = null
+                                    draggedNotePoint = Offset.Zero
+                                    dragTargetsRoot = false
+                                    dragTargetFolder = null
+                                },
+                                onDragCancel = {
+                                    draggedFolderPath = null
+                                    draggedNotePoint = Offset.Zero
+                                    dragTargetsRoot = false
+                                    dragTargetFolder = null
+                                },
                             )
                         }
                         items(visibleTabs, key = EditorTab::id) { tab ->
                             NotebookCard(
-                                tab, folders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook,
-                                onDragStart = { draggedTabId = tab.id },
+                                tab, activeFolders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook,
                                 onDragPosition = { point ->
+                                    draggedTabId = tab.id
                                     draggedNotePoint = point
-                                    dragTargetsRoot = allNotesBounds?.contains(point) == true
-                                    dragTargetFolder = if (dragTargetsRoot) null else folderBounds.entries.firstOrNull { it.value.contains(point) }?.key
+                                    dragTargetsRoot = mainBounds?.contains(point) == true
+                                    dragTargetFolder = if (dragTargetsRoot) null else {
+                                        folderDropTargets.values.firstOrNull { (_, bounds) -> bounds.contains(point) }?.first
+                                    }
                                 },
                                 onDragEnd = {
                                     when {
@@ -1770,9 +2084,16 @@ private fun LibraryScreen(
                                         dragTargetFolder != null -> tab.moveToFolder(dragTargetFolder)
                                     }
                                     val handled = dragTargetsRoot || dragTargetFolder != null
-                                    draggedTabId = null; draggedNotePoint = Offset.Zero
+                                    draggedTabId = null
+                                    draggedNotePoint = Offset.Zero
                                     dragTargetsRoot = false; dragTargetFolder = null
                                     handled
+                                },
+                                onDragCancel = {
+                                    draggedTabId = null
+                                    draggedNotePoint = Offset.Zero
+                                    dragTargetsRoot = false
+                                    dragTargetFolder = null
                                 },
                             )
                         }
@@ -1780,7 +2101,7 @@ private fun LibraryScreen(
                 } else {
                     LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         itemsIndexed(visibleTabs, key = { _, tab -> tab.id }) { _, tab ->
-                            NotebookListRow(tab, folders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook)
+                            NotebookListRow(tab, activeFolders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook)
                         }
                     }
                 }
@@ -1791,11 +2112,11 @@ private fun LibraryScreen(
                 val density = LocalDensity.current
                 Surface(
                     modifier = Modifier
-                        .size(width = 154.dp, height = 196.dp)
+                        .size(width = 142.dp, height = 176.dp)
                         .offset {
                             IntOffset(
-                                draggedNotePoint.x.roundToInt() - with(density) { 77.dp.roundToPx() },
-                                draggedNotePoint.y.roundToInt() - with(density) { 98.dp.roundToPx() },
+                                draggedNotePoint.x.roundToInt() - with(density) { 71.dp.roundToPx() },
+                                draggedNotePoint.y.roundToInt() - with(density) { 88.dp.roundToPx() },
                             )
                         }
                         .zIndex(200f),
@@ -1803,17 +2124,51 @@ private fun LibraryScreen(
                     color = Color(tab.coverArgb),
                     shadowElevation = 24.dp,
                 ) {
-                    Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.SpaceBetween) {
-                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Outlined.Edit, null, Modifier.size(44.dp), tint = Color.White)
+                    tab.pages.firstOrNull()?.let { page ->
+                        Box(Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
+                            PageThumbnailPreview(
+                                page,
+                                Modifier
+                                    .fillMaxHeight()
+                                    .aspectRatio(page.size.widthMicrons / page.size.heightMicrons)
+                                    .clip(RoundedCornerShape(5.dp)),
+                            )
                         }
-                        Text(tab.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
         }
-        FloatingActionButton(onClick = { showCreate = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(if (compact) 16.dp else 28.dp)) {
-            Icon(Icons.Outlined.NoteAdd, stringResource(R.string.create_notebook))
+        draggedFolderPath?.let { folder ->
+            val density = LocalDensity.current
+            Surface(
+                modifier = Modifier
+                    .size(width = 142.dp, height = 176.dp)
+                    .offset {
+                        IntOffset(
+                            draggedNotePoint.x.roundToInt() - with(density) { 71.dp.roundToPx() },
+                            draggedNotePoint.y.roundToInt() - with(density) { 88.dp.roundToPx() },
+                        )
+                    }
+                    .zIndex(200f),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shadowElevation = 24.dp,
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Folder, folder.substringAfterLast('/'), Modifier.size(70.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        Row(
+            modifier = Modifier.align(Alignment.BottomEnd).padding(if (compact) 16.dp else 28.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            FloatingActionButton(onClick = { showNewFolder = true }) {
+                Icon(Icons.Outlined.CreateNewFolder, stringResource(R.string.create_folder))
+            }
+            FloatingActionButton(onClick = { showCreate = true }) {
+                Icon(Icons.Outlined.NoteAdd, stringResource(R.string.create_notebook))
+            }
         }
     }
     if (showCreate) NewNotebookDialog(
@@ -1822,17 +2177,44 @@ private fun LibraryScreen(
     )
     if (showNewFolder) AlertDialog(
         onDismissRequest = { showNewFolder = false },
-        title = { Text("New folder") },
-        text = { OutlinedTextField(newFolderName, { newFolderName = it }, label = { Text("Folder path") }, supportingText = { Text("Use / for nested folders") }) },
+        title = { Text(stringResource(R.string.new_folder)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    newFolderName,
+                    { newFolderName = it },
+                    label = { Text(stringResource(R.string.folder_name)) },
+                    supportingText = {
+                        Text(
+                            selectedFolder?.takeIf { section == LibrarySection.Main }
+                                ?.let { stringResource(R.string.folder_created_inside, it) }
+                                ?: stringResource(R.string.folder_created_in_main),
+                        )
+                    },
+                )
+                Text(stringResource(R.string.folder_nested_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
         dismissButton = { TextButton(onClick = { showNewFolder = false }) { Text("Cancel") } },
         confirmButton = {
             TextButton(
                 enabled = newFolderName.trim().trim('/').isNotEmpty(),
                 onClick = {
-                    val name = newFolderName.trim().trim('/')
-                    if (name !in folders) folders += name
+                    val relativeName = newFolderName.trim().trim('/')
+                    val parent = selectedFolder.takeIf { section == LibrarySection.Main }
+                    val requested = listOfNotNull(parent, relativeName).joinToString("/")
+                    var name = requested
+                    var suffix = 2
+                    while (name in allFolders) {
+                        name = "$requested ($suffix)"
+                        suffix++
+                    }
+                    folders += name
                     folderPreferences.edit().putStringSet("folders", folders.toSet()).apply()
+                    section = LibrarySection.Main
                     selectedFolder = name
+                    mainExpanded = true
+                    normalizedFolderPaths(listOf(name)).forEach { expandedFolders[it] = true }
                     newFolderName = ""
                     showNewFolder = false
                 },
@@ -2050,6 +2432,137 @@ private fun ColorChoiceRow(colors: List<Int>, selected: Int, onSelect: (Int) -> 
 }
 
 @Composable
+private fun MainNavigationItem(
+    expanded: Boolean,
+    selected: Boolean,
+    highlighted: Boolean,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+    onToggle: () -> Unit,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        color = if (selected || highlighted) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier,
+    ) {
+        Row(
+            Modifier.then(if (compact) Modifier.size(48.dp) else Modifier.fillMaxWidth()).padding(if (compact) 12.dp else 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (compact) Arrangement.Center else Arrangement.Start,
+        ) {
+            if (!compact) {
+                IconButton(onClick = onToggle, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (expanded) Icons.Outlined.KeyboardArrowDown else Icons.Outlined.KeyboardArrowRight,
+                        if (expanded) "Collapse Main" else "Expand Main",
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+                Spacer(Modifier.width(2.dp))
+            }
+            Icon(Icons.Outlined.Home, null, Modifier.size(20.dp))
+            if (!compact) {
+                Spacer(Modifier.width(10.dp))
+                Text(stringResource(R.string.main), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryHierarchy(
+    tabs: List<EditorTab>,
+    folderPaths: List<String>,
+    selectedFolder: String?,
+    expandedFolders: Map<String, Boolean>,
+    dragTargetFolder: String?,
+    onSelectFolder: (String) -> Unit,
+    onToggleFolder: (String) -> Unit,
+    onOpenNote: (Int) -> Unit,
+    onFolderPositioned: (String, Rect) -> Unit,
+    parent: String? = null,
+    depth: Int = 0,
+) {
+    val childFolders = immediateFolderChildren(folderPaths, parent)
+    val childNotes = tabs.filter { it.folderPath == parent }.sortedBy { it.title.lowercase() }
+    childFolders.forEach { folder ->
+        val expanded = expandedFolders[folder] == true
+        Surface(
+            onClick = {
+                onSelectFolder(folder)
+                if (!expanded) onToggleFolder(folder)
+            },
+            color = if (selectedFolder == folder || dragTargetFolder == folder) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else Color.Transparent,
+            shape = RoundedCornerShape(9.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = (depth * 10 + 12).dp)
+                .onGloballyPositioned { onFolderPositioned(folder, it.boundsInRoot()) },
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { onToggleFolder(folder) }, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        if (expanded) Icons.Outlined.KeyboardArrowDown else Icons.Outlined.KeyboardArrowRight,
+                        if (expanded) "Collapse folder" else "Expand folder",
+                        Modifier.size(17.dp),
+                    )
+                }
+                Icon(Icons.Outlined.Folder, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    folder.substringAfterLast('/'),
+                    Modifier.padding(start = 7.dp).weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+        if (expanded) LibraryHierarchy(
+            tabs = tabs,
+            folderPaths = folderPaths,
+            selectedFolder = selectedFolder,
+            expandedFolders = expandedFolders,
+            dragTargetFolder = dragTargetFolder,
+            onSelectFolder = onSelectFolder,
+            onToggleFolder = onToggleFolder,
+            onOpenNote = onOpenNote,
+            onFolderPositioned = onFolderPositioned,
+            parent = folder,
+            depth = depth + 1,
+        )
+    }
+    childNotes.forEach { note ->
+        Surface(
+            onClick = { onOpenNote(note.id) },
+            color = Color.Transparent,
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = (depth * 10 + 46).dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Description, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    note.title,
+                    Modifier.padding(start = 8.dp).weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun NavigationItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
@@ -2113,16 +2626,79 @@ private fun FolderCard(
     folder: String,
     noteCount: Int,
     highlighted: Boolean,
+    trashed: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    onRename: (String) -> Unit,
+    onTrash: () -> Unit,
+    onRestore: () -> Unit,
+    onDragPosition: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    var actionsSignal by remember(folder) { mutableIntStateOf(0) }
+    var suppressNextOpen by remember(folder) { mutableStateOf(false) }
+    var cardOrigin by remember(folder) { mutableStateOf(Offset.Zero) }
+    var dragPointer by remember(folder) { mutableStateOf(Offset.Zero) }
+    var dragTranslation by remember(folder) { mutableStateOf(Offset.Zero) }
+    var movedAfterHold by remember(folder) { mutableStateOf(false) }
+    var stationaryMenuJob by remember(folder) { mutableStateOf<Job?>(null) }
+    DisposableEffect(folder) { onDispose { stationaryMenuJob?.cancel() } }
     Card(
-        modifier = modifier,
+        modifier = modifier
+            .onGloballyPositioned { cardOrigin = it.positionInRoot() }
+            .graphicsLayer { alpha = if (dragTranslation != Offset.Zero) .28f else 1f }
+            .pointerInput(folder, trashed) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { start ->
+                        dragPointer = start
+                        dragTranslation = Offset.Zero
+                        movedAfterHold = false
+                        stationaryMenuJob?.cancel()
+                        stationaryMenuJob = scope.launch {
+                            delay(260)
+                            if (!movedAfterHold) {
+                                suppressNextOpen = true
+                                actionsSignal++
+                            }
+                        }
+                    },
+                    onDragEnd = {
+                        stationaryMenuJob?.cancel()
+                        if (movedAfterHold && !trashed) onDragEnd()
+                        dragTranslation = Offset.Zero
+                        movedAfterHold = false
+                        scope.launch { delay(300); suppressNextOpen = false }
+                    },
+                    onDragCancel = {
+                        stationaryMenuJob?.cancel()
+                        dragTranslation = Offset.Zero
+                        movedAfterHold = false
+                        onDragCancel()
+                        scope.launch { delay(300); suppressNextOpen = false }
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        if (!trashed) {
+                            dragTranslation += amount
+                            if (dragTranslation.getDistance() > 10f) {
+                                movedAfterHold = true
+                                stationaryMenuJob?.cancel()
+                                suppressNextOpen = true
+                                onDragPosition(cardOrigin + dragPointer + dragTranslation)
+                            }
+                        }
+                    },
+                )
+            },
         shape = RoundedCornerShape(16.dp),
         border = if (highlighted) androidx.compose.foundation.BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
         Surface(
-            onClick = onClick,
+            onClick = {
+                if (suppressNextOpen) suppressNextOpen = false else onClick()
+            },
             modifier = Modifier.fillMaxWidth().aspectRatio(.76f),
             color = MaterialTheme.colorScheme.primaryContainer,
         ) {
@@ -2130,11 +2706,88 @@ private fun FolderCard(
                 Icon(Icons.Outlined.Folder, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
             }
         }
-        Column(Modifier.fillMaxWidth().padding(14.dp)) {
-            Text(folder, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(stringResource(R.string.notes_count, noteCount), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            Modifier.fillMaxWidth().padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(folder.substringAfterLast('/'), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(R.string.notes_count, noteCount), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            FolderActionsButton(
+                folder = folder,
+                trashed = trashed,
+                externalOpenSignal = actionsSignal,
+                onRename = onRename,
+                onTrash = onTrash,
+                onRestore = onRestore,
+            )
         }
     }
+}
+
+@Composable
+private fun FolderActionsButton(
+    folder: String,
+    trashed: Boolean,
+    externalOpenSignal: Int,
+    onRename: (String) -> Unit,
+    onTrash: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    var menu by remember(folder) { mutableStateOf(false) }
+    var rename by remember(folder) { mutableStateOf(false) }
+    var confirmTrash by remember(folder) { mutableStateOf(false) }
+    var editedName by remember(folder) { mutableStateOf(folder.substringAfterLast('/')) }
+    LaunchedEffect(externalOpenSignal) {
+        if (externalOpenSignal > 0) menu = true
+    }
+    Box {
+        IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.folder_actions)) }
+        DropdownMenu(menu, { menu = false }) {
+            if (trashed) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.restore)) },
+                    leadingIcon = { Icon(Icons.Outlined.History, null) },
+                    onClick = { menu = false; onRestore() },
+                )
+            } else {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.rename)) },
+                    leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, null) },
+                    onClick = { menu = false; editedName = folder.substringAfterLast('/'); rename = true },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.move_to_trash)) },
+                    leadingIcon = { Icon(Icons.Outlined.Delete, null) },
+                    onClick = { menu = false; confirmTrash = true },
+                )
+            }
+        }
+    }
+    if (rename) AlertDialog(
+        onDismissRequest = { rename = false },
+        title = { Text(stringResource(R.string.rename_folder)) },
+        text = { OutlinedTextField(editedName, { editedName = it }, singleLine = true, label = { Text(stringResource(R.string.folder_name)) }) },
+        dismissButton = { TextButton(onClick = { rename = false }) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = {
+            TextButton(enabled = editedName.trim().trim('/').isNotEmpty(), onClick = {
+                onRename(editedName)
+                rename = false
+            }) { Text(stringResource(R.string.rename)) }
+        },
+    )
+    if (confirmTrash) AlertDialog(
+        onDismissRequest = { confirmTrash = false },
+        title = { Text(stringResource(R.string.move_folder_trash_title)) },
+        text = { Text(stringResource(R.string.move_folder_trash_message, folder.substringAfterLast('/'))) },
+        dismissButton = { TextButton(onClick = { confirmTrash = false }) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = {
+            TextButton(onClick = { confirmTrash = false; onTrash() }) {
+                Text(stringResource(R.string.move_to_trash), color = MaterialTheme.colorScheme.error)
+            }
+        },
+    )
 }
 
 @Composable
@@ -2145,11 +2798,12 @@ private fun NotebookCard(
     onDuplicate: (EditorTab) -> Unit,
     onPermanentDelete: (EditorTab) -> Unit,
     onExportNotebook: (EditorTab) -> Unit,
-    onDragStart: () -> Unit = {},
     onDragPosition: (Offset) -> Unit = {},
     onDragEnd: () -> Boolean = { false },
+    onDragCancel: () -> Unit = {},
 ) {
     val previewPage = tab.pages.firstOrNull()
+    val scope = rememberCoroutineScope()
     val hoverInteraction = remember { MutableInteractionSource() }
     val hovered by hoverInteraction.collectIsHoveredAsState()
     val cardScale by animateFloatAsState(if (hovered) 1.025f else 1f, tween(150), label = "notebook-hover")
@@ -2157,6 +2811,10 @@ private fun NotebookCard(
     var cardOrigin by remember(tab.id) { mutableStateOf(Offset.Zero) }
     var dragPointer by remember(tab.id) { mutableStateOf(Offset.Zero) }
     var dragTranslation by remember(tab.id) { mutableStateOf(Offset.Zero) }
+    var movedAfterHold by remember(tab.id) { mutableStateOf(false) }
+    var stationaryMenuJob by remember(tab.id) { mutableStateOf<Job?>(null) }
+    var suppressNextOpen by remember(tab.id) { mutableStateOf(false) }
+    DisposableEffect(tab.id) { onDispose { stationaryMenuJob?.cancel() } }
     LaunchedEffect(tab.id, previewPage?.id) {
         previewPage?.let { tab.requestThumbnail(it.id) }
     }
@@ -2166,24 +2824,46 @@ private fun NotebookCard(
             .hoverable(hoverInteraction)
             .graphicsLayer {
                 scaleX = cardScale; scaleY = cardScale
-                translationX = dragTranslation.x; translationY = dragTranslation.y
-                shadowElevation = if (dragTranslation != Offset.Zero) 20.dp.toPx() else 0f
+                alpha = if (dragTranslation != Offset.Zero) .28f else 1f
             }
-            .zIndex(if (dragTranslation != Offset.Zero) 30f else 0f)
             .pointerInput(tab.id) {
                 detectDragGesturesAfterLongPress(
-                    onDragStart = { start -> dragPointer = start; dragTranslation = Offset.Zero; onDragStart() },
-                    onDragEnd = {
-                        val moved = dragTranslation.getDistance() > 10f
-                        val handled = if (moved) onDragEnd() else false
-                        if (!handled) actionsSignal++
+                    onDragStart = { start ->
+                        dragPointer = start
                         dragTranslation = Offset.Zero
+                        movedAfterHold = false
+                        stationaryMenuJob?.cancel()
+                        stationaryMenuJob = scope.launch {
+                            delay(260)
+                            if (!movedAfterHold) {
+                                suppressNextOpen = true
+                                actionsSignal++
+                            }
+                        }
                     },
-                    onDragCancel = { dragTranslation = Offset.Zero; onDragEnd() },
+                    onDragEnd = {
+                        stationaryMenuJob?.cancel()
+                        if (movedAfterHold) onDragEnd()
+                        dragTranslation = Offset.Zero
+                        movedAfterHold = false
+                        scope.launch { delay(300); suppressNextOpen = false }
+                    },
+                    onDragCancel = {
+                        stationaryMenuJob?.cancel()
+                        dragTranslation = Offset.Zero
+                        movedAfterHold = false
+                        onDragCancel()
+                        scope.launch { delay(300); suppressNextOpen = false }
+                    },
                     onDrag = { change, amount ->
                         change.consume()
                         dragTranslation += amount
-                        onDragPosition(cardOrigin + dragPointer + dragTranslation)
+                        if (dragTranslation.getDistance() > 10f) {
+                            movedAfterHold = true
+                            stationaryMenuJob?.cancel()
+                            suppressNextOpen = true
+                            onDragPosition(cardOrigin + dragPointer + dragTranslation)
+                        }
                     },
                 )
             },
@@ -2191,7 +2871,9 @@ private fun NotebookCard(
     ) {
         Column {
             Surface(
-                onClick = onClick,
+                onClick = {
+                    if (suppressNextOpen) suppressNextOpen = false else onClick()
+                },
                 modifier = Modifier.fillMaxWidth().aspectRatio(.76f),
                 color = Color(tab.coverArgb),
             ) {
@@ -2556,6 +3238,7 @@ private fun ToolPalette(
     onAppSettingsChanged: (AppSettings) -> Unit,
 ) {
     var showColorPicker by remember { mutableStateOf(false) }
+    var editingPresetColor by remember { mutableStateOf<Pair<InkTool, Int>?>(null) }
     val dragRangePx = with(LocalDensity.current) { 120.dp.toPx() }
     fun previewFor(tool: InkTool): StrokeSizePreview {
         val style = session.currentStyle(tool)
@@ -2591,11 +3274,29 @@ private fun ToolPalette(
             ToolIcon(Icons.Outlined.Mic, stringResource(R.string.audio_note), mode == EditorMode.Audio) { onMode(EditorMode.Audio) }
             if (!vertical) Spacer(Modifier.width(12.dp))
             if (session.selectedTool != InkTool.Eraser) {
-                appSettings.colorPresets(session.selectedTool).forEach { argb ->
-                    ColorSwatch(
-                        color = Color(argb),
-                        selected = session.currentStyle().argb == argb,
-                    ) { session.setCurrentColor(argb) }
+                val activeTool = session.selectedTool
+                appSettings.colorPresets(activeTool).forEachIndexed { index, argb ->
+                    Box {
+                        ColorSwatch(
+                            color = Color(argb),
+                            selected = session.currentStyle().argb == argb,
+                            onClick = { session.setCurrentColor(argb) },
+                            onLongClick = { editingPresetColor = activeTool to index },
+                        )
+                        ToolColorDropdown(
+                            expanded = editingPresetColor == (activeTool to index),
+                            initialArgb = argb,
+                            onApply = { color ->
+                                val updated = appSettings.colorPresets(activeTool).toMutableList().apply {
+                                    this[index] = color
+                                }
+                                onAppSettingsChanged(appSettings.withColorPresets(activeTool, updated))
+                                session.setCurrentColor(color)
+                                editingPresetColor = null
+                            },
+                            onDismiss = { editingPresetColor = null },
+                        )
+                    }
                 }
                 Box {
                     ToolIcon(Icons.Outlined.Palette, stringResource(R.string.custom_color), showColorPicker) { showColorPicker = true }
@@ -2611,7 +3312,9 @@ private fun ToolPalette(
                         widthMicrons = width.coerceAtMost(session.maximumToolWidthMicrons),
                         maximumWidthMicrons = session.maximumToolWidthMicrons,
                         color = Color(session.currentStyle().argb).copy(alpha = session.currentStyle().opacity),
-                        selected = kotlin.math.abs(session.toolWidthMicrons(session.selectedTool) - width) < 1f,
+                        selected = kotlin.math.abs(
+                            session.toolWidthMicrons(session.selectedTool) - width.coerceAtMost(session.maximumToolWidthMicrons),
+                        ) < 1f,
                         onClick = { session.updateToolWidth(session.selectedTool, width) },
                         onDragStart = {
                             session.updateToolWidth(session.selectedTool, width)
@@ -2741,12 +3444,18 @@ private fun StrokeWidthPreset(
 }
 
 @Composable
-private fun ColorSwatch(color: Color, selected: Boolean = false, onClick: () -> Unit) {
+private fun ColorSwatch(
+    color: Color,
+    selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     Surface(
-        onClick = onClick,
         shape = RoundedCornerShape(50),
         color = color,
-        modifier = Modifier.size(if (selected) 30.dp else 26.dp),
+        modifier = Modifier
+            .size(if (selected) 30.dp else 26.dp)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         border = androidx.compose.foundation.BorderStroke(if (selected) 3.dp else 1.dp, MaterialTheme.colorScheme.onSurface),
     ) {}
 }
@@ -2758,18 +3467,64 @@ private fun PageThumbnailRail(
     appSettings: AppSettings,
     onAppSettingsChanged: (AppSettings) -> Unit,
 ) {
-    val density = LocalDensity.current
     var menu by remember { mutableStateOf(false) }
     var bookmarksOnly by remember(tab.id) { mutableStateOf(false) }
     var showJump by remember { mutableStateOf(false) }
     var jumpPage by remember { mutableStateOf((tab.selectedPageIndex + 1).toString()) }
     var draggedPageId by remember { mutableStateOf<PageId?>(null) }
     var dragOffset by remember { mutableStateOf(0f) }
+    var dragPointerY by remember { mutableStateOf(0f) }
     var dragTargetIndex by remember { mutableIntStateOf(-1) }
+    var dragTargetBeforePageId by remember { mutableStateOf<PageId?>(null) }
+    var dragTargetAfterPageId by remember { mutableStateOf<PageId?>(null) }
+    val thumbnailBounds = remember(tab.id, bookmarksOnly) { mutableStateMapOf<PageId, Rect>() }
     var pendingInsertAfter by remember { mutableStateOf<Boolean?>(null) }
     val visiblePages = tab.pages.mapIndexedNotNull { index, page ->
         if (!bookmarksOnly || page.bookmarked) index to page else null
     }
+
+    fun clearPageDrag() {
+        draggedPageId = null
+        dragOffset = 0f
+        dragPointerY = 0f
+        dragTargetIndex = -1
+        dragTargetBeforePageId = null
+        dragTargetAfterPageId = null
+    }
+
+    fun updatePageDragTarget(pageId: PageId, pointerY: Float) {
+        val remainingVisible = visiblePages
+            .filterNot { it.second.id == pageId }
+            .mapNotNull { entry -> thumbnailBounds[entry.second.id]?.let { bounds -> entry to bounds } }
+            .sortedBy { it.second.top }
+        if (remainingVisible.isEmpty()) {
+            dragTargetIndex = tab.pages.indexOfFirst { it.id == pageId }
+            dragTargetBeforePageId = null
+            dragTargetAfterPageId = null
+            return
+        }
+        val gapCandidates = buildList {
+            add(0 to remainingVisible.first().second.top)
+            for (gap in 1 until remainingVisible.size) {
+                val previous = remainingVisible[gap - 1].second
+                val next = remainingVisible[gap].second
+                add(gap to (previous.bottom + next.top) / 2f)
+            }
+            add(remainingVisible.size to remainingVisible.last().second.bottom)
+        }
+        val gap = gapCandidates.minBy { (_, y) -> kotlin.math.abs(pointerY - y) }.first
+        val remainingAll = tab.pages.filterNot { it.id == pageId }
+        val before = remainingVisible.getOrNull(gap)?.first?.second
+        val after = if (gap == remainingVisible.size) remainingVisible.last().first.second else null
+        dragTargetIndex = when {
+            before != null -> remainingAll.indexOfFirst { it.id == before.id }
+            after != null -> remainingAll.indexOfFirst { it.id == after.id } + 1
+            else -> tab.pages.indexOfFirst { it.id == pageId }
+        }.coerceIn(0, remainingAll.size)
+        dragTargetBeforePageId = before?.id
+        dragTargetAfterPageId = after?.id
+    }
+
     Column(Modifier.width(94.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surface)) {
         LazyColumn(
             Modifier.weight(1f), contentPadding = PaddingValues(10.dp),
@@ -2778,15 +3533,21 @@ private fun PageThumbnailRail(
             itemsIndexed(visiblePages, key = { _, entry -> entry.second.id.value }) { _, entry ->
                 val (index, page) = entry
                 LaunchedEffect(page.id) { tab.requestThumbnail(page.id) }
-                var itemHeightPx by remember(page.id) { mutableIntStateOf(1) }
+                DisposableEffect(page.id) { onDispose { thumbnailBounds.remove(page.id) } }
                 val isDragged = draggedPageId == page.id
                 Box(
                     Modifier.fillMaxWidth()
                         .aspectRatio(page.size.widthMicrons / page.size.heightMicrons)
                         .animateItem()
                         .zIndex(if (isDragged) 20f else 0f)
-                        .onSizeChanged { itemHeightPx = it.height.coerceAtLeast(1) },
+                        .onGloballyPositioned { thumbnailBounds[page.id] = it.boundsInRoot() },
                 ) {
+                    if (draggedPageId != null && dragTargetBeforePageId == page.id) PageInsertionMarker(
+                        Modifier.align(Alignment.TopCenter).offset(y = (-7).dp).zIndex(30f),
+                    )
+                    if (draggedPageId != null && dragTargetAfterPageId == page.id) PageInsertionMarker(
+                        Modifier.align(Alignment.BottomCenter).offset(y = 7.dp).zIndex(30f),
+                    )
                     if (isDragged) Surface(
                         Modifier.fillMaxSize(),
                         shape = RoundedCornerShape(7.dp),
@@ -2803,30 +3564,22 @@ private fun PageThumbnailRail(
                             .graphicsLayer { translationY = if (isDragged) dragOffset else 0f }
                             .pointerInput(page.id, tab.pages.size) {
                             detectDragGesturesAfterLongPress(
-                                onDragStart = {
+                                onDragStart = { start ->
                                     draggedPageId = page.id
                                     dragOffset = 0f
-                                    dragTargetIndex = index
+                                    dragPointerY = (thumbnailBounds[page.id]?.top ?: 0f) + start.y
+                                    updatePageDragTarget(page.id, dragPointerY)
                                 },
-                                onDragCancel = {
-                                    draggedPageId = null
-                                    dragOffset = 0f
-                                    dragTargetIndex = -1
-                                },
+                                onDragCancel = ::clearPageDrag,
                                 onDragEnd = {
                                     if (dragTargetIndex >= 0) tab.movePageTo(page.id, dragTargetIndex)
-                                    draggedPageId = null
-                                    dragOffset = 0f
-                                    dragTargetIndex = -1
+                                    clearPageDrag()
                                 },
                             ) { change, amount ->
                                 change.consume()
                                 dragOffset += amount.y
-                                val sourceVisibleIndex = visiblePages.indexOfFirst { it.second.id == page.id }
-                                val stride = itemHeightPx + with(density) { 10.dp.roundToPx() }
-                                val targetVisibleIndex = (sourceVisibleIndex + (dragOffset / stride).roundToInt())
-                                    .coerceIn(0, visiblePages.lastIndex)
-                                dragTargetIndex = visiblePages[targetVisibleIndex].first
+                                dragPointerY += amount.y
+                                updatePageDragTarget(page.id, dragPointerY)
                             }
                         },
                     ) {
@@ -3091,6 +3844,18 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
     }
 }
 
+@Composable
+private fun PageInsertionMarker(modifier: Modifier = Modifier) {
+    Row(
+        modifier.fillMaxWidth().height(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50)))
+        Box(Modifier.weight(1f).height(3.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50)))
+        Box(Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50)))
+    }
+}
+
 private const val DOCUMENT_PAGE_GAP = 18_000f
 
 private data class PagePlacement(
@@ -3177,6 +3942,7 @@ private fun ContinuousPageCanvas(
         mutableStateOf(ViewportTransform(1f, 0f, 0f, layout.width, layout.height))
     }
     var minimumScale by remember(tab.id) { mutableStateOf(1f) }
+    var restoredSavedViewport by remember(tab.id) { mutableStateOf(false) }
     var viewportWidth by remember { mutableIntStateOf(1) }
     var viewportHeight by remember { mutableIntStateOf(1) }
     var selectedObject by remember(tab.id) { mutableIntStateOf(-1) }
@@ -3621,6 +4387,31 @@ private fun ContinuousPageCanvas(
     fun updateViewport(value: ViewportTransform) {
         viewport = value.copy(pageWidth = layout.width, pageHeight = layout.height)
             .clampedToDocument(viewportWidth.toFloat(), viewportHeight.toFloat())
+        tab.rememberViewport(viewport, minimumScale, viewportWidth, viewportHeight)
+    }
+
+    fun restoreSavedViewportIfReady() {
+        if (restoredSavedViewport || viewportWidth <= 1 || viewportHeight <= 1) return
+        val nextMinimum = (viewportWidth * .90f / layout.width).coerceAtLeast(.0001f)
+        minimumScale = nextMinimum
+        val saved = tab.restoredViewport()
+        restoredSavedViewport = true
+        if (saved == null) {
+            updateViewport(viewport.copy(scale = nextMinimum, offsetX = 0f, offsetY = 0f))
+        } else {
+            val scale = (nextMinimum * saved.zoomRatio).coerceIn(nextMinimum, nextMinimum * 8f)
+            updateViewport(
+                viewport.copy(
+                    scale = scale,
+                    offsetX = viewportWidth / 2f - saved.centerX * scale,
+                    offsetY = viewportHeight / 2f - saved.centerY * scale,
+                ),
+            )
+        }
+    }
+
+    LaunchedEffect(tab.id, viewportWidth, viewportHeight, layout.width, layout.height) {
+        restoreSavedViewportIfReady()
     }
 
     fun scrollDocument(deltaY: Float) {
@@ -3660,13 +4451,29 @@ private fun ContinuousPageCanvas(
     Box(
         modifier.fillMaxSize().background(Color(0xFF0E1014)).clip(RoundedCornerShape(2.dp))
             .onSizeChanged { size ->
+                val previousWidth = viewportWidth
+                val previousHeight = viewportHeight
+                val previousMinimum = minimumScale
+                val previousCenter = if (restoredSavedViewport && previousWidth > 1 && previousHeight > 1) {
+                    viewport.toPage(previousWidth / 2f, previousHeight / 2f)
+                } else null
+                val previousZoomRatio = if (previousMinimum > 0f) viewport.scale / previousMinimum else 1f
                 viewportWidth = size.width
                 viewportHeight = size.height
                 val nextMinimum = (size.width * .90f / layout.width).coerceAtLeast(.0001f)
-                val wasAtMinimum = viewport.scale <= minimumScale * 1.01f
                 minimumScale = nextMinimum
-                val nextScale = if (wasAtMinimum) nextMinimum else viewport.scale.coerceAtLeast(nextMinimum)
-                updateViewport(viewport.copy(scale = nextScale))
+                if (previousCenter != null) {
+                    val nextScale = (nextMinimum * previousZoomRatio).coerceIn(nextMinimum, nextMinimum * 8f)
+                    updateViewport(
+                        viewport.copy(
+                            scale = nextScale,
+                            offsetX = size.width / 2f - previousCenter.x * nextScale,
+                            offsetY = size.height / 2f - previousCenter.y * nextScale,
+                        ),
+                    )
+                } else {
+                    restoreSavedViewportIfReady()
+                }
             },
     ) {
         Canvas(Modifier.fillMaxSize()) {
@@ -5773,6 +6580,16 @@ private fun readableKeyName(keyCode: Int): String {
         .joinToString(" ") { word -> word.replaceFirstChar(Char::uppercase) }
 }
 
+private class FloatingNoteBody(
+    val noteId: Int,
+    initialPosition: Offset,
+    initialVelocity: Offset,
+) {
+    var position by mutableStateOf(initialPosition)
+    var velocity by mutableStateOf(initialVelocity)
+    var dragging by mutableStateOf(false)
+}
+
 @Composable
 private fun FloatingNotesOverlay(
     notebooks: List<EditorTab>,
@@ -5781,92 +6598,269 @@ private fun FloatingNotesOverlay(
     onDismiss: () -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
-    val groups = notebooks.groupBy { it.folderPath ?: "Unfiled" }
-        .toList()
-        .sortedWith(compareBy<Pair<String, List<EditorTab>>> { it.first == "Unfiled" }.thenBy { it.first.lowercase() })
+    var query by rememberSaveable { mutableStateOf("") }
+    val bodies = remember { mutableStateMapOf<Int, FloatingNoteBody>() }
+    val backdropReveal = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { backdropReveal.animateTo(1f, tween(380, easing = FastOutSlowInEasing)) }
+    val density = LocalDensity.current
     BoxWithConstraints(
-        Modifier.fillMaxSize().background(Color(0xE60A0C11)).zIndex(95f),
+        Modifier.fillMaxSize().zIndex(95f),
     ) {
-        val columns = (maxWidth / 184.dp).toInt().coerceAtLeast(1)
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(26.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Floating notes", style = MaterialTheme.typography.headlineMedium, color = Color.White)
-                    Text(
-                        "Notes in the same folder stay close together",
-                        color = Color.White.copy(alpha = .68f),
+        val noteAspectRatio = 136f / 184f
+        val usableHeight = (maxHeight - 124.dp).coerceAtLeast(180.dp)
+        val targetAreaPerNote = maxWidth.value * usableHeight.value * .56f / notebooks.size.coerceAtLeast(1)
+        val adaptiveNoteWidth = sqrt(targetAreaPerNote * noteAspectRatio).coerceIn(64f, 136f)
+        val noteWidth = adaptiveNoteWidth.dp
+        val noteHeight = (adaptiveNoteWidth / noteAspectRatio).dp
+        val noteWidthPx = with(density) { noteWidth.toPx() }
+        val noteHeightPx = with(density) { noteHeight.toPx() }
+        val canvasWidthPx = with(density) { maxWidth.toPx() }
+        val canvasHeightPx = with(density) { maxHeight.toPx() }
+        val edgePaddingPx = with(density) { 14.dp.toPx() }
+        val searchFloorPx = with(density) { 124.dp.toPx() }
+        val notebookKey = notebooks.joinToString("|") { "${it.id}:${it.folderPath}" }
+
+        LaunchedEffect(notebookKey, canvasWidthPx, canvasHeightPx) {
+            val activeIds = notebooks.mapTo(mutableSetOf()) { it.id }
+            bodies.keys.filterNot(activeIds::contains).forEach(bodies::remove)
+            val maxX = (canvasWidthPx - noteWidthPx - edgePaddingPx).coerceAtLeast(edgePaddingPx)
+            val maxY = (canvasHeightPx - noteHeightPx - edgePaddingPx).coerceAtLeast(searchFloorPx)
+            notebooks.forEach { note ->
+                val groupSeed = (note.folderPath ?: "Main").hashCode()
+                val groupRandom = Random(groupSeed)
+                val groupCenter = Offset(
+                    edgePaddingPx + groupRandom.nextFloat() * (maxX - edgePaddingPx).coerceAtLeast(1f),
+                    searchFloorPx + groupRandom.nextFloat() * (maxY - searchFloorPx).coerceAtLeast(1f),
+                )
+                val random = Random(note.persistentId.hashCode())
+                bodies.getOrPut(note.id) {
+                    val angle = random.nextFloat() * (Math.PI * 2.0).toFloat()
+                    val position = Offset(
+                        (groupCenter.x + (random.nextFloat() - .5f) * noteWidthPx * 2.8f).coerceIn(edgePaddingPx, maxX),
+                        (groupCenter.y + (random.nextFloat() - .5f) * noteHeightPx * 1.8f).coerceIn(searchFloorPx, maxY),
                     )
+                    val speed = with(density) { (7f + random.nextFloat() * 11f).dp.toPx() }
+                    FloatingNoteBody(note.id, position, Offset(cos(angle) * speed, sin(angle) * speed))
+                }.also { body ->
+                    body.position = Offset(body.position.x.coerceIn(edgePaddingPx, maxX), body.position.y.coerceIn(searchFloorPx, maxY))
                 }
-                IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "Close", tint = Color.White) }
             }
-            groups.forEach { (folder, folderNotes) ->
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Folder, null, tint = MaterialTheme.colorScheme.primary)
-                        Text(
-                            folder,
-                            Modifier.padding(start = 8.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White,
-                        )
-                        Text(
-                            "  ${folderNotes.size}",
-                            color = Color.White.copy(alpha = .55f),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
+
+            var previousFrame = withFrameNanos { it }
+            while (isActive) {
+                val frame = withFrameNanos { it }
+                val dt = ((frame - previousFrame) / 1_000_000_000f).coerceIn(.001f, .034f)
+                previousFrame = frame
+                val activeBodies = notebooks.mapNotNull { bodies[it.id] }
+                activeBodies.forEach { body ->
+                    if (body.dragging) return@forEach
+                    var position = body.position + body.velocity * dt
+                    var velocity = body.velocity * .9994f
+                    if (position.x < edgePaddingPx) {
+                        position = position.copy(x = edgePaddingPx); velocity = velocity.copy(x = kotlin.math.abs(velocity.x) * .88f)
+                    } else if (position.x > maxX) {
+                        position = position.copy(x = maxX); velocity = velocity.copy(x = -kotlin.math.abs(velocity.x) * .88f)
                     }
-                    folderNotes.sortedBy { it.title.lowercase() }.chunked(columns).forEach { rowNotes ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            rowNotes.forEach { note ->
-                                val seed = note.persistentId.hashCode()
-                                val offsetX = ((seed and 7) - 3).dp
-                                val offsetY = (((seed ushr 3) and 7) - 3).dp
-                                val rotation = (((seed ushr 6) and 7) - 3) * .7f
-                                Box(Modifier.weight(1f).height(112.dp), contentAlignment = Alignment.Center) {
-                                    Surface(
-                                        onClick = { onOpen(note) },
-                                        modifier = Modifier.fillMaxWidth().height(88.dp)
-                                            .padding(horizontal = 5.dp)
-                                            .offset(offsetX, offsetY)
-                                            .graphicsLayer { rotationZ = rotation },
-                                        shape = RoundedCornerShape(18.dp),
-                                        color = Color(note.coverArgb),
-                                        border = androidx.compose.foundation.BorderStroke(
-                                            if (note.id == selectedTabId) 3.dp else 1.dp,
-                                            if (note.id == selectedTabId) MaterialTheme.colorScheme.primary
-                                            else Color.White.copy(alpha = .20f),
-                                        ),
-                                        shadowElevation = 12.dp,
-                                    ) {
-                                        Column(
-                                            Modifier.fillMaxSize().padding(14.dp),
-                                            verticalArrangement = Arrangement.SpaceBetween,
-                                        ) {
-                                            Text(
-                                                note.title,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = if (Color(note.coverArgb).luminance() > .45f) Color(0xFF111318) else Color.White,
-                                                style = MaterialTheme.typography.titleSmall,
-                                            )
-                                            Text(
-                                                "${note.pages.size} page${if (note.pages.size == 1) "" else "s"}",
-                                                color = if (Color(note.coverArgb).luminance() > .45f) Color(0xB3111318) else Color.White.copy(alpha = .70f),
-                                                style = MaterialTheme.typography.labelSmall,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            repeat(columns - rowNotes.size) { Spacer(Modifier.weight(1f)) }
+                    if (position.y < searchFloorPx) {
+                        position = position.copy(y = searchFloorPx); velocity = velocity.copy(y = kotlin.math.abs(velocity.y) * .88f)
+                    } else if (position.y > maxY) {
+                        position = position.copy(y = maxY); velocity = velocity.copy(y = -kotlin.math.abs(velocity.y) * .88f)
+                    }
+                    body.position = position
+                    body.velocity = velocity
+                }
+                for (firstIndex in 0 until activeBodies.lastIndex) {
+                    val first = activeBodies[firstIndex]
+                    for (secondIndex in firstIndex + 1 until activeBodies.size) {
+                        val second = activeBodies[secondIndex]
+                        val overlapX = minOf(first.position.x + noteWidthPx, second.position.x + noteWidthPx) -
+                            maxOf(first.position.x, second.position.x)
+                        val overlapY = minOf(first.position.y + noteHeightPx, second.position.y + noteHeightPx) -
+                            maxOf(first.position.y, second.position.y)
+                        if (overlapX <= 0f || overlapY <= 0f) continue
+                        if (overlapX < overlapY) {
+                            val direction = if (first.position.x < second.position.x) -1f else 1f
+                            val firstShare = if (first.dragging) 0f else if (second.dragging) 1f else .5f
+                            val secondShare = if (second.dragging) 0f else if (first.dragging) 1f else .5f
+                            first.position += Offset(direction * overlapX * firstShare, 0f)
+                            second.position -= Offset(direction * overlapX * secondShare, 0f)
+                            if (!first.dragging && !second.dragging) {
+                                val firstX = first.velocity.x
+                                first.velocity = first.velocity.copy(x = second.velocity.x * .9f)
+                                second.velocity = second.velocity.copy(x = firstX * .9f)
+                            } else if (!first.dragging) first.velocity = first.velocity.copy(x = direction * kotlin.math.abs(first.velocity.x).coerceAtLeast(80f))
+                            else if (!second.dragging) second.velocity = second.velocity.copy(x = -direction * kotlin.math.abs(second.velocity.x).coerceAtLeast(80f))
+                        } else {
+                            val direction = if (first.position.y < second.position.y) -1f else 1f
+                            val firstShare = if (first.dragging) 0f else if (second.dragging) 1f else .5f
+                            val secondShare = if (second.dragging) 0f else if (first.dragging) 1f else .5f
+                            first.position += Offset(0f, direction * overlapY * firstShare)
+                            second.position -= Offset(0f, direction * overlapY * secondShare)
+                            if (!first.dragging && !second.dragging) {
+                                val firstY = first.velocity.y
+                                first.velocity = first.velocity.copy(y = second.velocity.y * .9f)
+                                second.velocity = second.velocity.copy(y = firstY * .9f)
+                            } else if (!first.dragging) first.velocity = first.velocity.copy(y = direction * kotlin.math.abs(first.velocity.y).coerceAtLeast(80f))
+                            else if (!second.dragging) second.velocity = second.velocity.copy(y = -direction * kotlin.math.abs(second.velocity.y).coerceAtLeast(80f))
                         }
                     }
                 }
             }
-            Spacer(Modifier.height(30.dp))
+        }
+
+        Box(
+            Modifier.fillMaxSize().background(Color(0xB3070A0F).copy(alpha = .70f * backdropReveal.value)).pointerInput(Unit) {
+                detectTapGestures(onTap = { onDismiss() })
+            },
+        )
+
+        if (notebooks.isEmpty()) Text(
+            "No notes yet",
+            modifier = Modifier.align(Alignment.Center),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleLarge,
+        )
+
+        notebooks.forEachIndexed { index, note ->
+            val body = bodies[note.id] ?: return@forEachIndexed
+            val matches = query.isBlank() || note.title.contains(query.trim(), ignoreCase = true)
+            FloatingNotebookCard(
+                note = note,
+                body = body,
+                width = noteWidth,
+                height = noteHeight,
+                selected = note.id == selectedTabId,
+                matchesSearch = matches,
+                revealDelayMillis = (index.coerceAtMost(12) * 38) + (kotlin.math.abs(note.persistentId.hashCode()) % 90),
+                onOpen = { onOpen(note) },
+            )
+        }
+
+        val searchReveal = backdropReveal.value
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 48.dp)
+                .fillMaxWidth(.58f)
+                .widthIn(max = 480.dp)
+                .graphicsLayer { alpha = searchReveal; scaleX = .86f + .14f * searchReveal; scaleY = .86f + .14f * searchReveal }
+                .zIndex(10f),
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Outlined.Search, null) },
+            trailingIcon = {
+                if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "Clear search") }
+            },
+            placeholder = { Text("Search notes") },
+            shape = RoundedCornerShape(100),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = {}),
+        )
+    }
+}
+
+@Composable
+private fun FloatingNotebookCard(
+    note: EditorTab,
+    body: FloatingNoteBody,
+    width: Dp,
+    height: Dp,
+    selected: Boolean,
+    matchesSearch: Boolean,
+    revealDelayMillis: Int,
+    onOpen: () -> Unit,
+) {
+    val previewPage = note.pages.firstOrNull()
+    val compact = width < 104.dp
+    val veryCompact = width < 80.dp
+    val reveal = remember(note.id) { Animatable(0f) }
+    var dragSampleAt by remember(note.id) { mutableLongStateOf(0L) }
+    val matchAlpha by animateFloatAsState(if (matchesSearch) 1f else .30f, tween(240), label = "floating-match")
+    LaunchedEffect(note.id, previewPage?.id) { previewPage?.let { note.requestThumbnail(it.id) } }
+    LaunchedEffect(note.id) {
+        delay(revealDelayMillis.toLong())
+        reveal.animateTo(1f, tween(470, easing = BackOutEasing))
+    }
+    Card(
+        onClick = onOpen,
+        modifier = Modifier
+            .size(width, height)
+            .graphicsLayer {
+                translationX = body.position.x
+                translationY = body.position.y
+                val entranceScale = .54f + .46f * reveal.value
+                scaleX = entranceScale
+                scaleY = entranceScale
+                alpha = reveal.value * matchAlpha
+                rotationZ = if (body.dragging) 0f else ((note.persistentId.hashCode() % 7) - 3) * .32f
+            }
+            .zIndex(if (body.dragging) 8f else 2f)
+            .pointerInput(note.id, body) {
+                detectDragGestures(
+                    onDragStart = {
+                        body.dragging = true
+                        body.velocity = Offset.Zero
+                        dragSampleAt = SystemClock.uptimeMillis()
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        body.position += amount
+                        val now = SystemClock.uptimeMillis()
+                        val seconds = ((now - dragSampleAt).coerceAtLeast(1L)) / 1_000f
+                        body.velocity = Offset(
+                            (amount.x / seconds).coerceIn(-2_400f, 2_400f),
+                            (amount.y / seconds).coerceIn(-2_400f, 2_400f),
+                        )
+                        dragSampleAt = now
+                    },
+                    onDragEnd = { body.dragging = false },
+                    onDragCancel = { body.dragging = false; body.velocity = Offset.Zero },
+                )
+            },
+        shape = RoundedCornerShape(if (compact) 12.dp else 16.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            if (selected) if (compact) 2.dp else 3.dp else 1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = .55f),
+        ),
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                color = Color(note.coverArgb),
+            ) {
+                Box(Modifier.fillMaxSize().padding(if (compact) 6.dp else 10.dp), contentAlignment = Alignment.Center) {
+                    if (previewPage != null) PageThumbnailPreview(
+                        previewPage,
+                        Modifier
+                            .fillMaxHeight()
+                            .aspectRatio(previewPage.size.widthMicrons / previewPage.size.heightMicrons)
+                            .clip(RoundedCornerShape(4.dp))
+                            .shadow(4.dp, RoundedCornerShape(4.dp)),
+                    ) else Icon(Icons.Outlined.Edit, null, Modifier.size(38.dp), tint = Color.White)
+                    if (!matchesSearch) Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .72f)))
+                }
+            }
+            Column(Modifier.fillMaxWidth().padding(horizontal = if (compact) 7.dp else 11.dp, vertical = if (compact) 5.dp else 8.dp)) {
+                Text(
+                    note.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
+                )
+                if (!compact) Text(
+                    "${note.pages.size} pages · ${note.folderPath ?: "Main"}",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                ) else if (!veryCompact) Text(
+                    "${note.pages.size}p",
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
     }
 }
@@ -5915,11 +6909,18 @@ private fun AppSettingsDialog(
     var surface by remember { mutableStateOf("") }
     var themePendingDelete by remember { mutableStateOf<AppThemePreset?>(null) }
     var waitingForFloatingNotesKey by remember { mutableStateOf(false) }
+    val shortcutFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(hardwareKeySequence) {
         if (waitingForFloatingNotesKey && hardwareKeySequence > 0 && hardwareKeyCode != KeyEvent.KEYCODE_UNKNOWN) {
             onSettingsChanged(settings.copy(floatingNotesKeyCode = hardwareKeyCode))
             waitingForFloatingNotesKey = false
+        }
+    }
+    LaunchedEffect(waitingForFloatingNotesKey) {
+        if (waitingForFloatingNotesKey) {
+            delay(40)
+            shortcutFocusRequester.requestFocus()
         }
     }
 
@@ -5954,6 +6955,16 @@ private fun AppSettingsDialog(
     ) {
         Surface(
             Modifier.fillMaxWidth(.92f).fillMaxHeight(.90f)
+                .focusRequester(shortcutFocusRequester)
+                .focusable()
+                .onPreviewKeyEvent { event ->
+                    val keyCode = event.nativeKeyEvent.keyCode
+                    if (waitingForFloatingNotesKey && event.type == KeyEventType.KeyDown && keyCode != KeyEvent.KEYCODE_UNKNOWN) {
+                        onSettingsChanged(settings.copy(floatingNotesKeyCode = keyCode))
+                        waitingForFloatingNotesKey = false
+                        true
+                    } else false
+                }
                 .pointerInteropFilter { event ->
                     val stylus = event.isFromSource(android.view.InputDevice.SOURCE_STYLUS) ||
                         event.getToolType(event.actionIndex) == android.view.MotionEvent.TOOL_TYPE_STYLUS ||

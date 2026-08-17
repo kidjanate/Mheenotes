@@ -13,7 +13,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
@@ -72,9 +71,7 @@ class MainActivity : ComponentActivity() {
                     ),
                 ) {
                     Surface(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding(),
+                        modifier = Modifier.fillMaxSize(),
                         color = androidx.compose.material3.MaterialTheme.colorScheme.background,
                     ) {
                         MheenotesEditor(
@@ -101,28 +98,43 @@ class MainActivity : ComponentActivity() {
         incomingNotebookId.value = intent.getStringExtra(EXTRA_NOTEBOOK_ID)
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (event.repeatCount == 0) {
-            hardwareKeyCode.intValue = keyCode
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Capture before Compose, a dialog, or a focused text field gets a chance to consume
+        // the event. This is required for Bluetooth and other physical keyboards.
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && event.keyCode != KeyEvent.KEYCODE_UNKNOWN) {
+            hardwareKeyCode.intValue = event.keyCode
             hardwareKeySequence.intValue++
         }
-        return super.onKeyDown(keyCode, event)
+        return super.dispatchKeyEvent(event)
     }
 
-    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
-        if (event.isFromSource(InputDevice.SOURCE_STYLUS)) {
-            val buttons = event.buttonState and (
-                MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY or
-                    MotionEvent.BUTTON_SECONDARY or MotionEvent.BUTTON_TERTIARY
-                )
-            val newlyPressed = buttons and observedStylusButtons.inv()
-            observedStylusButtons = buttons
-            if (newlyPressed != 0) {
-                hardwareKeyCode.intValue = -Integer.lowestOneBit(newlyPressed)
-                hardwareKeySequence.intValue++
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        captureStylusButton(event)
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        captureStylusButton(event)
+        return super.dispatchTouchEvent(event)
+    }
+
+    private fun captureStylusButton(event: MotionEvent) {
+        val pointerIsStylus = event.isFromSource(InputDevice.SOURCE_STYLUS) ||
+            (0 until event.pointerCount).any { index ->
+                event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS ||
+                    event.getToolType(index) == MotionEvent.TOOL_TYPE_ERASER
             }
+        if (!pointerIsStylus) return
+        val buttons = event.buttonState and (
+            MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY or
+                MotionEvent.BUTTON_SECONDARY or MotionEvent.BUTTON_TERTIARY
+            )
+        val newlyPressed = buttons and observedStylusButtons.inv()
+        observedStylusButtons = buttons
+        if (newlyPressed != 0) {
+            hardwareKeyCode.intValue = -Integer.lowestOneBit(newlyPressed)
+            hardwareKeySequence.intValue++
         }
-        return super.onGenericMotionEvent(event)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Mheenotes</string>
-    <string name="all_notes">โน้ตทั้งหมด</string>
+    <string name="main">หน้าหลัก</string>
     <string name="recent">ล่าสุด</string>
     <string name="recently_opened">เปิดล่าสุด</string>
     <string name="favorites">รายการโปรด</string>
-    <string name="folders">โฟลเดอร์</string>
     <string name="trash">ถังขยะ</string>
     <string name="settings">การตั้งค่า</string>
     <string name="app_settings">การตั้งค่าแอป</string>
@@ -16,9 +15,16 @@
     <string name="create_notebook">สร้างสมุดโน้ต</string>
     <string name="create_folder">สร้างโฟลเดอร์</string>
     <string name="new_folder">โฟลเดอร์ใหม่</string>
+    <string name="folder_name">ชื่อโฟลเดอร์</string>
+    <string name="folder_created_inside">สร้างภายใน %1$s</string>
+    <string name="folder_created_in_main">สร้างในหน้าหลัก</string>
+    <string name="folder_nested_hint">ใช้ / เพื่อสร้างโฟลเดอร์ซ้อนกัน</string>
+    <string name="folder_actions">การทำงานของโฟลเดอร์</string>
+    <string name="rename_folder">เปลี่ยนชื่อโฟลเดอร์</string>
+    <string name="move_folder_trash_title">ย้ายโฟลเดอร์ไปถังขยะหรือไม่</string>
+    <string name="move_folder_trash_message">สมุดโน้ตและโฟลเดอร์ย่อยทั้งหมดภายใน %1$s จะถูกย้ายไปถังขยะพร้อมกัน คุณสามารถกู้คืนโครงสร้างโฟลเดอร์ทั้งหมดได้ภายหลัง</string>
     <string name="no_notebooks">ไม่มีสมุดโน้ตที่นี่</string>
     <string name="trash_empty">ถังขยะว่าง</string>
-    <string name="folder_grid">ตารางโฟลเดอร์</string>
     <string name="notes_count">%1$d โน้ต</string>
     <string name="pages_count">%1$d หน้า</string>
     <string name="open_new_window">เปิดในหน้าต่างใหม่</string>
