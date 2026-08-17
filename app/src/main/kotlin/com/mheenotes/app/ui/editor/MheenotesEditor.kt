@@ -1,0 +1,6841 @@
+package com.mheenotes.app.ui.editor
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.MediaPlayer
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.os.SystemClock
+import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.AutoFixHigh
+import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.Brush
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Create
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.ContentCut
+import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.Crop
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FileOpen
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FlipToBack
+import androidx.compose.material.icons.outlined.FlipToFront
+import androidx.compose.material.icons.outlined.Gesture
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Highlight
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.LibraryBooks
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.outlined.NavigateBefore
+import androidx.compose.material.icons.outlined.NavigateNext
+import androidx.compose.material.icons.outlined.NoteAdd
+import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Redo
+import androidx.compose.material.icons.outlined.RotateRight
+import androidx.compose.material.icons.outlined.FormatColorFill
+import androidx.compose.material.icons.outlined.LineWeight
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.ShapeLine
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.ViewList
+import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.Undo
+import androidx.compose.material.icons.outlined.ViewSidebar
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import com.mheenotes.app.document.ImportedPdf
+import com.mheenotes.app.MainActivity
+import com.mheenotes.app.R
+import com.mheenotes.app.document.PageExporter
+import com.mheenotes.app.document.PdfServices
+import com.mheenotes.app.ui.AppSettings
+import com.mheenotes.app.ui.AppThemePreset
+import com.mheenotes.app.ui.ActionActivationMode
+import com.mheenotes.app.ui.defaultThemePresets
+import com.mheenotes.app.widget.InkActivityTracker
+import com.mheenotes.app.widget.RecentNotesWidgetProvider
+import com.mheenotes.app.editor.CommittedInkStroke
+import com.mheenotes.app.editor.EditorSession
+import com.mheenotes.app.editor.EraserMode
+import com.mheenotes.app.editor.FinishedInkStroke
+import com.mheenotes.app.editor.FingerObjectGesture
+import com.mheenotes.app.editor.InkAuthoringOverlayView
+import com.mheenotes.app.editor.SaveStatus
+import com.mheenotes.app.editor.ViewportTransform
+import com.mheenotes.app.editor.toAndroidXStroke
+import com.mheenotes.core.model.InkTool
+import com.mheenotes.core.model.InkStroke
+import com.mheenotes.core.model.AssetId
+import com.mheenotes.core.model.ActionMapping
+import com.mheenotes.core.model.GestureDrawing
+import com.mheenotes.core.model.GesturePoint
+import com.mheenotes.core.model.MappedAction
+import com.mheenotes.core.model.NotebookDocument
+import com.mheenotes.core.model.NotebookId
+import com.mheenotes.core.model.NotebookPage
+import com.mheenotes.core.model.ObjectId
+import com.mheenotes.core.model.ObjectCrop
+import com.mheenotes.core.model.ObjectTransform
+import com.mheenotes.core.model.PageObject
+import com.mheenotes.core.model.PageId
+import com.mheenotes.core.model.PagePoint
+import com.mheenotes.core.model.PageRect
+import com.mheenotes.core.model.PageSize
+import com.mheenotes.core.model.PageTemplate
+import com.mheenotes.core.model.PdfPageSource
+import com.mheenotes.core.model.SourceDocument
+import com.mheenotes.core.model.SourceDocumentId
+import com.mheenotes.core.model.ShapeKind
+import com.mheenotes.core.model.StrokeId
+import com.mheenotes.core.model.StrokeStyle
+import com.mheenotes.core.model.TextAlignment
+import com.mheenotes.core.model.ImageObject as ModelImageObject
+import com.mheenotes.core.model.ShapeObject as ModelShapeObject
+import com.mheenotes.core.model.TextObject as ModelTextObject
+import com.mheenotes.core.model.AudioObject as ModelAudioObject
+import com.mheenotes.core.storage.NativeNotebookContainer
+import com.mheenotes.core.storage.ActionMapStore
+import com.mheenotes.gesture.engine.ActionMapRecognizer
+import com.mheenotes.ink.engine.ScribbleSensitivity
+import com.mheenotes.ink.engine.LassoSelection
+import com.mheenotes.ink.engine.SelectionTransform
+import com.mheenotes.ink.engine.DrawHoldShapeDetector
+import com.mheenotes.ink.engine.CorrectedShape
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import androidx.ink.strokes.Stroke as AndroidXStroke
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.UUID
+import kotlin.math.roundToInt
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.math.hypot
+
+private const val A4_WIDTH = 210_000f
+private const val A4_HEIGHT = 297_000f
+
+private enum class AppScreen { Library, Editor }
+private val BackOutEasing = Easing { progress ->
+    val shifted = progress - 1f
+    1f + 2.70158f * shifted * shifted * shifted + 1.70158f * shifted * shifted
+}
+private enum class LibrarySection { All, Recent, Favorites, Folders, Trash }
+private enum class LibraryLayout { Grid, List }
+private enum class LibrarySort { Name, Recent, PageCount }
+private enum class PdfImportDestination { NewNotebook, CurrentNotebook }
+private enum class DockEdge { Top, Left, Right }
+private enum class EditorMode { Ink, Lasso, Object, Text, Shape, Audio }
+private enum class AppSettingsSection { General, Appearance, Drawing, Fonts, Input }
+private enum class PaperPreset(val label: String, val widthMm: Float, val heightMm: Float) {
+    A3("A3", 297f, 420f),
+    A4("A4", 210f, 297f),
+    A5("A5", 148f, 210f),
+    Letter("Letter", 215.9f, 279.4f),
+    Tablet("Screen", 160f, 256f),
+    Widescreen("16:9", 160f, 90f),
+    Custom("Custom", 210f, 297f),
+}
+
+private data class NotebookCreationSpec(
+    val title: String,
+    val size: PageSize,
+    val template: PageTemplate,
+    val backgroundArgb: Int,
+    val templateLineArgb: Int,
+    val coverArgb: Int,
+)
+
+private data class PageInsertSpec(
+    val size: PageSize,
+    val template: PageTemplate,
+    val backgroundArgb: Int,
+    val templateLineArgb: Int,
+)
+
+private data class PdfNotebookHit(val notebookPageIndex: Int, val matchCount: Int)
+private data class PdfNotebookLink(val sourceNotebookPageIndex: Int, val targetNotebookPageIndex: Int)
+
+private sealed interface SceneObject {
+    val id: ObjectId
+    val zIndex: Long
+
+    data class Image(
+        val bitmap: Bitmap,
+        val asset: File,
+        val x: Float,
+        val y: Float,
+        val width: Float,
+        val height: Float,
+        val rotation: Float = 0f,
+        val opacity: Float = 1f,
+        val crop: ObjectCrop = ObjectCrop(),
+        val locked: Boolean = false,
+        override val id: ObjectId = ObjectId(UUID.randomUUID().toString()),
+        val assetId: AssetId = AssetId(asset.nameWithoutExtension),
+        override val zIndex: Long = 0L,
+    ) : SceneObject
+
+    data class TextBox(
+        val text: String,
+        val x: Float,
+        val y: Float,
+        val size: Float,
+        val argb: Int = 0xFF20242B.toInt(),
+        val bold: Boolean = false,
+        val italic: Boolean = false,
+        val underline: Boolean = false,
+        val alignment: TextAlignment = TextAlignment.Start,
+        val fontFamily: String = "sans-serif",
+        val outlineArgb: Int? = null,
+        val outlineWidth: Float = 0f,
+        val curveDegrees: Float = 0f,
+        val width: Float = 70_000f,
+        val height: Float = size * 2f,
+        val rotation: Float = 0f,
+        override val id: ObjectId = ObjectId(UUID.randomUUID().toString()),
+        override val zIndex: Long = 0L,
+    ) : SceneObject
+
+    data class Rectangle(
+        val x: Float,
+        val y: Float,
+        val width: Float,
+        val height: Float,
+        val kind: ShapeKind = ShapeKind.Rectangle,
+        val strokeArgb: Int = 0xFF2563EB.toInt(),
+        val strokeWidth: Float = 1_000f,
+        val fillArgb: Int? = null,
+        val rotation: Float = 0f,
+        override val id: ObjectId = ObjectId(UUID.randomUUID().toString()),
+        override val zIndex: Long = 0L,
+    ) : SceneObject
+
+    data class Audio(
+        val asset: File,
+        val x: Float,
+        val y: Float,
+        val width: Float = 12_000f,
+        val height: Float = 12_000f,
+        val durationMillis: Long = 0L,
+        val transcript: String = "",
+        override val id: ObjectId = ObjectId(UUID.randomUUID().toString()),
+        val assetId: AssetId = AssetId(asset.nameWithoutExtension),
+        override val zIndex: Long = 0L,
+    ) : SceneObject
+}
+
+private fun SceneObject.toPageObject(): PageObject = when (this) {
+    is SceneObject.Image -> ModelImageObject(
+        id = id,
+        assetId = assetId,
+        transform = ObjectTransform(x, y, width, height, rotation),
+        zIndex = zIndex,
+        opacity = opacity,
+        crop = crop,
+        locked = locked,
+    )
+    is SceneObject.TextBox -> ModelTextObject(
+        id = id,
+        text = text,
+        argb = argb,
+        textSizeMicrons = size,
+        bold = bold,
+        italic = italic,
+        underline = underline,
+        alignment = alignment,
+        fontFamily = fontFamily,
+        outlineArgb = outlineArgb,
+        outlineWidthMicrons = outlineWidth,
+        curveDegrees = curveDegrees,
+        transform = ObjectTransform(x, y, width, height, rotation),
+        zIndex = zIndex,
+    )
+    is SceneObject.Rectangle -> ModelShapeObject(
+        id = id,
+        kind = kind,
+        strokeArgb = strokeArgb,
+        strokeWidthMicrons = strokeWidth,
+        fillArgb = fillArgb,
+        transform = ObjectTransform(x, y, width, height, rotation),
+        zIndex = zIndex,
+    )
+    is SceneObject.Audio -> ModelAudioObject(
+        id = id,
+        assetId = assetId,
+        durationMillis = durationMillis,
+        transcript = transcript,
+        transform = ObjectTransform(x, y, width, height),
+        zIndex = zIndex,
+    )
+}
+
+private fun SceneObject.toExportObject(): PageExporter.ExportObject? = when (this) {
+    is SceneObject.Image -> PageExporter.ExportImage(
+        bitmap, x, y, width, height, rotation, opacity, crop, zIndex,
+    )
+    is SceneObject.TextBox -> PageExporter.ExportText(
+        text, x, y, size, argb, rotation, bold, italic, underline, alignment, fontFamily,
+        outlineArgb, outlineWidth, curveDegrees, zIndex,
+    )
+    is SceneObject.Rectangle -> PageExporter.ExportShape(
+        kind, x, y, width, height, rotation, strokeArgb, strokeWidth, fillArgb, zIndex,
+    )
+    is SceneObject.Audio -> null
+}
+
+private fun PageEntry.toExportPage() = PageExporter.ExportPage(
+    page = session.page,
+    background = pdfBackground,
+    widthMicrons = size.widthMicrons,
+    heightMicrons = size.heightMicrons,
+    objects = objects.mapNotNull(SceneObject::toExportObject),
+)
+
+private data class RuntimeInkStroke(
+    val stroke: AndroidXStroke,
+    val inputOriginX: Float,
+    val inputOriginY: Float,
+)
+
+private data class StrokeSizePreview(
+    val tool: InkTool,
+    val widthMicrons: Float,
+)
+
+private data class ActiveAudioRecording(
+    val pageIndex: Int,
+    val position: PagePoint,
+    val assetId: AssetId,
+    val file: File,
+    val recorder: AudioRecord,
+    val worker: Thread,
+    val recording: AtomicBoolean,
+    val startedAtMillis: Long,
+)
+
+private data class PageEntry(
+    val id: PageId,
+    val session: EditorSession,
+    val bookmarked: Boolean = false,
+    val rotation: Int = 0,
+    val template: PageTemplate = PageTemplate.Blank,
+    val size: PageSize = PageSize(A4_WIDTH, A4_HEIGHT),
+    val backgroundArgb: Int = 0xFFFFFEFA.toInt(),
+    val templateLineArgb: Int = 0x402563EB,
+    val pdfSource: Pair<File, Int>? = null,
+    val pdfBackground: Bitmap? = null,
+    val thumbnail: Bitmap? = null,
+    val objects: androidx.compose.runtime.snapshots.SnapshotStateList<SceneObject> = mutableStateListOf(),
+    // This map is read directly by the permanent-ink Canvas. It must participate in
+    // Compose snapshots so the wet stroke is not removed before the dry layer redraws.
+    val renderStrokes: MutableMap<StrokeId, RuntimeInkStroke> = mutableStateMapOf(),
+)
+
+private data class PageListSnapshot(
+    val entries: List<PageEntry>,
+    val selectedPageId: PageId,
+)
+
+private data class ObjectListSnapshot(
+    val pageId: PageId,
+    val objects: List<SceneObject>,
+)
+
+private class EditorTab(
+    val id: Int,
+    initialTitle: String,
+    private val root: File,
+    initialDocument: NotebookDocument? = null,
+    private val pdfServices: PdfServices? = null,
+    private val mainHandler: Handler? = null,
+) {
+    private val pendingPdfRenders = mutableSetOf<PageId>()
+    private val pendingThumbnailRenders = mutableSetOf<PageId>()
+    private val thumbnailCacheOrder = ArrayDeque<PageId>()
+    private var maximumToolWidthMicrons = 5_000f
+    private val ownedPageEntries = mutableListOf<PageEntry>()
+    private val pageUndo = ArrayDeque<PageListSnapshot>()
+    private val pageRedo = ArrayDeque<PageListSnapshot>()
+    private val objectUndo = ArrayDeque<ObjectListSnapshot>()
+    private val objectRedo = ArrayDeque<ObjectListSnapshot>()
+    var flushPendingInk: () -> Unit = {}
+    private val startingDocument = initialDocument ?: runCatching {
+        NativeNotebookContainer.loadManifest(root)
+    }.getOrNull()
+    private val notebookId = startingDocument?.id ?: NotebookId(UUID.randomUUID().toString())
+    val persistentId: String get() = notebookId.value
+    private val createdAtEpochMillis = startingDocument?.createdAtEpochMillis ?: System.currentTimeMillis()
+    var title by mutableStateOf(startingDocument?.title ?: initialTitle)
+    var folderPath by mutableStateOf(startingDocument?.folderPath)
+        private set
+    var favorite by mutableStateOf(startingDocument?.favorite ?: false)
+        private set
+    var trashedAtEpochMillis by mutableStateOf(startingDocument?.trashedAtEpochMillis)
+        private set
+    var lastOpenedAtEpochMillis by mutableStateOf(startingDocument?.lastOpenedAtEpochMillis ?: System.currentTimeMillis())
+        private set
+    var coverArgb by mutableIntStateOf(startingDocument?.coverArgb ?: 0xFF303747.toInt())
+        private set
+    val pages = mutableStateListOf<PageEntry>().apply {
+        startingDocument?.pages?.forEach { add(existingPage(it)) }
+        if (isEmpty()) add(newPage())
+    }
+    private var selectedPageIndexState by mutableIntStateOf(0)
+    var pageNavigationGeneration by mutableIntStateOf(0)
+        private set
+    var viewportResetGeneration by mutableIntStateOf(0)
+        private set
+    var selectedPageIndex: Int
+        get() = selectedPageIndexState
+        set(value) {
+            selectedPageIndexState = value.coerceIn(0, pages.lastIndex.coerceAtLeast(0))
+            requestPdfBackgroundsNear(selectedPageIndexState)
+        }
+    val session get() = pages[selectedPageIndex].session
+
+    fun navigateToPage(index: Int) {
+        selectedPageIndex = index
+        pageNavigationGeneration++
+    }
+    fun resetViewport() { viewportResetGeneration++ }
+
+    fun markOpened() {
+        lastOpenedAtEpochMillis = System.currentTimeMillis()
+        persistManifest()
+    }
+
+    fun rename(value: String) {
+        val cleaned = value.trim()
+        if (cleaned.isNotEmpty()) { title = cleaned; persistManifest() }
+    }
+
+    fun updateFavorite(value: Boolean) { favorite = value; persistManifest() }
+    fun moveToFolder(value: String?) { folderPath = value?.trim()?.trim('/')?.takeIf(String::isNotBlank); persistManifest() }
+    fun moveToTrash() { trashedAtEpochMillis = System.currentTimeMillis(); persistManifest() }
+    fun restoreFromTrash() { trashedAtEpochMillis = null; persistManifest() }
+    fun setCoverColor(argb: Int) { coverArgb = argb; persistManifest() }
+
+    fun configureInitialPage(
+        size: PageSize,
+        template: PageTemplate,
+        backgroundArgb: Int,
+        templateLineArgb: Int,
+    ) {
+        val page = pages.first()
+        pages[0] = page.copy(
+            size = size,
+            template = template,
+            backgroundArgb = backgroundArgb,
+            templateLineArgb = templateLineArgb,
+        )
+        persistManifest()
+    }
+
+    fun updateMaximumToolWidth(widthMicrons: Float) {
+        maximumToolWidthMicrons = widthMicrons
+        pages.forEach { it.session.updateMaximumToolWidth(widthMicrons) }
+    }
+
+    init {
+        persistManifest()
+        restorePdfBackgrounds()
+    }
+
+    val canUndoPageEdit get() = pageUndo.isNotEmpty()
+    val canRedoPageEdit get() = pageRedo.isNotEmpty()
+    val canUndoObjectEdit get() = objectUndo.isNotEmpty()
+    val canRedoObjectEdit get() = objectRedo.isNotEmpty()
+
+    fun recordObjectEdit(page: PageEntry) {
+        objectUndo.addLast(ObjectListSnapshot(page.id, page.objects.toList()))
+        while (objectUndo.size > 100) objectUndo.removeFirst()
+        objectRedo.clear()
+    }
+
+    private fun restoreObjects(snapshot: ObjectListSnapshot): ObjectListSnapshot? {
+        val page = pages.firstOrNull { it.id == snapshot.pageId } ?: return null
+        val current = ObjectListSnapshot(page.id, page.objects.toList())
+        page.objects.clear()
+        page.objects.addAll(snapshot.objects)
+        persistObjects()
+        return current
+    }
+
+    fun undoObjectEdit() {
+        if (objectUndo.isEmpty()) return
+        restoreObjects(objectUndo.removeLast())?.let(objectRedo::addLast)
+    }
+
+    fun redoObjectEdit() {
+        if (objectRedo.isEmpty()) return
+        restoreObjects(objectRedo.removeLast())?.let(objectUndo::addLast)
+    }
+
+    private fun pageSnapshot() = PageListSnapshot(pages.toList(), pages[selectedPageIndex].id)
+
+    private fun recordPageEdit() {
+        pageUndo.addLast(pageSnapshot())
+        while (pageUndo.size > 100) pageUndo.removeFirst()
+        pageRedo.clear()
+    }
+
+    private fun restorePageSnapshot(snapshot: PageListSnapshot) {
+        pages.clear()
+        pages.addAll(snapshot.entries)
+        navigateToPage(pages.indexOfFirst { it.id == snapshot.selectedPageId }.coerceAtLeast(0))
+        persistManifest()
+    }
+
+    fun undoPageEdit() {
+        if (pageUndo.isEmpty()) return
+        pageRedo.addLast(pageSnapshot())
+        restorePageSnapshot(pageUndo.removeLast())
+    }
+
+    fun redoPageEdit() {
+        if (pageRedo.isEmpty()) return
+        pageUndo.addLast(pageSnapshot())
+        restorePageSnapshot(pageRedo.removeLast())
+    }
+
+    fun addPage(after: Boolean = true, spec: PageInsertSpec? = null) {
+        recordPageEdit()
+        val insertionIndex = if (after) selectedPageIndex + 1 else selectedPageIndex
+        val source = pages[selectedPageIndex]
+        pages.add(
+            insertionIndex,
+            newPage().copy(
+                size = spec?.size ?: source.size,
+                template = spec?.template ?: source.template,
+                backgroundArgb = spec?.backgroundArgb ?: source.backgroundArgb,
+                templateLineArgb = spec?.templateLineArgb ?: source.templateLineArgb,
+            ),
+        )
+        navigateToPage(insertionIndex)
+        persistManifest()
+    }
+    fun duplicatePage() {
+        flushPendingInk()
+        recordPageEdit()
+        val source = pages[selectedPageIndex]
+        val duplicate = newPage().copy(
+            bookmarked = source.bookmarked, rotation = source.rotation,
+            template = source.template, size = source.size,
+            backgroundArgb = source.backgroundArgb, templateLineArgb = source.templateLineArgb,
+            pdfSource = source.pdfSource, pdfBackground = source.pdfBackground,
+            objects = mutableStateListOf<SceneObject>().apply {
+                addAll(source.objects.map(SceneObject::duplicate))
+            },
+        )
+        source.session.page.strokes.forEach { stroke ->
+            duplicate.session.acceptCompletedStroke(stroke.samples, stroke.style, detectScribbleErase = false)
+        }
+        pages.add(selectedPageIndex + 1, duplicate)
+        navigateToPage(selectedPageIndex + 1)
+        persistManifest()
+    }
+    fun deletePage() {
+        flushPendingInk()
+        if (pages.size <= 1) return
+        recordPageEdit()
+        pages.removeAt(selectedPageIndex)
+        navigateToPage(selectedPageIndex.coerceAtMost(pages.lastIndex))
+        persistManifest()
+    }
+
+    fun movePage(pageId: PageId, direction: Int) {
+        val from = pages.indexOfFirst { it.id == pageId }
+        if (from < 0) return
+        movePageTo(pageId, from + direction)
+    }
+
+    fun movePageTo(pageId: PageId, targetIndex: Int) {
+        val from = pages.indexOfFirst { it.id == pageId }
+        val to = targetIndex.coerceIn(0, pages.lastIndex)
+        if (from < 0 || from == to) return
+        recordPageEdit()
+        val selectedId = pages[selectedPageIndex].id
+        val moved = pages.removeAt(from)
+        pages.add(to, moved)
+        selectedPageIndex = pages.indexOfFirst { it.id == selectedId }
+        persistManifest()
+    }
+    fun toggleBookmark() { recordPageEdit(); pages[selectedPageIndex] = pages[selectedPageIndex].let { it.copy(bookmarked = !it.bookmarked) }; persistManifest() }
+    fun rotatePage() { recordPageEdit(); pages[selectedPageIndex] = pages[selectedPageIndex].let { it.copy(rotation = (it.rotation + 90) % 360) }; persistManifest() }
+    fun cycleTemplate() {
+        recordPageEdit()
+        val page = pages[selectedPageIndex]
+        pages[selectedPageIndex] = page.copy(template = PageTemplate.entries[(page.template.ordinal + 1) % PageTemplate.entries.size])
+        persistManifest()
+    }
+    fun cyclePageBackground() {
+        val choices = listOf(0xFFFFFEFA.toInt(), 0xFFFFFFFF.toInt(), 0xFFFFF7E6.toInt(), 0xFFF4F1E8.toInt(), 0xFF1D222B.toInt())
+        recordPageEdit()
+        val page = pages[selectedPageIndex]
+        pages[selectedPageIndex] = page.copy(backgroundArgb = choices[(choices.indexOf(page.backgroundArgb) + 1).mod(choices.size)])
+        persistManifest()
+    }
+    fun cycleTemplateLineColor() {
+        val choices = listOf(0x402563EB, 0x40777777, 0x40508A60, 0x40B45353, 0x60D6D9E0)
+        recordPageEdit()
+        val page = pages[selectedPageIndex]
+        pages[selectedPageIndex] = page.copy(templateLineArgb = choices[(choices.indexOf(page.templateLineArgb) + 1).mod(choices.size)])
+        persistManifest()
+    }
+    fun copyCurrentPageTo(target: EditorTab, move: Boolean) {
+        if (target === this || (move && pages.size <= 1)) return
+        flushPendingInk()
+        val source = pages[selectedPageIndex]
+        target.recordPageEdit()
+        val copiedPdf = source.pdfSource?.let { (file, pageIndex) ->
+            val targetFile = target.root.resolve("sources/${UUID.randomUUID()}.pdf")
+            targetFile.parentFile?.mkdirs()
+            file.copyTo(targetFile, overwrite = true)
+            targetFile to pageIndex
+        }
+        val copiedObjects = source.objects.map { item ->
+            when (item) {
+                is SceneObject.Image -> {
+                    val (assetId, assetFile) = item.asset.inputStream().use(target::storeImageAsset)
+                    item.copy(
+                        id = ObjectId(UUID.randomUUID().toString()),
+                        asset = assetFile,
+                        assetId = assetId,
+                    )
+                }
+                else -> item.duplicate()
+            }
+        }
+        val page = target.newPage().copy(
+            bookmarked = source.bookmarked,
+            rotation = source.rotation,
+            template = source.template,
+            size = source.size,
+            backgroundArgb = source.backgroundArgb,
+            templateLineArgb = source.templateLineArgb,
+            pdfSource = copiedPdf,
+            objects = mutableStateListOf<SceneObject>().apply { addAll(copiedObjects) },
+        )
+        source.session.page.strokes.forEach { stroke ->
+            page.session.acceptCompletedStroke(stroke.samples, stroke.style, detectScribbleErase = false)
+        }
+        val insertion = (target.selectedPageIndex + 1).coerceAtMost(target.pages.size)
+        target.pages.add(insertion, page)
+        target.navigateToPage(insertion)
+        target.persistManifest()
+        if (move) {
+            recordPageEdit()
+            pages.remove(source)
+            navigateToPage(selectedPageIndex.coerceAtMost(pages.lastIndex))
+            persistManifest()
+        }
+    }
+    fun importPdf(
+        imported: ImportedPdf,
+        pdf: PdfServices,
+        handler: Handler,
+        replaceWithPdf: Boolean = false,
+    ) {
+        flushPendingInk()
+        val notebookSource = root.resolve("sources/${imported.sourceId}.pdf")
+        notebookSource.parentFile?.mkdirs()
+        imported.localFile.copyTo(notebookSource, overwrite = true)
+        val newPages = imported.pageSizes.mapIndexed { index, dimensions ->
+            val width = dimensions.first.toFloat() * 1_000f
+            val height = dimensions.second.toFloat() * 1_000f
+            newPage().copy(size = PageSize(width, height), pdfSource = notebookSource to index)
+        }
+        val insertionIndex = if (replaceWithPdf) 0 else selectedPageIndex + 1
+        val proposedPages = if (replaceWithPdf) {
+            newPages
+        } else {
+            pages.toMutableList().apply { addAll(insertionIndex, newPages) }
+        }
+        runCatching { persistManifest(proposedPages) }.onFailure {
+            newPages.forEach { page -> page.session.close() }
+            notebookSource.delete()
+            throw it
+        }
+        if (replaceWithPdf) {
+            pages.forEach { page -> page.session.close() }
+            pages.clear()
+            pages.addAll(newPages)
+            selectedPageIndex = 0
+        } else {
+            pages.addAll(insertionIndex, newPages)
+            selectedPageIndex = insertionIndex
+        }
+        requestPdfBackgroundsNear(selectedPageIndex, pdf, handler)
+    }
+    fun backup(output: java.io.OutputStream) {
+        persistManifest()
+        NativeNotebookContainer.pack(root, output)
+    }
+
+    fun storeImageAsset(input: java.io.InputStream): Pair<AssetId, File> {
+        val assetId = AssetId(UUID.randomUUID().toString())
+        val target = imageAssetFile(assetId)
+        target.parentFile?.mkdirs()
+        val temporary = File(target.parentFile, "${target.name}.partial")
+        java.io.FileOutputStream(temporary, false).use { output ->
+            input.copyTo(output)
+            output.flush()
+            output.fd.sync()
+        }
+        check(temporary.renameTo(target)) { "Unable to publish image asset" }
+        return assetId to target
+    }
+
+    fun persistObjects() {
+        persistManifest()
+    }
+
+    fun requestThumbnail(pageId: PageId) {
+        val entry = pages.firstOrNull { it.id == pageId } ?: return
+        val (file, pageIndex) = entry.pdfSource ?: return
+        val pdf = pdfServices ?: return
+        val handler = mainHandler ?: return
+        if (entry.thumbnail != null || pageId in pendingThumbnailRenders || !file.isFile) return
+        pendingThumbnailRenders += pageId
+        pdf.renderPage(file, pageIndex, 240) { result ->
+            handler.post {
+                pendingThumbnailRenders -= pageId
+                result.onSuccess { bitmap ->
+                    val currentIndex = pages.indexOfFirst { it.id == pageId }
+                    if (currentIndex >= 0) {
+                        pages[currentIndex] = pages[currentIndex].copy(thumbnail = bitmap)
+                        thumbnailCacheOrder.remove(pageId)
+                        thumbnailCacheOrder.addLast(pageId)
+                        while (thumbnailCacheOrder.size > 64) {
+                            val evictedId = thumbnailCacheOrder.removeFirst()
+                            val evictedIndex = pages.indexOfFirst { it.id == evictedId }
+                            if (evictedIndex >= 0) {
+                                pages[evictedIndex].thumbnail?.recycle()
+                                pages[evictedIndex] = pages[evictedIndex].copy(thumbnail = null)
+                            }
+                        }
+                    } else {
+                        bitmap.recycle()
+                    }
+                }
+            }
+        }
+    }
+
+    fun searchPdf(query: String, result: (List<PdfNotebookHit>) -> Unit) {
+        val service = pdfServices ?: return result(emptyList())
+        val handler = mainHandler ?: return result(emptyList())
+        val groups = pages.mapIndexedNotNull { index, page -> page.pdfSource?.let { Triple(index, it.first, it.second) } }
+            .groupBy { it.second.canonicalFile }
+        if (groups.isEmpty() || query.isBlank()) return result(emptyList())
+        val collected = java.util.Collections.synchronizedList(mutableListOf<PdfNotebookHit>())
+        val remaining = java.util.concurrent.atomic.AtomicInteger(groups.size)
+        groups.forEach { (file, mappings) ->
+            service.search(file, query) { searchResult ->
+                searchResult.getOrDefault(emptyList()).forEach { hit ->
+                    mappings.filter { it.third == hit.pageIndex }.forEach { mapping ->
+                        collected += PdfNotebookHit(mapping.first, hit.matchCount)
+                    }
+                }
+                if (remaining.decrementAndGet() == 0) handler.post { result(collected.sortedBy(PdfNotebookHit::notebookPageIndex)) }
+            }
+        }
+    }
+
+    fun pdfLinks(result: (List<PdfNotebookLink>) -> Unit) {
+        val service = pdfServices ?: return result(emptyList())
+        val handler = mainHandler ?: return result(emptyList())
+        val groups = pages.mapIndexedNotNull { index, page -> page.pdfSource?.let { Triple(index, it.first, it.second) } }
+            .groupBy { it.second.canonicalFile }
+        if (groups.isEmpty()) return result(emptyList())
+        val collected = java.util.Collections.synchronizedList(mutableListOf<PdfNotebookLink>())
+        val remaining = java.util.concurrent.atomic.AtomicInteger(groups.size)
+        groups.forEach { (file, mappings) ->
+            service.outline(file) { outlineResult ->
+                outlineResult.getOrDefault(emptyList()).forEach { link ->
+                    val source = mappings.firstOrNull { it.third == link.sourcePageIndex }?.first
+                    val target = mappings.firstOrNull { it.third == link.targetPageIndex }?.first
+                    if (source != null && target != null) collected += PdfNotebookLink(source, target)
+                }
+                if (remaining.decrementAndGet() == 0) handler.post { result(collected.sortedBy(PdfNotebookLink::sourceNotebookPageIndex)) }
+            }
+        }
+    }
+    private fun persistManifest(pageEntries: List<PageEntry> = pages) {
+        val now = System.currentTimeMillis()
+        val canonicalRoot = root.canonicalFile
+        val pdfSources = pageEntries.mapNotNull(PageEntry::pdfSource)
+            .groupBy { it.first.canonicalFile }
+            .map { (file, mappings) ->
+                SourceDocument(
+                    id = SourceDocumentId(file.nameWithoutExtension),
+                    assetPath = file.relativeTo(canonicalRoot).invariantSeparatorsPath,
+                    mediaType = "application/pdf",
+                    sha256 = NativeNotebookContainer.sha256(file),
+                    pageCount = (mappings.maxOfOrNull { it.second } ?: 0) + 1,
+                )
+            }
+        NativeNotebookContainer.saveManifest(
+            NotebookDocument(
+                id = notebookId, title = title,
+                createdAtEpochMillis = createdAtEpochMillis, modifiedAtEpochMillis = now,
+                pages = pageEntries.map { page ->
+                    NotebookPage(
+                        id = page.id,
+                        size = page.size,
+                        rotationDegrees = page.rotation,
+                        template = page.template,
+                        pdfSource = page.pdfSource?.let { (file, pageIndex) ->
+                            PdfPageSource(SourceDocumentId(file.nameWithoutExtension), pageIndex)
+                        },
+                        objects = page.objects.sortedBy(SceneObject::zIndex).map(SceneObject::toPageObject),
+                        bookmarked = page.bookmarked,
+                        backgroundArgb = page.backgroundArgb,
+                        templateLineArgb = page.templateLineArgb,
+                    )
+                },
+                sourceDocuments = pdfSources,
+                folderPath = folderPath,
+                favorite = favorite,
+                trashedAtEpochMillis = trashedAtEpochMillis,
+                lastOpenedAtEpochMillis = lastOpenedAtEpochMillis,
+                coverArgb = coverArgb,
+            ),
+            root,
+        )
+    }
+    fun close() {
+        flushPendingInk()
+        flushPendingInk = {}
+        persistManifest()
+        ownedPageEntries.distinctBy { it.id }.forEach { it.session.close() }
+        ownedPageEntries.mapNotNull(PageEntry::pdfBackground).distinct().forEach { if (!it.isRecycled) it.recycle() }
+        ownedPageEntries.mapNotNull(PageEntry::thumbnail).distinct().forEach { if (!it.isRecycled) it.recycle() }
+        ownedPageEntries.flatMap { it.objects }.filterIsInstance<SceneObject.Image>()
+            .map(SceneObject.Image::bitmap).distinct().forEach { if (!it.isRecycled) it.recycle() }
+    }
+    fun permanentlyDelete() {
+        close()
+        check(root.deleteRecursively()) { "Unable to permanently delete notebook" }
+    }
+    private fun newPage(): PageEntry {
+        val id = PageId(UUID.randomUUID().toString())
+        return PageEntry(
+            id,
+            EditorSession(root.resolve("pages/${id.value}.journal"), id).apply {
+                updateMaximumToolWidth(maximumToolWidthMicrons)
+            },
+        ).also(ownedPageEntries::add)
+    }
+    private fun existingPage(page: NotebookPage) = PageEntry(
+        id = page.id,
+        session = EditorSession(root.resolve("pages/${page.id.value}.journal"), page.id).apply {
+            updateMaximumToolWidth(maximumToolWidthMicrons)
+        },
+        bookmarked = page.bookmarked,
+        rotation = page.rotationDegrees,
+        template = page.template,
+        size = page.size,
+        backgroundArgb = page.backgroundArgb,
+        templateLineArgb = page.templateLineArgb,
+        pdfSource = page.pdfSource?.let { mapping ->
+            startingDocument?.sourceDocuments
+                ?.firstOrNull { it.id == mapping.documentId }
+                ?.let { source -> root.resolve(source.assetPath) to mapping.pageIndex }
+        },
+        objects = mutableStateListOf<SceneObject>().apply {
+            addAll(page.objects.sortedBy(PageObject::zIndex).mapNotNull(::restoreObject))
+        },
+    ).also(ownedPageEntries::add)
+
+    private fun restoreObject(value: PageObject): SceneObject? = when (value) {
+        is ModelImageObject -> {
+            val asset = imageAssetFile(value.assetId)
+            val bitmap = BitmapFactory.decodeFile(asset.path) ?: Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+            SceneObject.Image(
+                bitmap = bitmap,
+                asset = asset,
+                x = value.transform.x,
+                y = value.transform.y,
+                width = value.transform.width,
+                height = value.transform.height,
+                rotation = value.transform.rotationDegrees,
+                opacity = value.opacity,
+                crop = value.crop,
+                locked = value.locked,
+                id = value.id,
+                assetId = value.assetId,
+                zIndex = value.zIndex,
+            )
+        }
+        is ModelTextObject -> SceneObject.TextBox(
+            text = value.text,
+            x = value.transform.x,
+            y = value.transform.y,
+            size = value.textSizeMicrons,
+            argb = value.argb,
+            bold = value.bold,
+            italic = value.italic,
+            underline = value.underline,
+            alignment = value.alignment,
+            fontFamily = value.fontFamily,
+            outlineArgb = value.outlineArgb,
+            outlineWidth = value.outlineWidthMicrons,
+            curveDegrees = value.curveDegrees,
+            width = value.transform.width,
+            height = value.transform.height,
+            rotation = value.transform.rotationDegrees,
+            id = value.id,
+            zIndex = value.zIndex,
+        )
+        is ModelShapeObject -> SceneObject.Rectangle(
+            x = value.transform.x,
+            y = value.transform.y,
+            width = value.transform.width,
+            height = value.transform.height,
+            kind = value.kind,
+            strokeArgb = value.strokeArgb,
+            strokeWidth = value.strokeWidthMicrons,
+            fillArgb = value.fillArgb,
+            rotation = value.transform.rotationDegrees,
+            id = value.id,
+            zIndex = value.zIndex,
+        )
+        is ModelAudioObject -> SceneObject.Audio(
+            asset = audioAssetFile(value.assetId),
+            x = value.transform.x,
+            y = value.transform.y,
+            width = value.transform.width,
+            height = value.transform.height,
+            durationMillis = value.durationMillis,
+            transcript = value.transcript,
+            id = value.id,
+            assetId = value.assetId,
+            zIndex = value.zIndex,
+        )
+    }
+
+    private fun imageAssetFile(assetId: AssetId): File = root.resolve("assets/${assetId.value}.image")
+    fun newAudioAsset(): Pair<AssetId, File> {
+        val assetId = AssetId(UUID.randomUUID().toString())
+        return assetId to root.resolve("assets/${assetId.value}.wav").also { it.parentFile?.mkdirs() }
+    }
+    private fun audioAssetFile(assetId: AssetId): File {
+        val wav = root.resolve("assets/${assetId.value}.wav")
+        return if (wav.isFile) wav else root.resolve("assets/${assetId.value}.m4a")
+    }
+
+    private fun restorePdfBackgrounds() {
+        requestPdfBackgroundsNear(selectedPageIndex)
+    }
+
+    private fun requestPdfBackgroundsNear(
+        centerIndex: Int,
+        pdf: PdfServices? = pdfServices,
+        handler: Handler? = mainHandler,
+    ) {
+        if (pdf == null || handler == null || pages.isEmpty()) return
+        val wanted = ((centerIndex - 1)..(centerIndex + 1))
+            .filter { it in pages.indices }
+            .toSet()
+
+        pages.indices.filter { it !in wanted && pages[it].pdfBackground != null }.forEach { index ->
+            pages[index].pdfBackground?.let { if (!it.isRecycled) it.recycle() }
+            pages[index] = pages[index].copy(pdfBackground = null)
+        }
+        wanted.forEach { index ->
+            val entry = pages[index]
+            val (file, pageIndex) = entry.pdfSource ?: return@forEach
+            if (entry.pdfBackground != null || entry.id in pendingPdfRenders || !file.isFile) return@forEach
+            pendingPdfRenders += entry.id
+            pdf.renderPage(file, pageIndex, 1280) { result ->
+                handler.post {
+                    pendingPdfRenders -= entry.id
+                    result.onSuccess { bitmap ->
+                        val currentIndex = pages.indexOfFirst { it.id == entry.id }
+                        if (currentIndex >= 0 && kotlin.math.abs(currentIndex - selectedPageIndex) <= 1) {
+                            pages[currentIndex] = pages[currentIndex].copy(pdfBackground = bitmap)
+                        } else {
+                            bitmap.recycle()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun loadEditorTabs(
+    notebooksRoot: File,
+    pdfServices: PdfServices,
+    handler: Handler,
+): List<EditorTab> {
+    notebooksRoot.mkdirs()
+    val restored = notebooksRoot.listFiles()
+        .orEmpty()
+        .filter { it.isDirectory }
+        .sortedBy { it.name }
+        .mapNotNull { directory ->
+            runCatching { NativeNotebookContainer.loadManifest(directory) }.getOrNull()
+                ?.let { document -> directory to document }
+        }
+        .mapIndexed { index, (directory, document) ->
+            EditorTab(index + 1, document.title, directory, document, pdfServices, handler)
+        }
+    return restored.ifEmpty {
+        listOf(EditorTab(1, "My first note", notebooksRoot.resolve("note-1"), pdfServices = pdfServices, mainHandler = handler))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MheenotesEditor(
+    appSettings: AppSettings,
+    initialOpenUri: android.net.Uri? = null,
+    initialNotebookId: String? = null,
+    hardwareKeySequence: Int = 0,
+    hardwareKeyCode: Int = KeyEvent.KEYCODE_UNKNOWN,
+    onAppSettingsChanged: (AppSettings) -> Unit,
+) {
+    val context = LocalContext.current
+    val handler = remember { Handler(Looper.getMainLooper()) }
+    val pdf = remember { PdfServices(context.contentResolver, context.filesDir.resolve("pdf")) }
+    val actionMapStore = remember { ActionMapStore(context.filesDir.resolve("action-maps.bin")) }
+    val actionMappings = remember {
+        mutableStateListOf<ActionMapping>().apply {
+            addAll(runCatching { actionMapStore.load() }.getOrDefault(emptyList()))
+        }
+    }
+    val actionRecognizer = remember { ActionMapRecognizer() }
+    var consumedOpenUri by rememberSaveable { mutableStateOf<String?>(null) }
+    val tabs = remember {
+        mutableStateListOf<EditorTab>().apply {
+            addAll(loadEditorTabs(context.filesDir.resolve("notebooks"), pdf, handler))
+        }
+    }
+    val openTabIds = remember { mutableStateListOf<Int>() }
+    var screen by remember { mutableStateOf(AppScreen.Library) }
+    var selectedTabId by remember { mutableIntStateOf(tabs.first().id) }
+    var nextTabId by remember { mutableIntStateOf((tabs.maxOfOrNull { it.id } ?: 0) + 1) }
+    var editorMode by remember { mutableStateOf(EditorMode.Ink) }
+    var dockEdge by remember { mutableStateOf(runCatching { DockEdge.valueOf(appSettings.toolbarDock) }.getOrDefault(DockEdge.Top)) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showActionMaps by remember { mutableStateOf(false) }
+    var showAppSettings by remember { mutableStateOf(false) }
+    var showFloatingNotes by remember { mutableStateOf(false) }
+    var lastFloatingNotesTriggerAt by remember { mutableLongStateOf(0L) }
+    var showExportPdf by remember { mutableStateOf(false) }
+    var pendingPdfExportPages by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var importError by remember { mutableStateOf<String?>(null) }
+    var pdfImportDestination by remember { mutableStateOf(PdfImportDestination.CurrentNotebook) }
+    var showDiagnostics by remember { mutableStateOf(false) }
+    var openingNoteTitle by remember { mutableStateOf<String?>(null) }
+    var pendingBackupTab by remember { mutableStateOf<EditorTab?>(null) }
+    val currentTab = { tabs.firstOrNull { it.id == selectedTabId } ?: tabs.first() }
+    val sharingScope = rememberCoroutineScope()
+
+    fun triggerFloatingNotes() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastFloatingNotesTriggerAt < 180L) return
+        lastFloatingNotesTriggerAt = now
+        showFloatingNotes = !showFloatingNotes
+    }
+
+    LaunchedEffect(hardwareKeySequence) {
+        if (
+            hardwareKeySequence > 0 && screen == AppScreen.Editor && !showAppSettings &&
+            hardwareKeyCode == appSettings.floatingNotesKeyCode
+        ) triggerFloatingNotes()
+    }
+
+    BackHandler(enabled = screen == AppScreen.Editor) {
+        currentTab().flushPendingInk()
+        screen = AppScreen.Library
+    }
+
+    fun shareGeneratedFile(fileName: String, mediaType: String, writer: (java.io.OutputStream) -> Unit) {
+        sharingScope.launch {
+            val generated = withContext(Dispatchers.IO) {
+                runCatching {
+                    val directory = context.cacheDir.resolve("shared").apply { mkdirs() }
+                    val target = directory.resolve(fileName.replace(Regex("[^A-Za-z0-9._-]"), "_"))
+                    target.outputStream().buffered().use(writer)
+                    target
+                }
+            }
+            generated.onSuccess { file ->
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = mediaType
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }, "Share with"))
+            }.onFailure { importError = it.message ?: "The file could not be shared." }
+        }
+    }
+
+    LaunchedEffect(appSettings.maximumStrokeWidthMicrons, tabs.size) {
+        tabs.forEach { it.updateMaximumToolWidth(appSettings.maximumStrokeWidthMicrons) }
+    }
+
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            val tab = currentTab()
+            val storedAsset = runCatching {
+                context.contentResolver.openInputStream(uri)?.use(tab::storeImageAsset)
+                    ?: error("The selected image could not be opened.")
+            }.onFailure { importError = it.message ?: "The image could not be imported." }.getOrNull()
+            storedAsset?.let { (assetId, asset) ->
+                val bitmap = BitmapFactory.decodeFile(asset.path)
+                if (bitmap == null) {
+                    asset.delete()
+                    importError = "The selected image format could not be decoded."
+                    return@let
+                }
+                val page = tab.pages[tab.selectedPageIndex]
+                val maxWidth = page.size.widthMicrons * .55f
+                val maxHeight = page.size.heightMicrons * .45f
+                var width = maxWidth
+                var height = width * bitmap.height / bitmap.width.toFloat()
+                if (height > maxHeight) { height = maxHeight; width = height * bitmap.width / bitmap.height.toFloat() }
+                val zIndex = (page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
+                tab.recordObjectEdit(page)
+                page.objects += SceneObject.Image(
+                    bitmap, asset,
+                    (page.size.widthMicrons - width) / 2f,
+                    (page.size.heightMicrons - height) / 2f,
+                    width, height,
+                    assetId = assetId,
+                    zIndex = zIndex,
+                )
+                tab.persistObjects()
+                editorMode = EditorMode.Object
+            }
+        }
+    }
+    val importPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) pdf.importPdf(uri) { result ->
+            result.onSuccess { imported ->
+                handler.post {
+                    if (pdfImportDestination == PdfImportDestination.NewNotebook) {
+                        val id = nextTabId++
+                        val importedTitle = imported.displayName.substringBeforeLast('.').ifBlank { "Imported PDF" }
+                        val newTab = EditorTab(
+                            id = id,
+                            initialTitle = importedTitle,
+                            root = context.filesDir.resolve("notebooks/note-$id"),
+                            pdfServices = pdf,
+                            mainHandler = handler,
+                        )
+                        runCatching { newTab.importPdf(imported, pdf, handler, replaceWithPdf = true) }
+                            .onSuccess {
+                                tabs += newTab
+                                if (id !in openTabIds) openTabIds += id
+                                selectedTabId = id
+                                screen = AppScreen.Editor
+                            }
+                            .onFailure { error ->
+                                runCatching { newTab.close() }
+                                importError = error.message ?: "The PDF could not be imported."
+                            }
+                    } else {
+                        runCatching { currentTab().importPdf(imported, pdf, handler) }
+                            .onSuccess { screen = AppScreen.Editor }
+                            .onFailure { importError = it.message ?: "The PDF could not be imported." }
+                    }
+                }
+            }.onFailure { error ->
+                handler.post { importError = error.message ?: "The PDF could not be opened." }
+            }
+        }
+    }
+    val exportPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null) context.contentResolver.openOutputStream(uri)?.use { output ->
+            val tab = currentTab()
+            val selected = pendingPdfExportPages.ifEmpty { tab.pages.indices.toList() }
+            PageExporter.writePdf(selected.mapNotNull { tab.pages.getOrNull(it)?.toExportPage() }, output)
+        }
+    }
+    val exportImage = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
+        if (uri != null) context.contentResolver.openOutputStream(uri)?.use { output ->
+            val page = currentTab().pages[currentTab().selectedPageIndex]
+            PageExporter.renderImage(page.toExportPage()).compress(Bitmap.CompressFormat.PNG, 100, output)
+        }
+    }
+    val backup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) context.contentResolver.openOutputStream(uri)?.use((pendingBackupTab ?: currentTab())::backup)
+        pendingBackupTab = null
+    }
+    val openNote = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val id = nextTabId++
+            val root = context.filesDir.resolve("notebooks/import-$id")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val document = NativeNotebookContainer.unpack(input, root)
+                tabs += EditorTab(id, document.title, root, document, pdf, handler)
+                if (id !in openTabIds) openTabIds += id
+                selectedTabId = id
+                screen = AppScreen.Editor
+            }
+        }
+    }
+
+
+    LaunchedEffect(initialOpenUri) {
+        val uri = initialOpenUri ?: return@LaunchedEffect
+        if (consumedOpenUri == uri.toString()) return@LaunchedEffect
+        consumedOpenUri = uri.toString()
+        val mediaType = context.contentResolver.getType(uri).orEmpty()
+        if (mediaType == "application/pdf" || uri.toString().endsWith(".pdf", ignoreCase = true)) {
+            pdf.importPdf(uri) { result ->
+                result.onSuccess { imported ->
+                    handler.post {
+                        val id = nextTabId++
+                        val title = imported.displayName.substringBeforeLast('.').ifBlank { "Imported PDF" }
+                        val tab = EditorTab(id, title, context.filesDir.resolve("notebooks/note-$id"), pdfServices = pdf, mainHandler = handler)
+                        runCatching { tab.importPdf(imported, pdf, handler, replaceWithPdf = true) }
+                            .onSuccess { tabs += tab; openTabIds += id; selectedTabId = id; screen = AppScreen.Editor }
+                            .onFailure { importError = it.message ?: "The PDF could not be opened." }
+                    }
+                }.onFailure { handler.post { importError = it.message ?: "The PDF could not be opened." } }
+            }
+        } else {
+            runCatching {
+                val id = nextTabId++
+                val root = context.filesDir.resolve("notebooks/import-$id")
+                val document = context.contentResolver.openInputStream(uri)?.use { NativeNotebookContainer.unpack(it, root) }
+                    ?: error("The notebook could not be opened.")
+                tabs += EditorTab(id, document.title, root, document, pdf, handler)
+                openTabIds += id
+                selectedTabId = id
+                screen = AppScreen.Editor
+            }.onFailure { importError = it.message ?: "The notebook could not be opened." }
+        }
+    }
+
+    LaunchedEffect(initialNotebookId) {
+        val requestedId = initialNotebookId ?: return@LaunchedEffect
+        tabs.firstOrNull { it.persistentId == requestedId }?.let { tab ->
+            if (tab.id !in openTabIds) openTabIds += tab.id
+            selectedTabId = tab.id
+            tab.markOpened()
+            RecentNotesWidgetProvider.updateAll(context)
+            screen = AppScreen.Editor
+        }
+    }
+
+    DisposableEffect(Unit) { onDispose { tabs.forEach(EditorTab::close); pdf.close() } }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        AnimatedContent(
+            targetState = screen,
+            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+            label = "library-editor-transition",
+        ) { activeScreen -> if (activeScreen == AppScreen.Library) {
+            LibraryScreen(
+                tabs = tabs,
+                onOpen = { id ->
+                    val target = tabs.firstOrNull { it.id == id } ?: return@LibraryScreen
+                    openingNoteTitle = target.title
+                    sharingScope.launch {
+                        delay(140)
+                        selectedTabId = id
+                        if (id !in openTabIds) openTabIds += id
+                        target.markOpened()
+                        RecentNotesWidgetProvider.updateAll(context)
+                        screen = AppScreen.Editor
+                        openingNoteTitle = null
+                    }
+                },
+                onCreate = { spec ->
+                    val id = nextTabId++
+                    val tab = EditorTab(
+                        id, spec.title, context.filesDir.resolve("notebooks/note-$id"),
+                        pdfServices = pdf, mainHandler = handler,
+                    )
+                    tab.configureInitialPage(spec.size, spec.template, spec.backgroundArgb, spec.templateLineArgb)
+                    tab.setCoverColor(spec.coverArgb)
+                    tabs += tab
+                    openTabIds += id
+                    selectedTabId = id
+                    screen = AppScreen.Editor
+                },
+                onImportPdf = {
+                    pdfImportDestination = PdfImportDestination.NewNotebook
+                    importPdf.launch(arrayOf("application/pdf"))
+                },
+                onOpenNote = { openNote.launch(arrayOf("application/zip", "application/octet-stream")) },
+                onSettings = { showAppSettings = true },
+                onExportNotebook = { target ->
+                    pendingBackupTab = target
+                    backup.launch("${target.title}.mynote")
+                },
+                onDuplicate = { source ->
+                    val id = nextTabId++
+                    runCatching {
+                        val bytes = java.io.ByteArrayOutputStream().also(source::backup).toByteArray()
+                        val root = context.filesDir.resolve("notebooks/note-$id")
+                        val imported = NativeNotebookContainer.unpack(java.io.ByteArrayInputStream(bytes), root)
+                        val now = System.currentTimeMillis()
+                        val copy = imported.copy(
+                            id = NotebookId(UUID.randomUUID().toString()),
+                            title = "${source.title} copy",
+                            createdAtEpochMillis = now,
+                            modifiedAtEpochMillis = now,
+                            lastOpenedAtEpochMillis = now,
+                            trashedAtEpochMillis = null,
+                        )
+                        NativeNotebookContainer.saveManifest(copy, root)
+                        tabs += EditorTab(id, copy.title, root, copy, pdf, handler)
+                    }.onFailure { importError = it.message ?: "The notebook could not be duplicated." }
+                },
+                onPermanentDelete = { target ->
+                    runCatching { target.permanentlyDelete() }
+                        .onSuccess { openTabIds.remove(target.id); tabs.remove(target) }
+                        .onFailure { importError = it.message ?: "The notebook could not be deleted." }
+                },
+            )
+        } else {
+            EditorScreen(
+                tabs = openTabIds.mapNotNull { openId -> tabs.firstOrNull { it.id == openId } },
+                allNotebooks = tabs,
+                selectedTabId = selectedTabId,
+                onSelectTab = { selectedTabId = it },
+                onMoveTab = { id, direction ->
+                    val from = openTabIds.indexOf(id)
+                    val to = (from + direction).coerceIn(0, openTabIds.lastIndex)
+                    if (from >= 0 && from != to) {
+                        val moved = openTabIds.removeAt(from)
+                        openTabIds.add(to, moved)
+                    }
+                },
+                onCloseTab = { id ->
+                    openTabIds.remove(id)
+                    val remaining = tabs.filter { it.id in openTabIds }
+                    if (remaining.isEmpty()) screen = AppScreen.Library else selectedTabId = remaining.last().id
+                },
+                tab = currentTab(),
+                mode = editorMode,
+                onMode = { editorMode = it },
+                dockEdge = dockEdge,
+                onDockEdge = { edge -> dockEdge = edge; onAppSettingsChanged(appSettings.copy(toolbarDock = edge.name)) },
+                onHome = { screen = AppScreen.Library },
+                onImage = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onImportPdf = {
+                    pdfImportDestination = PdfImportDestination.CurrentNotebook
+                    importPdf.launch(arrayOf("application/pdf"))
+                },
+                onExportPdf = { showExportPdf = true },
+                onExportImage = { exportImage.launch("${currentTab().title}-${currentTab().selectedPageIndex + 1}.png") },
+                onBackup = { backup.launch("${currentTab().title}.mynote") },
+                onSharePdf = {
+                    val tab = currentTab()
+                    shareGeneratedFile("${tab.title}.pdf", "application/pdf") { output -> PageExporter.writePdf(tab.pages.map(PageEntry::toExportPage), output) }
+                },
+                onShareImage = {
+                    val tab = currentTab()
+                    val page = tab.pages[tab.selectedPageIndex]
+                    shareGeneratedFile("${tab.title}-${tab.selectedPageIndex + 1}.png", "image/png") { output ->
+                        PageExporter.renderImage(page.toExportPage()).compress(Bitmap.CompressFormat.PNG, 100, output)
+                    }
+                },
+                onShareNotebook = {
+                    val tab = currentTab()
+                    shareGeneratedFile("${tab.title}.mynote", "application/x-mheenote") { output -> tab.backup(output) }
+                },
+                onSettings = { showSettings = true },
+                actionMappings = actionMappings,
+                actionRecognizer = actionRecognizer,
+                showDiagnostics = showDiagnostics,
+                appSettings = appSettings,
+                onAppSettingsChanged = onAppSettingsChanged,
+                onStylusButtonPressed = { button ->
+                    if (!showAppSettings && floatingNotesShortcutCode(button) == appSettings.floatingNotesKeyCode) {
+                        triggerFloatingNotes()
+                    }
+                },
+            )
+        } }
+    }
+
+    openingNoteTitle?.let { title ->
+        Box(Modifier.fillMaxSize().background(Color(0xB30B0D11)).zIndex(100f), contentAlignment = Alignment.Center) {
+            Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 12.dp) {
+                Row(Modifier.padding(horizontal = 26.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
+                    Column(Modifier.padding(start = 16.dp)) {
+                        Text("Opening $title", style = MaterialTheme.typography.titleMedium)
+                        Text("Preparing pages and ink…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showFloatingNotes && screen == AppScreen.Editor) FloatingNotesOverlay(
+        notebooks = tabs.filter { it.trashedAtEpochMillis == null },
+        selectedTabId = selectedTabId,
+        onOpen = { target ->
+            if (target.id !in openTabIds) openTabIds += target.id
+            selectedTabId = target.id
+            target.markOpened()
+            RecentNotesWidgetProvider.updateAll(context)
+            showFloatingNotes = false
+        },
+        onDismiss = { showFloatingNotes = false },
+    )
+
+    if (showSettings) EditorSettingsSheet(
+        session = currentTab().session,
+        dockEdge = dockEdge,
+        onDockEdge = { edge -> dockEdge = edge; onAppSettingsChanged(appSettings.copy(toolbarDock = edge.name)) },
+        onDiagnostics = { showDiagnostics = !showDiagnostics },
+        onActionMaps = { showSettings = false; showActionMaps = true },
+        onDismiss = { showSettings = false },
+    )
+    if (showActionMaps) ActionMapManager(
+        mappings = actionMappings,
+        onSave = { mapping ->
+            val existingIndex = actionMappings.indexOfFirst { it.id == mapping.id }
+            if (existingIndex >= 0) actionMappings[existingIndex] = mapping else actionMappings += mapping
+            actionMapStore.save(actionMappings)
+        },
+        onDelete = { mapping ->
+            actionMappings.remove(mapping)
+            actionMapStore.save(actionMappings)
+        },
+        onDismiss = { showActionMaps = false },
+    )
+    if (showAppSettings) AppSettingsDialog(
+        settings = appSettings,
+        hardwareKeySequence = hardwareKeySequence,
+        hardwareKeyCode = hardwareKeyCode,
+        onSettingsChanged = onAppSettingsChanged,
+        onDismiss = { showAppSettings = false },
+    )
+    if (showExportPdf) ExportPdfDialog(
+        pageCount = currentTab().pages.size,
+        currentPage = currentTab().selectedPageIndex,
+        onExport = { indices ->
+            pendingPdfExportPages = indices
+            showExportPdf = false
+            exportPdf.launch("${currentTab().title}.pdf")
+        },
+        onDismiss = { showExportPdf = false },
+    )
+    importError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { importError = null },
+            title = { Text("Something went wrong") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { importError = null }) { Text("OK") } },
+        )
+    }
+}
+
+@Composable
+private fun LibraryScreen(
+    tabs: List<EditorTab>,
+    onOpen: (Int) -> Unit,
+    onCreate: (NotebookCreationSpec) -> Unit,
+    onImportPdf: () -> Unit,
+    onOpenNote: () -> Unit,
+    onSettings: () -> Unit,
+    onExportNotebook: (EditorTab) -> Unit,
+    onDuplicate: (EditorTab) -> Unit,
+    onPermanentDelete: (EditorTab) -> Unit,
+) {
+    val context = LocalContext.current
+    val folderPreferences = remember { context.getSharedPreferences("library-folders", android.content.Context.MODE_PRIVATE) }
+    val folders = remember {
+        mutableStateListOf<String>().apply { addAll(folderPreferences.getStringSet("folders", emptySet()).orEmpty().sorted()) }
+    }
+    val documentFolders = tabs.mapNotNull(EditorTab::folderPath).distinct().sorted()
+    LaunchedEffect(documentFolders) {
+        val missing = documentFolders.filterNot(folders::contains)
+        if (missing.isNotEmpty()) {
+            folders.addAll(missing)
+            folderPreferences.edit().putStringSet("folders", folders.toSet()).apply()
+        }
+    }
+    var query by remember { mutableStateOf("") }
+    var showCreate by remember { mutableStateOf(false) }
+    var showNewFolder by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
+    var section by remember { mutableStateOf(LibrarySection.All) }
+    var layout by remember { mutableStateOf(LibraryLayout.Grid) }
+    var sort by remember { mutableStateOf(LibrarySort.Name) }
+    var sortMenu by remember { mutableStateOf(false) }
+    var selectedFolder by remember { mutableStateOf<String?>(null) }
+    var allNotesBounds by remember { mutableStateOf<Rect?>(null) }
+    val folderBounds = remember { mutableStateMapOf<String, Rect>() }
+    var dragTargetFolder by remember { mutableStateOf<String?>(null) }
+    var dragTargetsRoot by remember { mutableStateOf(false) }
+    var draggedTabId by remember { mutableStateOf<Int?>(null) }
+    var draggedNotePoint by remember { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(section, selectedFolder) { folderBounds.clear() }
+    val visibleTabs = tabs.asSequence()
+        .filter { tab ->
+            when (section) {
+                LibrarySection.All, LibrarySection.Recent -> tab.trashedAtEpochMillis == null
+                LibrarySection.Favorites -> tab.trashedAtEpochMillis == null && tab.favorite
+                LibrarySection.Folders -> tab.trashedAtEpochMillis == null &&
+                    (if (selectedFolder == null) tab.folderPath == null else tab.folderPath == selectedFolder)
+                LibrarySection.Trash -> tab.trashedAtEpochMillis != null
+            }
+        }
+        .filter { it.title.contains(query, ignoreCase = true) || it.folderPath.orEmpty().contains(query, ignoreCase = true) }
+        .let { sequence -> when {
+            section == LibrarySection.Recent || sort == LibrarySort.Recent -> sequence.sortedByDescending(EditorTab::lastOpenedAtEpochMillis)
+            sort == LibrarySort.PageCount -> sequence.sortedByDescending { it.pages.size }
+            else -> sequence.sortedBy { it.title.lowercase() }
+        } }
+        .toList()
+    val heading = when (section) {
+        LibrarySection.All -> stringResource(R.string.all_notes)
+        LibrarySection.Recent -> stringResource(R.string.recently_opened)
+        LibrarySection.Favorites -> stringResource(R.string.favorites)
+        LibrarySection.Folders -> selectedFolder ?: stringResource(R.string.folders)
+        LibrarySection.Trash -> stringResource(R.string.trash)
+    }
+    BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        val compact = maxWidth < 720.dp
+        val sidebarWidth = if (compact) 72.dp else 220.dp
+        Row(Modifier.fillMaxSize()) {
+            Column(
+                Modifier.width(sidebarWidth).fillMaxHeight().background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = if (compact) 8.dp else 20.dp, vertical = 16.dp),
+                horizontalAlignment = if (compact) Alignment.CenterHorizontally else Alignment.Start,
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Text(if (compact) "M" else "Mheenotes", style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(if (compact) 8.dp else 20.dp))
+                NavigationItem(
+                    Icons.Outlined.LibraryBooks, stringResource(R.string.all_notes), section == LibrarySection.All || dragTargetsRoot,
+                    compact = compact,
+                    modifier = Modifier.onGloballyPositioned { allNotesBounds = it.boundsInRoot() },
+                ) { section = LibrarySection.All; selectedFolder = null }
+                NavigationItem(Icons.Outlined.History, stringResource(R.string.recent), section == LibrarySection.Recent, compact = compact) { section = LibrarySection.Recent }
+                NavigationItem(Icons.Outlined.Star, stringResource(R.string.favorites), section == LibrarySection.Favorites, compact = compact) { section = LibrarySection.Favorites }
+                NavigationItem(Icons.Outlined.Folder, stringResource(R.string.folders), section == LibrarySection.Folders, compact = compact) { section = LibrarySection.Folders; selectedFolder = null }
+                NavigationItem(Icons.Outlined.Delete, stringResource(R.string.trash), section == LibrarySection.Trash, compact = compact) { section = LibrarySection.Trash }
+                if (!compact && section == LibrarySection.Folders) {
+                    TextButton(onClick = { selectedFolder = null }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.folder_grid), maxLines = 1, modifier = Modifier.fillMaxWidth()) }
+                    TextButton(onClick = { showNewFolder = true }, modifier = Modifier.fillMaxWidth()) { Text("+ ${stringResource(R.string.new_folder)}") }
+                }
+                Spacer(Modifier.weight(1f))
+                NavigationItem(Icons.Outlined.Settings, stringResource(R.string.settings), false, compact = compact, onClick = onSettings)
+            }
+            Column(Modifier.weight(1f).fillMaxHeight().padding(if (compact) 12.dp else 28.dp)) {
+                if (compact) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(heading, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(stringResource(R.string.notes_count, visibleTabs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(onClick = onOpenNote) { Icon(Icons.Outlined.FileOpen, stringResource(R.string.open_notebook)) }
+                            IconButton(onClick = onImportPdf) { Icon(Icons.Outlined.PictureAsPdf, stringResource(R.string.import_pdf)) }
+                            LibrarySortAndLayout(sortMenu, { sortMenu = it }, sort, { sort = it }, layout, { layout = it })
+                        }
+                        OutlinedTextField(
+                            query, { query = it }, singleLine = true,
+                            leadingIcon = { Icon(Icons.Outlined.Search, null) }, placeholder = { Text(stringResource(R.string.search_notes)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(heading, style = MaterialTheme.typography.headlineMedium)
+                            Text("${visibleTabs.size} notebook${if (visibleTabs.size == 1) "" else "s"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedTextField(
+                            query, { query = it }, singleLine = true, leadingIcon = { Icon(Icons.Outlined.Search, null) },
+                            placeholder = { Text(stringResource(R.string.search_notes)) }, modifier = Modifier.width(280.dp),
+                        )
+                        IconButton(onClick = onOpenNote) { Icon(Icons.Outlined.FileOpen, stringResource(R.string.open_notebook)) }
+                        IconButton(onClick = onImportPdf) { Icon(Icons.Outlined.PictureAsPdf, stringResource(R.string.import_pdf)) }
+                        LibrarySortAndLayout(sortMenu, { sortMenu = it }, sort, { sort = it }, layout, { layout = it })
+                    }
+                }
+                Spacer(Modifier.height(if (compact) 14.dp else 28.dp))
+                val folderCards = if (
+                    section == LibrarySection.All || (section == LibrarySection.Folders && selectedFolder == null)
+                ) (folders + documentFolders).distinct().sorted() else emptyList()
+                if (visibleTabs.isEmpty() && folderCards.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(stringResource(if (section == LibrarySection.Trash) R.string.trash_empty else R.string.no_notebooks), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (section == LibrarySection.Folders) TextButton(onClick = { showNewFolder = true }) { Text(stringResource(R.string.create_folder)) }
+                        }
+                    }
+                } else if (layout == LibraryLayout.Grid || section == LibrarySection.Folders) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(if (compact) 140.dp else 190.dp),
+                        contentPadding = PaddingValues(bottom = 96.dp),
+                        horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp),
+                    ) {
+                        items(folderCards, key = { "folder:$it" }) { folder ->
+                            FolderCard(
+                                folder = folder,
+                                noteCount = tabs.count { it.trashedAtEpochMillis == null && it.folderPath == folder },
+                                highlighted = dragTargetFolder == folder,
+                                modifier = Modifier.onGloballyPositioned { folderBounds[folder] = it.boundsInRoot() },
+                                onClick = { section = LibrarySection.Folders; selectedFolder = folder },
+                            )
+                        }
+                        items(visibleTabs, key = EditorTab::id) { tab ->
+                            NotebookCard(
+                                tab, folders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook,
+                                onDragStart = { draggedTabId = tab.id },
+                                onDragPosition = { point ->
+                                    draggedNotePoint = point
+                                    dragTargetsRoot = allNotesBounds?.contains(point) == true
+                                    dragTargetFolder = if (dragTargetsRoot) null else folderBounds.entries.firstOrNull { it.value.contains(point) }?.key
+                                },
+                                onDragEnd = {
+                                    when {
+                                        dragTargetsRoot -> tab.moveToFolder(null)
+                                        dragTargetFolder != null -> tab.moveToFolder(dragTargetFolder)
+                                    }
+                                    val handled = dragTargetsRoot || dragTargetFolder != null
+                                    draggedTabId = null; draggedNotePoint = Offset.Zero
+                                    dragTargetsRoot = false; dragTargetFolder = null
+                                    handled
+                                },
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        itemsIndexed(visibleTabs, key = { _, tab -> tab.id }) { _, tab ->
+                            NotebookListRow(tab, folders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook)
+                        }
+                    }
+                }
+            }
+        }
+        draggedTabId?.let { id ->
+            tabs.firstOrNull { it.id == id }?.let { tab ->
+                val density = LocalDensity.current
+                Surface(
+                    modifier = Modifier
+                        .size(width = 154.dp, height = 196.dp)
+                        .offset {
+                            IntOffset(
+                                draggedNotePoint.x.roundToInt() - with(density) { 77.dp.roundToPx() },
+                                draggedNotePoint.y.roundToInt() - with(density) { 98.dp.roundToPx() },
+                            )
+                        }
+                        .zIndex(200f),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(tab.coverArgb),
+                    shadowElevation = 24.dp,
+                ) {
+                    Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.Edit, null, Modifier.size(44.dp), tint = Color.White)
+                        }
+                        Text(tab.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+        FloatingActionButton(onClick = { showCreate = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(if (compact) 16.dp else 28.dp)) {
+            Icon(Icons.Outlined.NoteAdd, stringResource(R.string.create_notebook))
+        }
+    }
+    if (showCreate) NewNotebookDialog(
+        onCreate = { showCreate = false; onCreate(it) },
+        onDismiss = { showCreate = false },
+    )
+    if (showNewFolder) AlertDialog(
+        onDismissRequest = { showNewFolder = false },
+        title = { Text("New folder") },
+        text = { OutlinedTextField(newFolderName, { newFolderName = it }, label = { Text("Folder path") }, supportingText = { Text("Use / for nested folders") }) },
+        dismissButton = { TextButton(onClick = { showNewFolder = false }) { Text("Cancel") } },
+        confirmButton = {
+            TextButton(
+                enabled = newFolderName.trim().trim('/').isNotEmpty(),
+                onClick = {
+                    val name = newFolderName.trim().trim('/')
+                    if (name !in folders) folders += name
+                    folderPreferences.edit().putStringSet("folders", folders.toSet()).apply()
+                    selectedFolder = name
+                    newFolderName = ""
+                    showNewFolder = false
+                },
+            ) { Text("Create") }
+        },
+    )
+}
+
+@Composable
+private fun NewNotebookDialog(
+    onCreate: (NotebookCreationSpec) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var title by remember { mutableStateOf("Untitled note") }
+    var paper by remember { mutableStateOf(PaperPreset.A4) }
+    var landscape by remember { mutableStateOf(false) }
+    var template by remember { mutableStateOf(PageTemplate.Blank) }
+    var customWidth by remember { mutableStateOf("210") }
+    var customHeight by remember { mutableStateOf("297") }
+    var background by remember { mutableIntStateOf(0xFFFFFEFA.toInt()) }
+    var lines by remember { mutableIntStateOf(0x402563EB) }
+    var cover by remember { mutableIntStateOf(0xFF303747.toInt()) }
+    val widthMm = if (paper == PaperPreset.Custom) customWidth.toFloatOrNull() else paper.widthMm
+    val heightMm = if (paper == PaperPreset.Custom) customHeight.toFloatOrNull() else paper.heightMm
+    val valid = title.isNotBlank() && widthMm != null && heightMm != null && widthMm in 50f..1_000f && heightMm in 50f..1_000f
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            Modifier.fillMaxWidth(.82f).fillMaxHeight(.82f),
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 8.dp,
+        ) {
+            Column(Modifier.padding(24.dp)) {
+                Text("Create notebook", style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Column(Modifier.weight(.9f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(title, { title = it }, label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Text("Paper size", style = MaterialTheme.typography.titleSmall)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            PaperPreset.entries.chunked(4).forEach { choices ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    choices.forEach { choice -> SelectablePill(choice.label, paper == choice) { paper = choice } }
+                                }
+                            }
+                        }
+                        if (paper == PaperPreset.Custom) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(customWidth, { customWidth = it }, label = { Text("Width mm") }, singleLine = true, modifier = Modifier.weight(1f))
+                            OutlinedTextField(customHeight, { customHeight = it }, label = { Text("Height mm") }, singleLine = true, modifier = Modifier.weight(1f))
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Landscape", Modifier.weight(1f))
+                            Switch(landscape, { landscape = it })
+                        }
+                        Text("Page template", style = MaterialTheme.typography.titleSmall)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            PageTemplate.entries.chunked(3).forEach { row ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    row.forEach { choice -> SelectablePill(choice.name.replace("MusicStaff", "Music"), template == choice) { template = choice } }
+                                }
+                            }
+                        }
+                    }
+                    Column(Modifier.weight(.7f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Paper color", style = MaterialTheme.typography.titleSmall)
+                        ColorChoiceRow(listOf(0xFFFFFEFA.toInt(), 0xFFFFFFFF.toInt(), 0xFFFFF7E6.toInt(), 0xFFF4F1E8.toInt(), 0xFF1D222B.toInt()), background) { background = it }
+                        Text("Template lines", style = MaterialTheme.typography.titleSmall)
+                        ColorChoiceRow(listOf(0x402563EB, 0x40777777, 0x40508A60, 0x40B45353, 0x60D6D9E0), lines) { lines = it }
+                        Text("Cover", style = MaterialTheme.typography.titleSmall)
+                        ColorChoiceRow(listOf(0xFF303747.toInt(), 0xFF315C8C.toInt(), 0xFF6A3F72.toInt(), 0xFF386A55.toInt(), 0xFF8A4A3B.toInt()), cover) { cover = it }
+                        Box(
+                            Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(14.dp)).background(Color(background)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(template.name, color = if (Color(background).luminance() > .5f) Color.DarkGray else Color.White)
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(
+                        enabled = valid,
+                        onClick = {
+                            var width = widthMm!! * 1_000f
+                            var height = heightMm!! * 1_000f
+                            if (landscape && height > width) width = height.also { height = width }
+                            onCreate(NotebookCreationSpec(title.trim(), PageSize(width, height), template, background, lines, cover))
+                        },
+                    ) { Text("Create") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InsertPageDialog(
+    currentPage: PageEntry,
+    onInsert: (PageInsertSpec, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var paper by remember { mutableStateOf(PaperPreset.A4) }
+    var landscape by remember { mutableStateOf(false) }
+    var template by remember { mutableStateOf(currentPage.template) }
+    var background by remember { mutableIntStateOf(currentPage.backgroundArgb) }
+    var lines by remember { mutableIntStateOf(currentPage.templateLineArgb) }
+    var customWidth by remember { mutableStateOf((currentPage.size.widthMicrons / 1_000f).toString()) }
+    var customHeight by remember { mutableStateOf((currentPage.size.heightMicrons / 1_000f).toString()) }
+    var doNotAskAgain by remember { mutableStateOf(false) }
+    val widthMm = if (paper == PaperPreset.Custom) customWidth.toFloatOrNull() else paper.widthMm
+    val heightMm = if (paper == PaperPreset.Custom) customHeight.toFloatOrNull() else paper.heightMm
+    val valid = widthMm != null && heightMm != null && widthMm in 50f..1_000f && heightMm in 50f..1_000f
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            Modifier.fillMaxWidth(.76f).fillMaxHeight(.82f),
+            shape = RoundedCornerShape(22.dp),
+            shadowElevation = 18.dp,
+        ) {
+            Column(Modifier.fillMaxSize().padding(22.dp)) {
+                Text("Insert page", style = MaterialTheme.typography.headlineSmall)
+                Text("Choose the paper before it is added", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Size", style = MaterialTheme.typography.titleSmall)
+                        PaperPreset.entries.chunked(4).forEach { choices ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                choices.forEach { choice -> SelectablePill(choice.label, paper == choice) { paper = choice } }
+                            }
+                        }
+                        if (paper == PaperPreset.Custom) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(customWidth, { customWidth = it }, label = { Text("Width mm") }, singleLine = true, modifier = Modifier.weight(1f))
+                            OutlinedTextField(customHeight, { customHeight = it }, label = { Text("Height mm") }, singleLine = true, modifier = Modifier.weight(1f))
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Landscape", Modifier.weight(1f))
+                            Switch(landscape, { landscape = it })
+                        }
+                        Text("Template", style = MaterialTheme.typography.titleSmall)
+                        PageTemplate.entries.chunked(3).forEach { choices ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                choices.forEach { choice ->
+                                    SelectablePill(choice.name.replace("MusicStaff", "Music"), template == choice) { template = choice }
+                                }
+                            }
+                        }
+                    }
+                    Column(Modifier.weight(.75f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Paper color", style = MaterialTheme.typography.titleSmall)
+                        ColorChoiceRow(listOf(0xFFFFFEFA.toInt(), 0xFFFFFFFF.toInt(), 0xFFFFF7E6.toInt(), 0xFFF4F1E8.toInt(), 0xFF1D222B.toInt()), background) { background = it }
+                        Text("Template lines", style = MaterialTheme.typography.titleSmall)
+                        ColorChoiceRow(listOf(0x402563EB, 0x40777777, 0x40508A60, 0x40B45353, 0x60D6D9E0), lines) { lines = it }
+                        Box(
+                            Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(14.dp)).background(Color(background)),
+                            contentAlignment = Alignment.Center,
+                        ) { Text(template.name, color = if (Color(background).luminance() > .5f) Color.DarkGray else Color.White) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Don't ask again")
+                                Text("You can turn this back on in Settings", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(doNotAskAgain, { doNotAskAgain = it })
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(
+                        enabled = valid,
+                        onClick = {
+                            var width = widthMm!! * 1_000f
+                            var height = heightMm!! * 1_000f
+                            if (landscape && height > width) width = height.also { height = width }
+                            onInsert(PageInsertSpec(PageSize(width, height), template, background, lines), doNotAskAgain)
+                        },
+                    ) { Text("Insert") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectablePill(label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+    ) { Text(label, Modifier.padding(horizontal = 11.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge) }
+}
+
+@Composable
+private fun ColorChoiceRow(colors: List<Int>, selected: Int, onSelect: (Int) -> Unit) {
+    var showPicker by remember { mutableStateOf(false) }
+    Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+        colors.forEach { argb ->
+            Surface(
+                onClick = { onSelect(argb) },
+                modifier = Modifier.size(if (selected == argb) 38.dp else 34.dp),
+                shape = RoundedCornerShape(50),
+                color = Color(argb),
+                border = androidx.compose.foundation.BorderStroke(if (selected == argb) 3.dp else 1.dp, MaterialTheme.colorScheme.primary),
+            ) {}
+        }
+        IconButton(onClick = { showPicker = true }, modifier = Modifier.size(38.dp)) {
+            Icon(Icons.Outlined.Palette, "Choose any color")
+        }
+    }
+    if (showPicker) ThemeColorPickerDialog(
+        title = "Color",
+        initialArgb = selected,
+        onSelect = { onSelect(it); showPicker = false },
+        onDismiss = { showPicker = false },
+    )
+}
+
+@Composable
+private fun NavigationItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    selected: Boolean,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {},
+) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier,
+    ) {
+        Row(
+            Modifier.then(if (compact) Modifier.size(48.dp) else Modifier.fillMaxWidth()).padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (compact) Arrangement.Center else Arrangement.Start,
+        ) {
+            Icon(icon, null, Modifier.size(20.dp))
+            if (!compact) {
+                Spacer(Modifier.width(12.dp))
+                Text(label)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibrarySortAndLayout(
+    sortMenu: Boolean,
+    onSortMenu: (Boolean) -> Unit,
+    sort: LibrarySort,
+    onSort: (LibrarySort) -> Unit,
+    layout: LibraryLayout,
+    onLayout: (LibraryLayout) -> Unit,
+) {
+    Box {
+        IconButton(onClick = { onSortMenu(true) }) { Icon(Icons.Outlined.History, "Sort notebooks") }
+        DropdownMenu(
+            expanded = sortMenu,
+            onDismissRequest = { onSortMenu(false) },
+            modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface),
+        ) {
+            LibrarySort.entries.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.name) },
+                    onClick = { onSort(choice); onSortMenu(false) },
+                    trailingIcon = { if (choice == sort) Icon(Icons.Outlined.Star, null, Modifier.size(15.dp)) },
+                )
+            }
+        }
+    }
+    IconButton(onClick = { onLayout(if (layout == LibraryLayout.Grid) LibraryLayout.List else LibraryLayout.Grid) }) {
+        Icon(if (layout == LibraryLayout.Grid) Icons.Outlined.ViewList else Icons.Outlined.GridView, "Change layout")
+    }
+}
+
+@Composable
+private fun FolderCard(
+    folder: String,
+    noteCount: Int,
+    highlighted: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        border = if (highlighted) androidx.compose.foundation.BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+    ) {
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth().aspectRatio(.76f),
+            color = MaterialTheme.colorScheme.primaryContainer,
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.Folder, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Text(folder, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(stringResource(R.string.notes_count, noteCount), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun NotebookCard(
+    tab: EditorTab,
+    folders: List<String>,
+    onClick: () -> Unit,
+    onDuplicate: (EditorTab) -> Unit,
+    onPermanentDelete: (EditorTab) -> Unit,
+    onExportNotebook: (EditorTab) -> Unit,
+    onDragStart: () -> Unit = {},
+    onDragPosition: (Offset) -> Unit = {},
+    onDragEnd: () -> Boolean = { false },
+) {
+    val previewPage = tab.pages.firstOrNull()
+    val hoverInteraction = remember { MutableInteractionSource() }
+    val hovered by hoverInteraction.collectIsHoveredAsState()
+    val cardScale by animateFloatAsState(if (hovered) 1.025f else 1f, tween(150), label = "notebook-hover")
+    var actionsSignal by remember(tab.id) { mutableIntStateOf(0) }
+    var cardOrigin by remember(tab.id) { mutableStateOf(Offset.Zero) }
+    var dragPointer by remember(tab.id) { mutableStateOf(Offset.Zero) }
+    var dragTranslation by remember(tab.id) { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(tab.id, previewPage?.id) {
+        previewPage?.let { tab.requestThumbnail(it.id) }
+    }
+    Card(
+        modifier = Modifier
+            .onGloballyPositioned { cardOrigin = it.positionInRoot() }
+            .hoverable(hoverInteraction)
+            .graphicsLayer {
+                scaleX = cardScale; scaleY = cardScale
+                translationX = dragTranslation.x; translationY = dragTranslation.y
+                shadowElevation = if (dragTranslation != Offset.Zero) 20.dp.toPx() else 0f
+            }
+            .zIndex(if (dragTranslation != Offset.Zero) 30f else 0f)
+            .pointerInput(tab.id) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { start -> dragPointer = start; dragTranslation = Offset.Zero; onDragStart() },
+                    onDragEnd = {
+                        val moved = dragTranslation.getDistance() > 10f
+                        val handled = if (moved) onDragEnd() else false
+                        if (!handled) actionsSignal++
+                        dragTranslation = Offset.Zero
+                    },
+                    onDragCancel = { dragTranslation = Offset.Zero; onDragEnd() },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        dragTranslation += amount
+                        onDragPosition(cardOrigin + dragPointer + dragTranslation)
+                    },
+                )
+            },
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column {
+            Surface(
+                onClick = onClick,
+                modifier = Modifier.fillMaxWidth().aspectRatio(.76f),
+                color = Color(tab.coverArgb),
+            ) {
+                Box(
+                    Modifier.fillMaxSize().padding(12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (previewPage != null) {
+                        PageThumbnailPreview(
+                            previewPage,
+                            Modifier
+                                .fillMaxHeight()
+                                .aspectRatio(previewPage.size.widthMicrons / previewPage.size.heightMicrons)
+                                .clip(RoundedCornerShape(5.dp))
+                                .shadow(5.dp, RoundedCornerShape(5.dp)),
+                        )
+                    } else {
+                        Icon(Icons.Outlined.Edit, null, Modifier.size(42.dp), tint = Color.White.copy(alpha = .9f))
+                    }
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            tab.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (tab.favorite) Icon(Icons.Outlined.Star, null, Modifier.padding(start = 4.dp).size(15.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Text("${tab.pages.size} pages${tab.folderPath?.let { " · $it" }.orEmpty()}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+                NotebookActionsButton(tab, folders, onDuplicate, onPermanentDelete, onExportNotebook, actionsSignal)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotebookListRow(
+    tab: EditorTab,
+    folders: List<String>,
+    onClick: () -> Unit,
+    onDuplicate: (EditorTab) -> Unit,
+    onPermanentDelete: (EditorTab) -> Unit,
+    onExportNotebook: (EditorTab) -> Unit,
+) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface) {
+        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(Color(tab.coverArgb)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.Edit, null, tint = Color.White)
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                Text(tab.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${tab.pages.size} pages${tab.folderPath?.let { " · $it" }.orEmpty()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (tab.favorite) Icon(Icons.Outlined.Star, "Favorite", tint = MaterialTheme.colorScheme.primary)
+            NotebookActionsButton(tab, folders, onDuplicate, onPermanentDelete, onExportNotebook)
+        }
+    }
+}
+
+@Composable
+private fun NotebookActionsButton(
+    tab: EditorTab,
+    folders: List<String>,
+    onDuplicate: (EditorTab) -> Unit,
+    onPermanentDelete: (EditorTab) -> Unit,
+    onExportNotebook: (EditorTab) -> Unit,
+    externalOpenSignal: Int = 0,
+) {
+    val context = LocalContext.current
+    var menu by remember { mutableStateOf(false) }
+    var rename by remember { mutableStateOf(false) }
+    var confirmPermanentDelete by remember { mutableStateOf(false) }
+    var editedName by remember(tab.id) { mutableStateOf(tab.title) }
+    LaunchedEffect(externalOpenSignal) {
+        if (externalOpenSignal > 0) menu = true
+    }
+    Box {
+        IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Notebook actions") }
+        DropdownMenu(menu, { menu = false }) {
+            if (tab.trashedAtEpochMillis != null) {
+                DropdownMenuItem(text = { Text("Restore") }, onClick = { menu = false; tab.restoreFromTrash() })
+                DropdownMenuItem(text = { Text("Delete permanently") }, leadingIcon = { Icon(Icons.Outlined.Delete, null) }, onClick = { menu = false; confirmPermanentDelete = true })
+            } else {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.open_new_window)) },
+                    leadingIcon = { Icon(Icons.Outlined.OpenInNew, null) },
+                    onClick = {
+                        menu = false
+                        context.startActivity(Intent(context, MainActivity::class.java).apply {
+                            putExtra(MainActivity.EXTRA_NOTEBOOK_ID, tab.persistentId)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                        })
+                    },
+                )
+                DropdownMenuItem(text = { Text(stringResource(if (tab.favorite) R.string.remove_favorite else R.string.add_favorite)) }, leadingIcon = { Icon(Icons.Outlined.Star, null) }, onClick = { menu = false; tab.updateFavorite(!tab.favorite) })
+                DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, null) }, onClick = { menu = false; editedName = tab.title; rename = true })
+                DropdownMenuItem(text = { Text(stringResource(R.string.duplicate)) }, leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) }, onClick = { menu = false; onDuplicate(tab) })
+                DropdownMenuItem(text = { Text(stringResource(R.string.export_mynote)) }, leadingIcon = { Icon(Icons.Outlined.FileOpen, null) }, onClick = { menu = false; onExportNotebook(tab) })
+                DropdownMenuItem(text = { Text(stringResource(R.string.move_out_folder)) }, enabled = tab.folderPath != null, leadingIcon = { Icon(Icons.Outlined.Folder, null) }, onClick = { menu = false; tab.moveToFolder(null) })
+                folders.forEach { folder ->
+                    DropdownMenuItem(text = { Text("Move to $folder") }, onClick = { menu = false; tab.moveToFolder(folder) })
+                }
+                DropdownMenuItem(text = { Text(stringResource(R.string.change_cover)) }, leadingIcon = { Icon(Icons.Outlined.Brush, null) }, onClick = {
+                    val choices = listOf(0xFF303747.toInt(), 0xFF315C8C.toInt(), 0xFF6A3F72.toInt(), 0xFF386A55.toInt(), 0xFF8A4A3B.toInt())
+                    tab.setCoverColor(choices[(choices.indexOf(tab.coverArgb) + 1).mod(choices.size)])
+                    menu = false
+                })
+                DropdownMenuItem(text = { Text(stringResource(R.string.move_to_trash)) }, leadingIcon = { Icon(Icons.Outlined.Delete, null) }, onClick = { menu = false; tab.moveToTrash() })
+            }
+        }
+    }
+    if (rename) AlertDialog(
+        onDismissRequest = { rename = false },
+        title = { Text("Rename notebook") },
+        text = { OutlinedTextField(editedName, { editedName = it }, singleLine = true) },
+        dismissButton = { TextButton(onClick = { rename = false }) { Text("Cancel") } },
+        confirmButton = { TextButton(enabled = editedName.isNotBlank(), onClick = { tab.rename(editedName); rename = false }) { Text("Rename") } },
+    )
+    if (confirmPermanentDelete) AlertDialog(
+        onDismissRequest = { confirmPermanentDelete = false },
+        title = { Text("Delete notebook permanently?") },
+        text = { Text("This notebook and its embedded files will be deleted. This cannot be undone.") },
+        dismissButton = { TextButton(onClick = { confirmPermanentDelete = false }) { Text("Cancel") } },
+        confirmButton = {
+            TextButton(onClick = { confirmPermanentDelete = false; onPermanentDelete(tab) }) {
+                Text("Delete permanently", color = MaterialTheme.colorScheme.error)
+            }
+        },
+    )
+}
+
+@Composable
+private fun EditorScreen(
+    tabs: List<EditorTab>, selectedTabId: Int, onSelectTab: (Int) -> Unit,
+    allNotebooks: List<EditorTab>,
+    onMoveTab: (Int, Int) -> Unit, onCloseTab: (Int) -> Unit,
+    tab: EditorTab, mode: EditorMode, onMode: (EditorMode) -> Unit,
+    dockEdge: DockEdge, onDockEdge: (DockEdge) -> Unit,
+    onHome: () -> Unit, onImage: () -> Unit, onImportPdf: () -> Unit,
+    onExportPdf: () -> Unit, onExportImage: () -> Unit, onBackup: () -> Unit,
+    onSharePdf: () -> Unit, onShareImage: () -> Unit, onShareNotebook: () -> Unit,
+    onSettings: () -> Unit,
+    actionMappings: List<ActionMapping>, actionRecognizer: ActionMapRecognizer,
+    showDiagnostics: Boolean,
+    appSettings: AppSettings,
+    onAppSettingsChanged: (AppSettings) -> Unit,
+    onStylusButtonPressed: (Int) -> Unit,
+) {
+    var sidebarVisible by remember { mutableStateOf(true) }
+    var strokeSizePreview by remember { mutableStateOf<StrokeSizePreview?>(null) }
+    var showPdfNavigation by remember { mutableStateOf(false) }
+    fun executeAction(action: MappedAction) {
+        when (action) {
+            MappedAction.Undo -> tab.session.undo()
+            MappedAction.Redo -> tab.session.redo()
+            MappedAction.Pen -> { tab.session.selectTool(InkTool.Pen); onMode(EditorMode.Ink) }
+            MappedAction.Pencil -> { tab.session.selectTool(InkTool.Pencil); onMode(EditorMode.Ink) }
+            MappedAction.Highlighter -> { tab.session.selectTool(InkTool.Highlighter); onMode(EditorMode.Ink) }
+            MappedAction.Eraser -> { tab.session.selectTool(InkTool.Eraser); onMode(EditorMode.Ink) }
+            MappedAction.Lasso -> onMode(EditorMode.Lasso)
+            MappedAction.Shapes -> onMode(EditorMode.Shape)
+            MappedAction.Text -> onMode(EditorMode.Text)
+            MappedAction.AddPage -> tab.addPage()
+            MappedAction.PreviousPage -> tab.navigateToPage((tab.selectedPageIndex - 1).coerceAtLeast(0))
+            MappedAction.NextPage -> tab.navigateToPage((tab.selectedPageIndex + 1).coerceAtMost(tab.pages.lastIndex))
+            MappedAction.Image -> onImage()
+            MappedAction.Bookmark -> tab.toggleBookmark()
+            MappedAction.PageOverview -> sidebarVisible = !sidebarVisible
+            MappedAction.ResetZoom -> tab.resetViewport()
+            MappedAction.WidthPreset1 -> appSettings.widthPresets(tab.session.selectedTool).getOrNull(0)?.let { tab.session.updateToolWidth(tab.session.selectedTool, it) }
+            MappedAction.WidthPreset2 -> appSettings.widthPresets(tab.session.selectedTool).getOrNull(1)?.let { tab.session.updateToolWidth(tab.session.selectedTool, it) }
+            MappedAction.WidthPreset3 -> appSettings.widthPresets(tab.session.selectedTool).getOrNull(2)?.let { tab.session.updateToolWidth(tab.session.selectedTool, it) }
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        DocumentTabs(tabs, selectedTabId, onSelectTab, onMoveTab, onCloseTab)
+        EditorCommandBar(
+            tab, onHome, { sidebarVisible = !sidebarVisible }, onImportPdf, onExportPdf,
+            onExportImage, onBackup, onSharePdf, onShareImage, onShareNotebook,
+            { showPdfNavigation = true }, onSettings,
+        )
+        if (dockEdge == DockEdge.Top) ToolPalette(
+            false, tab.session, mode, onMode, onImage, onSettings,
+            onStrokeSizePreview = { strokeSizePreview = it },
+            appSettings = appSettings,
+            onAppSettingsChanged = onAppSettingsChanged,
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .5f))
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            if (dockEdge == DockEdge.Left) ToolPalette(
+                true, tab.session, mode, onMode, onImage, onSettings,
+                onStrokeSizePreview = { strokeSizePreview = it },
+                appSettings = appSettings,
+                onAppSettingsChanged = onAppSettingsChanged,
+            )
+            if (sidebarVisible) PageThumbnailRail(tab, allNotebooks, appSettings, onAppSettingsChanged)
+            ContinuousPageCanvas(
+                tab, mode, actionMappings, actionRecognizer, ::executeAction,
+                strokeSizePreview, appSettings.actionActivationMode, appSettings.drawAndHoldEnabled,
+                appSettings.customFonts, onStylusButtonPressed,
+                Modifier.weight(1f),
+            )
+            if (showDiagnostics) DiagnosticsPanel(tab.session)
+            if (dockEdge == DockEdge.Right) ToolPalette(
+                true, tab.session, mode, onMode, onImage, onSettings,
+                onStrokeSizePreview = { strokeSizePreview = it },
+                appSettings = appSettings,
+                onAppSettingsChanged = onAppSettingsChanged,
+            )
+        }
+    }
+    if (showPdfNavigation) PdfNavigationDialog(tab, onDismiss = { showPdfNavigation = false })
+}
+
+@Composable
+private fun DocumentTabs(
+    tabs: List<EditorTab>,
+    selectedId: Int,
+    onSelect: (Int) -> Unit,
+    onMove: (Int, Int) -> Unit,
+    onClose: (Int) -> Unit,
+) {
+    val density = LocalDensity.current
+    val tabWidth = 180.dp
+    val tabWidthPx = with(density) { tabWidth.toPx() }
+    val scrollState = rememberScrollState()
+    var draggedTabId by remember { mutableStateOf<Int?>(null) }
+    var draggedOffsetX by remember { mutableStateOf(0f) }
+    val currentTabs by rememberUpdatedState(tabs)
+    BoxWithConstraints(Modifier.fillMaxWidth().height(34.dp).background(MaterialTheme.colorScheme.background)) {
+        val viewportWidthPx = constraints.maxWidth.toFloat()
+        Row(
+            Modifier.fillMaxSize().horizontalScroll(scrollState),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            tabs.forEach { tab ->
+                key(tab.id) {
+                    val isDragged = draggedTabId == tab.id
+                    Surface(
+                    onClick = { onSelect(tab.id) },
+                    color = if (tab.id == selectedId) MaterialTheme.colorScheme.surface else Color.Transparent,
+                    shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+                    shadowElevation = if (isDragged) 8.dp else 0.dp,
+                    modifier = Modifier
+                        .height(32.dp)
+                        .width(tabWidth)
+                        .zIndex(if (isDragged) 10f else 0f)
+                        .graphicsLayer { translationX = if (isDragged) draggedOffsetX else 0f }
+                        .pointerInput(tab.id, tabs.size) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    draggedTabId = tab.id
+                                    draggedOffsetX = 0f
+                                },
+                                onDragCancel = {
+                                    draggedTabId = null
+                                    draggedOffsetX = 0f
+                                },
+                                onDragEnd = {
+                                    draggedTabId = null
+                                    draggedOffsetX = 0f
+                                },
+                            ) { change, amount ->
+                                change.consume()
+                                val activeTabs = currentTabs
+                                val currentIndex = activeTabs.indexOfFirst { it.id == tab.id }
+                                if (currentIndex < 0) return@detectDragGesturesAfterLongPress
+                                val slotScreenX = currentIndex * tabWidthPx - scrollState.value
+                                draggedOffsetX = (draggedOffsetX + amount.x).coerceIn(
+                                    -slotScreenX,
+                                    (viewportWidthPx - tabWidthPx - slotScreenX).coerceAtLeast(-slotScreenX),
+                                )
+                                while (draggedOffsetX > tabWidthPx / 2f && currentIndex < activeTabs.lastIndex) {
+                                    onMove(tab.id, 1)
+                                    draggedOffsetX -= tabWidthPx
+                                    break
+                                }
+                                while (draggedOffsetX < -tabWidthPx / 2f && currentIndex > 0) {
+                                    onMove(tab.id, -1)
+                                    draggedOffsetX += tabWidthPx
+                                    break
+                                }
+                            }
+                        },
+                    ) {
+                        Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(tab.title, Modifier.weight(1f), maxLines = 1, style = MaterialTheme.typography.labelMedium)
+                            IconButton(onClick = { onClose(tab.id) }, Modifier.size(30.dp)) {
+                                Icon(Icons.Outlined.Close, "Close tab", Modifier.size(15.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorCommandBar(
+    tab: EditorTab, onHome: () -> Unit, onSidebar: () -> Unit,
+    onImportPdf: () -> Unit, onExportPdf: () -> Unit, onExportImage: () -> Unit,
+    onBackup: () -> Unit, onSharePdf: () -> Unit, onShareImage: () -> Unit,
+    onShareNotebook: () -> Unit, onPdfNavigation: () -> Unit, onSettings: () -> Unit,
+) {
+    var menu by remember { mutableStateOf(false) }
+    Row(
+        Modifier.fillMaxWidth().height(42.dp).zIndex(20f).background(MaterialTheme.colorScheme.surface).padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onHome, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.ArrowBack, "Back to library") }
+        IconButton(onClick = onSidebar, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.ViewSidebar, "Toggle page thumbnails") }
+        Text(tab.title, Modifier.padding(horizontal = 8.dp).weight(1f), style = MaterialTheme.typography.titleSmall)
+        SaveStatusIcon(tab.session.saveStatus)
+        IconButton(onClick = tab.session::undo, enabled = tab.session.canUndo, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.Undo, "Undo") }
+        IconButton(onClick = tab.session::redo, enabled = tab.session.canRedo, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.Redo, "Redo") }
+        Box {
+            IconButton(onClick = { menu = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.MoreVert, "Document menu") }
+            DropdownMenu(
+                expanded = menu,
+                onDismissRequest = { menu = false },
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surface),
+            ) {
+                MenuItem(Icons.Outlined.PictureAsPdf, "Import PDF") { menu = false; onImportPdf() }
+                MenuItem(Icons.Outlined.PictureAsPdf, "Export notebook as PDF") { menu = false; onExportPdf() }
+                MenuItem(Icons.Outlined.Image, "Export current page") { menu = false; onExportImage() }
+                MenuItem(Icons.Outlined.FileOpen, "Back up editable notebook") { menu = false; onBackup() }
+                HorizontalDivider()
+                MenuItem(Icons.Outlined.PictureAsPdf, "Share PDF") { menu = false; onSharePdf() }
+                MenuItem(Icons.Outlined.Image, "Share current page image") { menu = false; onShareImage() }
+                MenuItem(Icons.Outlined.ContentCopy, "Share editable notebook") { menu = false; onShareNotebook() }
+                MenuItem(Icons.Outlined.Search, "Search PDF and bookmarks") { menu = false; onPdfNavigation() }
+                HorizontalDivider()
+                MenuItem(Icons.Outlined.Settings, "Editor settings") { menu = false; onSettings() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    DropdownMenuItem(text = { Text(label) }, leadingIcon = { Icon(icon, null) }, onClick = onClick)
+}
+
+@Composable
+private fun ToolPalette(
+    vertical: Boolean, session: EditorSession, mode: EditorMode,
+    onMode: (EditorMode) -> Unit, onImage: () -> Unit, onSettings: () -> Unit,
+    onStrokeSizePreview: (StrokeSizePreview?) -> Unit,
+    appSettings: AppSettings,
+    onAppSettingsChanged: (AppSettings) -> Unit,
+) {
+    var showColorPicker by remember { mutableStateOf(false) }
+    val dragRangePx = with(LocalDensity.current) { 120.dp.toPx() }
+    fun previewFor(tool: InkTool): StrokeSizePreview {
+        val style = session.currentStyle(tool)
+        return StrokeSizePreview(tool, style.maximumWidth)
+    }
+    fun activate(tool: InkTool) {
+        session.selectTool(tool)
+        onMode(EditorMode.Ink)
+    }
+    val modifier = if (vertical) Modifier.width(58.dp).fillMaxHeight() else Modifier.fillMaxWidth().height(58.dp)
+    Surface(modifier.zIndex(20f), color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
+        val content: @Composable () -> Unit = {
+            ToolIcon(
+                Icons.Outlined.Create, stringResource(R.string.pen), mode == EditorMode.Ink && session.selectedTool == InkTool.Pen,
+                onClick = { activate(InkTool.Pen) },
+            )
+            ToolIcon(
+                Icons.Outlined.Edit, stringResource(R.string.pencil), mode == EditorMode.Ink && session.selectedTool == InkTool.Pencil,
+                onClick = { activate(InkTool.Pencil) },
+            )
+            ToolIcon(
+                Icons.Outlined.Highlight, stringResource(R.string.highlighter), mode == EditorMode.Ink && session.selectedTool == InkTool.Highlighter,
+                onClick = { activate(InkTool.Highlighter) },
+            )
+            ToolIcon(
+                Icons.Outlined.AutoFixHigh, stringResource(R.string.eraser), mode == EditorMode.Ink && session.selectedTool == InkTool.Eraser,
+                onClick = { activate(InkTool.Eraser) },
+            )
+            ToolIcon(Icons.Outlined.Gesture, stringResource(R.string.lasso), mode == EditorMode.Lasso) { onMode(EditorMode.Lasso) }
+            ToolIcon(Icons.Outlined.Image, stringResource(R.string.insert_image), mode == EditorMode.Object) { onImage() }
+            ToolIcon(Icons.Outlined.TextFields, stringResource(R.string.text_tool), mode == EditorMode.Text) { onMode(EditorMode.Text) }
+            ToolIcon(Icons.Outlined.ShapeLine, stringResource(R.string.shapes), mode == EditorMode.Shape) { onMode(EditorMode.Shape) }
+            ToolIcon(Icons.Outlined.Mic, stringResource(R.string.audio_note), mode == EditorMode.Audio) { onMode(EditorMode.Audio) }
+            if (!vertical) Spacer(Modifier.width(12.dp))
+            if (session.selectedTool != InkTool.Eraser) {
+                appSettings.colorPresets(session.selectedTool).forEach { argb ->
+                    ColorSwatch(
+                        color = Color(argb),
+                        selected = session.currentStyle().argb == argb,
+                    ) { session.setCurrentColor(argb) }
+                }
+                Box {
+                    ToolIcon(Icons.Outlined.Palette, stringResource(R.string.custom_color), showColorPicker) { showColorPicker = true }
+                    ToolColorDropdown(
+                        expanded = showColorPicker,
+                        initialArgb = session.currentStyle().argb,
+                        onApply = { session.setCurrentColor(it); showColorPicker = false },
+                        onDismiss = { showColorPicker = false },
+                    )
+                }
+                appSettings.widthPresets(session.selectedTool).forEachIndexed { index, width ->
+                    StrokeWidthPreset(
+                        widthMicrons = width.coerceAtMost(session.maximumToolWidthMicrons),
+                        maximumWidthMicrons = session.maximumToolWidthMicrons,
+                        color = Color(session.currentStyle().argb).copy(alpha = session.currentStyle().opacity),
+                        selected = kotlin.math.abs(session.toolWidthMicrons(session.selectedTool) - width) < 1f,
+                        onClick = { session.updateToolWidth(session.selectedTool, width) },
+                        onDragStart = {
+                            session.updateToolWidth(session.selectedTool, width)
+                            onStrokeSizePreview(previewFor(session.selectedTool))
+                        },
+                        onDrag = { delta ->
+                            val updated = (session.toolWidthMicrons(session.selectedTool) -
+                                delta / dragRangePx * session.maximumToolWidthMicrons)
+                                .coerceIn(100f, session.maximumToolWidthMicrons)
+                            session.updateToolWidth(session.selectedTool, updated)
+                            val presets = appSettings.widthPresets(session.selectedTool).toMutableList().apply {
+                                this[index] = updated
+                            }
+                            onAppSettingsChanged(appSettings.withWidthPresets(session.selectedTool, presets))
+                            onStrokeSizePreview(previewFor(session.selectedTool))
+                        },
+                        onDragEnd = { onStrokeSizePreview(null) },
+                    )
+                }
+            }
+            ToolIcon(Icons.Outlined.Settings, stringResource(R.string.tool_settings), false, onClick = onSettings)
+        }
+        if (vertical) Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) { content() }
+        else Row(
+            Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) { content() }
+    }
+}
+
+@Composable
+private fun ToolColorDropdown(
+    expanded: Boolean,
+    initialArgb: Int,
+    onApply: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier.width(320.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface),
+    ) {
+        CircularColorPickerContent(initialArgb, onApply, onDismiss, wheelSize = 210.dp)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ToolIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val tooltipState = rememberTooltipState(isPersistent = true)
+    val tooltipScope = rememberCoroutineScope()
+    val hoverModifier = Modifier.pointerInput(description, tooltipState) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val isStylus = event.changes.any {
+                    it.type == PointerType.Stylus || it.type == PointerType.Eraser
+                }
+                if (isStylus) {
+                    when (event.type) {
+                        PointerEventType.Enter -> tooltipScope.launch { tooltipState.show() }
+                        PointerEventType.Exit -> tooltipState.dismiss()
+                    }
+                }
+            }
+        }
+    }
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(description) } },
+        state = tooltipState,
+    ) {
+        Surface(
+            onClick = onClick,
+            color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.size(46.dp).then(hoverModifier),
+        ) { Box(contentAlignment = Alignment.Center) { Icon(icon, description, Modifier.size(23.dp)) } }
+    }
+}
+
+@Composable
+private fun StrokeWidthPreset(
+    widthMicrons: Float,
+    maximumWidthMicrons: Float,
+    color: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onDragStart: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragEnd: () -> Unit,
+) {
+    val diameter = (8f + 16f * widthMicrons / maximumWidthMicrons).dp
+    val outlineColor = MaterialTheme.colorScheme.onSurface
+    Surface(
+        onClick = onClick,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        shape = RoundedCornerShape(50),
+        modifier = Modifier.size(34.dp).pointerInput(maximumWidthMicrons) {
+            detectVerticalDragGestures(
+                onDragStart = { onDragStart() },
+                onDragCancel = onDragEnd,
+                onDragEnd = onDragEnd,
+            ) { change, amount ->
+                change.consume()
+                onDrag(amount)
+            }
+        },
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(diameter)) {
+                drawCircle(color)
+                if (selected) drawCircle(outlineColor, style = Stroke(1.5.dp.toPx()))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColorSwatch(color: Color, selected: Boolean = false, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = color,
+        modifier = Modifier.size(if (selected) 30.dp else 26.dp),
+        border = androidx.compose.foundation.BorderStroke(if (selected) 3.dp else 1.dp, MaterialTheme.colorScheme.onSurface),
+    ) {}
+}
+
+@Composable
+private fun PageThumbnailRail(
+    tab: EditorTab,
+    openTabs: List<EditorTab>,
+    appSettings: AppSettings,
+    onAppSettingsChanged: (AppSettings) -> Unit,
+) {
+    val density = LocalDensity.current
+    var menu by remember { mutableStateOf(false) }
+    var bookmarksOnly by remember(tab.id) { mutableStateOf(false) }
+    var showJump by remember { mutableStateOf(false) }
+    var jumpPage by remember { mutableStateOf((tab.selectedPageIndex + 1).toString()) }
+    var draggedPageId by remember { mutableStateOf<PageId?>(null) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    var dragTargetIndex by remember { mutableIntStateOf(-1) }
+    var pendingInsertAfter by remember { mutableStateOf<Boolean?>(null) }
+    val visiblePages = tab.pages.mapIndexedNotNull { index, page ->
+        if (!bookmarksOnly || page.bookmarked) index to page else null
+    }
+    Column(Modifier.width(94.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surface)) {
+        LazyColumn(
+            Modifier.weight(1f), contentPadding = PaddingValues(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            itemsIndexed(visiblePages, key = { _, entry -> entry.second.id.value }) { _, entry ->
+                val (index, page) = entry
+                LaunchedEffect(page.id) { tab.requestThumbnail(page.id) }
+                var itemHeightPx by remember(page.id) { mutableIntStateOf(1) }
+                val isDragged = draggedPageId == page.id
+                Box(
+                    Modifier.fillMaxWidth()
+                        .aspectRatio(page.size.widthMicrons / page.size.heightMicrons)
+                        .animateItem()
+                        .zIndex(if (isDragged) 20f else 0f)
+                        .onSizeChanged { itemHeightPx = it.height.coerceAtLeast(1) },
+                ) {
+                    if (isDragged) Surface(
+                        Modifier.fillMaxSize(),
+                        shape = RoundedCornerShape(7.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = .10f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .45f)),
+                    ) {}
+                    Surface(
+                        onClick = { tab.navigateToPage(index) },
+                        shape = RoundedCornerShape(7.dp),
+                        color = if (index == tab.selectedPageIndex) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        shadowElevation = if (isDragged) 10.dp else 0.dp,
+                        modifier = Modifier.fillMaxSize()
+                            .zIndex(if (isDragged) 10f else 0f)
+                            .graphicsLayer { translationY = if (isDragged) dragOffset else 0f }
+                            .pointerInput(page.id, tab.pages.size) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    draggedPageId = page.id
+                                    dragOffset = 0f
+                                    dragTargetIndex = index
+                                },
+                                onDragCancel = {
+                                    draggedPageId = null
+                                    dragOffset = 0f
+                                    dragTargetIndex = -1
+                                },
+                                onDragEnd = {
+                                    if (dragTargetIndex >= 0) tab.movePageTo(page.id, dragTargetIndex)
+                                    draggedPageId = null
+                                    dragOffset = 0f
+                                    dragTargetIndex = -1
+                                },
+                            ) { change, amount ->
+                                change.consume()
+                                dragOffset += amount.y
+                                val sourceVisibleIndex = visiblePages.indexOfFirst { it.second.id == page.id }
+                                val stride = itemHeightPx + with(density) { 10.dp.roundToPx() }
+                                val targetVisibleIndex = (sourceVisibleIndex + (dragOffset / stride).roundToInt())
+                                    .coerceIn(0, visiblePages.lastIndex)
+                                dragTargetIndex = visiblePages[targetVisibleIndex].first
+                            }
+                        },
+                    ) {
+                        Box(Modifier.padding(5.dp)) {
+                            PageThumbnailPreview(page, Modifier.fillMaxSize().clip(RoundedCornerShape(3.dp)))
+                            Surface(
+                                color = Color(0xDDF8F7F2),
+                                shape = RoundedCornerShape(bottomEnd = 4.dp),
+                            ) {
+                                Text(
+                                    if (page.bookmarked) "★ ${index + 1}" else "${index + 1}",
+                                    Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                    color = Color(0xFF20242B),
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { bookmarksOnly = !bookmarksOnly }) {
+                Icon(
+                    Icons.Outlined.Bookmark,
+                    if (bookmarksOnly) "Show all pages" else "Show bookmarked pages",
+                    tint = if (bookmarksOnly) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreHoriz, "Page actions") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                MenuItem(Icons.Outlined.Add, "Insert page before") {
+                    menu = false
+                    if (appSettings.askBeforeInsertingPage) pendingInsertAfter = false else tab.addPage(after = false)
+                }
+                MenuItem(Icons.Outlined.Add, "Insert page after") {
+                    menu = false
+                    if (appSettings.askBeforeInsertingPage) pendingInsertAfter = true else tab.addPage(after = true)
+                }
+                MenuItem(Icons.Outlined.NoteAdd, "Duplicate page") { menu = false; tab.duplicatePage() }
+                MenuItem(Icons.Outlined.Bookmark, "Bookmark page") { menu = false; tab.toggleBookmark() }
+                MenuItem(Icons.Outlined.GridView, "Change template") { menu = false; tab.cycleTemplate() }
+                MenuItem(Icons.Outlined.DriveFileRenameOutline, "Rotate page") { menu = false; tab.rotatePage() }
+                MenuItem(Icons.Outlined.Delete, "Delete page") { menu = false; tab.deletePage() }
+                MenuItem(Icons.Outlined.Search, "Jump to page") { menu = false; jumpPage = (tab.selectedPageIndex + 1).toString(); showJump = true }
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Undo page change") },
+                    leadingIcon = { Icon(Icons.Outlined.Undo, null) },
+                    enabled = tab.canUndoPageEdit,
+                    onClick = { menu = false; tab.undoPageEdit() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Redo page change") },
+                    leadingIcon = { Icon(Icons.Outlined.Redo, null) },
+                    enabled = tab.canRedoPageEdit,
+                    onClick = { menu = false; tab.redoPageEdit() },
+                )
+                DropdownMenuItem(text = { Text("Change paper color") }, leadingIcon = { Icon(Icons.Outlined.Palette, null) }, onClick = { menu = false; tab.cyclePageBackground() })
+                DropdownMenuItem(text = { Text("Change template line color") }, leadingIcon = { Icon(Icons.Outlined.Palette, null) }, onClick = { menu = false; tab.cycleTemplateLineColor() })
+                openTabs.filterNot { it === tab }.forEach { target ->
+                    DropdownMenuItem(
+                        text = { Text("Copy page to ${target.title}") },
+                        leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
+                        onClick = { menu = false; tab.copyCurrentPageTo(target, move = false) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Move page to ${target.title}") },
+                        enabled = tab.pages.size > 1,
+                        leadingIcon = { Icon(Icons.Outlined.NavigateNext, null) },
+                        onClick = { menu = false; tab.copyCurrentPageTo(target, move = true) },
+                    )
+                }
+            }
+            }
+        }
+    }
+    pendingInsertAfter?.let { after ->
+        InsertPageDialog(
+            currentPage = tab.pages[tab.selectedPageIndex],
+            onInsert = { spec, doNotAskAgain ->
+                tab.addPage(after, spec)
+                if (doNotAskAgain) onAppSettingsChanged(appSettings.copy(askBeforeInsertingPage = false))
+                pendingInsertAfter = null
+            },
+            onDismiss = { pendingInsertAfter = null },
+        )
+    }
+    if (showJump) AlertDialog(
+        onDismissRequest = { showJump = false },
+        title = { Text("Jump to page") },
+        text = { OutlinedTextField(jumpPage, { jumpPage = it }, label = { Text("Page number") }, singleLine = true) },
+        dismissButton = { TextButton(onClick = { showJump = false }) { Text("Cancel") } },
+        confirmButton = {
+            val page = jumpPage.toIntOrNull()?.minus(1)
+            TextButton(enabled = page != null && page in tab.pages.indices, onClick = { tab.navigateToPage(page!!); showJump = false }) { Text("Go") }
+        },
+    )
+}
+
+@Composable
+private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier) {
+    val pageState = page.session.page
+    val background = page.thumbnail ?: page.pdfBackground
+    Canvas(modifier.background(Color(page.backgroundArgb))) {
+        val scaleX = size.width / page.size.widthMicrons
+        val scaleY = size.height / page.size.heightMicrons
+        val templateColor = Color(page.templateLineArgb)
+        background?.let {
+            drawImage(
+                it.asImageBitmap(),
+                dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
+            )
+        }
+        if (background == null) {
+            val spacing = if (page.template == PageTemplate.Ruled) 9_000f else 8_000f
+            when (page.template) {
+                PageTemplate.Blank -> Unit
+                PageTemplate.Ruled -> {
+                    var y = spacing
+                    while (y < page.size.heightMicrons) {
+                        drawLine(templateColor, Offset(0f, y * scaleY), Offset(size.width, y * scaleY), 1f)
+                        y += spacing
+                    }
+                }
+                PageTemplate.Grid -> {
+                    var y = spacing
+                    while (y < page.size.heightMicrons) {
+                        drawLine(templateColor, Offset(0f, y * scaleY), Offset(size.width, y * scaleY), 1f)
+                        y += spacing
+                    }
+                    var x = spacing
+                    while (x < page.size.widthMicrons) {
+                        drawLine(templateColor, Offset(x * scaleX, 0f), Offset(x * scaleX, size.height), 1f)
+                        x += spacing
+                    }
+                }
+                PageTemplate.Dotted -> {
+                    var y = spacing
+                    while (y < page.size.heightMicrons) {
+                        var x = spacing
+                        while (x < page.size.widthMicrons) {
+                            drawCircle(templateColor, .7f, Offset(x * scaleX, y * scaleY))
+                            x += spacing
+                        }
+                        y += spacing
+                    }
+                }
+                PageTemplate.Cornell -> {
+                    var y = 36_000f
+                    while (y < page.size.heightMicrons) {
+                        drawLine(templateColor, Offset(0f, y * scaleY), Offset(size.width, y * scaleY), 1f)
+                        y += 9_000f
+                    }
+                    drawLine(templateColor, Offset(45_000f * scaleX, 0f), Offset(45_000f * scaleX, size.height), 1f)
+                    drawLine(templateColor, Offset(0f, 27_000f * scaleY), Offset(size.width, 27_000f * scaleY), 1f)
+                }
+                PageTemplate.MusicStaff -> {
+                    var top = 18_000f
+                    while (top < page.size.heightMicrons) {
+                        repeat(5) { line ->
+                            val y = (top + line * 2_500f) * scaleY
+                            drawLine(templateColor, Offset(0f, y), Offset(size.width, y), 1f)
+                        }
+                        top += 24_000f
+                    }
+                }
+            }
+        }
+        pageState.strokes.sortedBy { it.zIndex }.forEach { stroke ->
+            val samples = stroke.samples
+            val color = Color(stroke.style.argb).copy(alpha = stroke.style.opacity)
+            if (samples.size == 1) {
+                drawCircle(
+                    color,
+                    (stroke.style.maximumWidth * scaleX / 2f).coerceAtLeast(.6f),
+                    Offset(samples[0].position.x * scaleX, samples[0].position.y * scaleY),
+                )
+            } else {
+                val path = Path().apply {
+                    moveTo(samples[0].position.x * scaleX, samples[0].position.y * scaleY)
+                    for (sample in samples.drop(1)) {
+                        lineTo(sample.position.x * scaleX, sample.position.y * scaleY)
+                    }
+                }
+                drawPath(
+                    path,
+                    color,
+                    style = Stroke(
+                        width = ((stroke.style.minimumWidth + stroke.style.maximumWidth) / 2f * scaleX)
+                            .coerceAtLeast(.6f),
+                        cap = StrokeCap.Round,
+                    ),
+                )
+            }
+        }
+        page.objects.forEach { item ->
+            when (item) {
+                is SceneObject.Image -> drawImage(
+                    item.bitmap.asImageBitmap(),
+                    srcOffset = IntOffset(
+                        (item.bitmap.width * item.crop.leftFraction).roundToInt(),
+                        (item.bitmap.height * item.crop.topFraction).roundToInt(),
+                    ),
+                    srcSize = IntSize(
+                        (item.bitmap.width * (1f - item.crop.leftFraction - item.crop.rightFraction)).roundToInt(),
+                        (item.bitmap.height * (1f - item.crop.topFraction - item.crop.bottomFraction)).roundToInt(),
+                    ),
+                    dstOffset = IntOffset((item.x * scaleX).roundToInt(), (item.y * scaleY).roundToInt()),
+                    dstSize = IntSize((item.width * scaleX).roundToInt(), (item.height * scaleY).roundToInt()),
+                    alpha = item.opacity,
+                )
+                is SceneObject.Rectangle -> when (item.kind) {
+                    ShapeKind.Line, ShapeKind.Arrow -> drawLine(
+                        Color(item.strokeArgb),
+                        Offset(item.x * scaleX, item.y * scaleY),
+                        Offset((item.x + item.width) * scaleX, (item.y + item.height) * scaleY),
+                        1f,
+                    )
+                    ShapeKind.Rectangle -> drawRect(
+                        Color(item.strokeArgb),
+                        Offset(item.x * scaleX, item.y * scaleY),
+                        Size(item.width * scaleX, item.height * scaleY),
+                        style = Stroke(1f),
+                    )
+                    ShapeKind.RoundedRectangle -> drawRoundRect(
+                        Color(item.strokeArgb),
+                        Offset(item.x * scaleX, item.y * scaleY),
+                        Size(item.width * scaleX, item.height * scaleY),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(5f, 5f),
+                        style = Stroke(1f),
+                    )
+                    ShapeKind.Ellipse -> drawOval(
+                        Color(item.strokeArgb),
+                        Offset(item.x * scaleX, item.y * scaleY),
+                        Size(item.width * scaleX, item.height * scaleY),
+                        style = Stroke(1f),
+                    )
+                    ShapeKind.Triangle -> {
+                        val path = Path().apply {
+                            moveTo((item.x + item.width / 2f) * scaleX, item.y * scaleY)
+                            lineTo((item.x + item.width) * scaleX, (item.y + item.height) * scaleY)
+                            lineTo(item.x * scaleX, (item.y + item.height) * scaleY)
+                            close()
+                        }
+                        drawPath(path, Color(item.strokeArgb), style = Stroke(1f))
+                    }
+                }
+                is SceneObject.TextBox -> drawCircle(
+                    Color(item.argb),
+                    1.2f,
+                    Offset(item.x * scaleX, item.y * scaleY),
+                )
+                is SceneObject.Audio -> drawCircle(
+                    Color(0xFFEF4444),
+                    3f,
+                    Offset((item.x + item.width / 2f) * scaleX, (item.y + item.height / 2f) * scaleY),
+                )
+            }
+        }
+    }
+}
+
+private const val DOCUMENT_PAGE_GAP = 18_000f
+
+private data class PagePlacement(
+    val index: Int,
+    val page: PageEntry,
+    val left: Float,
+    val top: Float,
+) {
+    val right get() = left + page.size.widthMicrons
+    val bottom get() = top + page.size.heightMicrons
+    fun contains(point: PagePoint) = point.x in left..right && point.y in top..bottom
+    fun toLocal(point: PagePoint) = PagePoint(point.x - left, point.y - top)
+}
+
+private data class PendingInkStroke(
+    val page: PageEntry,
+    val nativeStroke: FinishedInkStroke,
+    val inputOriginX: Float,
+    val inputOriginY: Float,
+)
+
+private data class MixedSelection(
+    val pageIndex: Int,
+    val strokeIds: Set<StrokeId>,
+    val objectIds: Set<ObjectId>,
+)
+
+private data class SelectionClipboard(
+    val strokes: List<InkStroke>,
+    val objects: List<SceneObject>,
+)
+
+private data class DocumentLayout(
+    val width: Float,
+    val height: Float,
+    val pages: List<PagePlacement>,
+) {
+    fun pageAt(point: PagePoint): PagePlacement? = pages.firstOrNull { it.contains(point) }
+}
+
+private fun createDocumentLayout(pages: List<PageEntry>): DocumentLayout {
+    val width = pages.maxOfOrNull { it.size.widthMicrons } ?: A4_WIDTH
+    var top = DOCUMENT_PAGE_GAP
+    val placements = pages.mapIndexed { index, page ->
+        PagePlacement(index, page, (width - page.size.widthMicrons) / 2f, top).also {
+            top += page.size.heightMicrons + DOCUMENT_PAGE_GAP
+        }
+    }
+    return DocumentLayout(width, top, placements)
+}
+
+private fun PageEntry.ensureRuntimeStrokes() {
+    session.page.strokes.forEach { stroke ->
+        if (stroke.id !in renderStrokes) {
+            runCatching { stroke.toAndroidXStroke() }
+                .onSuccess { renderStrokes[stroke.id] = RuntimeInkStroke(it, 0f, 0f) }
+        }
+    }
+}
+
+private fun PageEntry.syncRuntimeStrokes() {
+    val currentIds = session.page.strokes.mapTo(hashSetOf(), InkStroke::id)
+    renderStrokes.keys.filterNot(currentIds::contains).forEach(renderStrokes::remove)
+    ensureRuntimeStrokes()
+}
+
+@Composable
+private fun ContinuousPageCanvas(
+    tab: EditorTab,
+    mode: EditorMode,
+    actionMappings: List<ActionMapping>,
+    actionRecognizer: ActionMapRecognizer,
+    onAction: (MappedAction) -> Unit,
+    strokeSizePreview: StrokeSizePreview?,
+    actionActivationMode: ActionActivationMode,
+    drawAndHoldEnabled: Boolean,
+    customFonts: List<String>,
+    onStylusButtonPressed: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val layout = createDocumentLayout(tab.pages)
+    var viewport by remember(tab.id) {
+        mutableStateOf(ViewportTransform(1f, 0f, 0f, layout.width, layout.height))
+    }
+    var minimumScale by remember(tab.id) { mutableStateOf(1f) }
+    var viewportWidth by remember { mutableIntStateOf(1) }
+    var viewportHeight by remember { mutableIntStateOf(1) }
+    var selectedObject by remember(tab.id) { mutableIntStateOf(-1) }
+    var selectedObjectPage by remember(tab.id) { mutableIntStateOf(-1) }
+    var copiedImage by remember(tab.id) { mutableStateOf<SceneObject.Image?>(null) }
+    var selectionClipboard by remember(tab.id) { mutableStateOf<SelectionClipboard?>(null) }
+    var mixedSelection by remember(tab.id) { mutableStateOf<MixedSelection?>(null) }
+    var lassoPoints by remember(tab.id) { mutableStateOf<List<PagePoint>>(emptyList()) }
+    var selectionDrag by remember(tab.id) { mutableStateOf(PagePoint(0f, 0f)) }
+    var movingSelection by remember(tab.id) { mutableStateOf(false) }
+    var showCropEditor by remember(tab.id) { mutableStateOf(false) }
+    var showTextEditor by remember(tab.id) { mutableStateOf(false) }
+    var showShapeEditor by remember(tab.id) { mutableStateOf(false) }
+    var showAudioPlayer by remember(tab.id) { mutableStateOf(false) }
+    var fingerResizingImage by remember(tab.id) { mutableStateOf(false) }
+    var stylusObjectPage by remember(tab.id) { mutableIntStateOf(-1) }
+    var stylusObjectIndex by remember(tab.id) { mutableIntStateOf(-1) }
+    var stylusResizingObject by remember(tab.id) { mutableStateOf(false) }
+    var stylusCanTransformObject by remember(tab.id) { mutableStateOf(false) }
+    var stylusShapeAnchor by remember(tab.id) { mutableStateOf<PagePoint?>(null) }
+    var stylusShapeCurrent by remember(tab.id) { mutableStateOf<PagePoint?>(null) }
+    var ocrText by remember(tab.id) { mutableStateOf<String?>(null) }
+    var ocrBusy by remember(tab.id) { mutableStateOf(false) }
+    var activeAudioRecording by remember(tab.id) { mutableStateOf<ActiveAudioRecording?>(null) }
+    var pendingAudioPoint by remember(tab.id) { mutableStateOf<PagePoint?>(null) }
+    var audioError by remember(tab.id) { mutableStateOf<String?>(null) }
+    var confirmSelectedDelete by remember(tab.id) { mutableStateOf(false) }
+    var confirmMixedDelete by remember(tab.id) { mutableStateOf(false) }
+    var shapeEraseUndoRecorded by remember(tab.id) { mutableStateOf(false) }
+    val textRecognizer = remember { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    DisposableEffect(textRecognizer) { onDispose { textRecognizer.close() } }
+
+    BackHandler(
+        enabled = mixedSelection != null || lassoPoints.isNotEmpty() || selectedObject >= 0 ||
+            showCropEditor || showTextEditor || showShapeEditor || showAudioPlayer ||
+            confirmSelectedDelete || confirmMixedDelete,
+    ) {
+        when {
+            showCropEditor -> showCropEditor = false
+            showTextEditor -> showTextEditor = false
+            showShapeEditor -> showShapeEditor = false
+            showAudioPlayer -> showAudioPlayer = false
+            confirmSelectedDelete -> confirmSelectedDelete = false
+            confirmMixedDelete -> confirmMixedDelete = false
+            else -> {
+                mixedSelection = null
+                lassoPoints = emptyList()
+                selectionDrag = PagePoint(0f, 0f)
+                movingSelection = false
+                selectedObject = -1
+                selectedObjectPage = -1
+            }
+        }
+    }
+
+    lateinit var beginAudioRecording: (PagePoint) -> Unit
+    val requestAudioPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val point = pendingAudioPoint
+        pendingAudioPoint = null
+        if (granted && point != null) beginAudioRecording(point)
+        else if (!granted) audioError = "Microphone permission is needed to record an audio note."
+    }
+    beginAudioRecording = begin@{ point ->
+        if (activeAudioRecording != null) return@begin
+        val placement = layout.pageAt(point) ?: return@begin
+        val local = placement.toLocal(point)
+        val (assetId, file) = tab.newAudioAsset()
+        val sampleRate = 16_000
+        val bufferSize = AudioRecord.getMinBufferSize(
+            sampleRate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+        ).coerceAtLeast(4_096)
+        val recorder = AudioRecord(
+            MediaRecorder.AudioSource.MIC,
+            sampleRate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+            bufferSize * 2,
+        )
+        val recording = AtomicBoolean(true)
+        val worker = Thread({
+            FileOutputStream(file).buffered().use { output ->
+                output.write(ByteArray(44))
+                val buffer = ByteArray(bufferSize)
+                while (recording.get()) {
+                    val count = recorder.read(buffer, 0, buffer.size)
+                    if (count > 0) output.write(buffer, 0, count)
+                }
+            }
+        }, "Mheenotes-audio-record")
+        runCatching {
+            check(recorder.state == AudioRecord.STATE_INITIALIZED) { "The microphone could not be initialized." }
+            recorder.startRecording()
+            worker.start()
+            activeAudioRecording = ActiveAudioRecording(
+                placement.index, local, assetId, file, recorder, worker, recording, SystemClock.elapsedRealtime(),
+            )
+            tab.selectedPageIndex = placement.index
+        }.onFailure { error ->
+            recording.set(false)
+            runCatching { recorder.release() }
+            file.delete()
+            audioError = "Recording could not start: ${error.message ?: "Unknown error"}"
+        }
+    }
+
+    fun requestAudioRecording(point: PagePoint) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            beginAudioRecording(point)
+        } else {
+            pendingAudioPoint = point
+            requestAudioPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    fun stopAudioRecording() {
+        val active = activeAudioRecording ?: return
+        activeAudioRecording = null
+        active.recording.set(false)
+        val stopped = runCatching { active.recorder.stop() }.isSuccess
+        runCatching { active.worker.join(1_500) }
+        runCatching { active.recorder.release() }
+        if (stopped && active.file.length() > 44L) runCatching { writeWavHeader(active.file, 16_000, 1, 16) }
+        if (!stopped || !active.file.isFile || active.file.length() <= 44L) {
+            active.file.delete()
+            audioError = "The recording was too short and was not saved."
+            return
+        }
+        val page = tab.pages.getOrNull(active.pageIndex) ?: return
+        tab.recordObjectEdit(page)
+        val zIndex = (page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
+        val diameter = (minOf(viewportWidth, viewportHeight).coerceAtLeast(1) / viewport.scale) * .12f
+        page.objects += SceneObject.Audio(
+            asset = active.file,
+            x = (active.position.x - diameter / 2f).coerceIn(0f, (page.size.widthMicrons - diameter).coerceAtLeast(0f)),
+            y = (active.position.y - diameter / 2f).coerceIn(0f, (page.size.heightMicrons - diameter).coerceAtLeast(0f)),
+            width = diameter,
+            height = diameter,
+            durationMillis = SystemClock.elapsedRealtime() - active.startedAtMillis,
+            assetId = active.assetId,
+            zIndex = zIndex,
+        )
+        selectedObjectPage = active.pageIndex
+        selectedObject = page.objects.lastIndex
+        tab.persistObjects()
+    }
+
+    fun addCorrectedShape(page: PageEntry, corrected: CorrectedShape, style: StrokeStyle) {
+        tab.recordObjectEdit(page)
+        val zIndex = (page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
+        val lineStart = corrected.lineStart
+        val lineEnd = corrected.lineEnd
+        val lineWidth = if (lineStart != null && lineEnd != null) {
+            kotlin.math.abs(lineEnd.x - lineStart.x).coerceAtLeast(2_000f)
+        } else null
+        val lineHeight = if (lineStart != null && lineEnd != null) {
+            kotlin.math.abs(lineEnd.y - lineStart.y).coerceAtLeast(2_000f)
+        } else null
+        val lineCenter = if (lineStart != null && lineEnd != null) {
+            PagePoint((lineStart.x + lineEnd.x) / 2f, (lineStart.y + lineEnd.y) / 2f)
+        } else null
+        val lineRotation = if (lineStart != null && lineEnd != null && lineWidth != null && lineHeight != null) {
+            val desiredAngle = kotlin.math.atan2(lineEnd.y - lineStart.y, lineEnd.x - lineStart.x)
+            val storedAngle = kotlin.math.atan2(lineHeight, lineWidth)
+            Math.toDegrees((desiredAngle - storedAngle).toDouble()).toFloat()
+        } else 0f
+        page.objects += SceneObject.Rectangle(
+            x = lineCenter?.let { it.x - lineWidth!! / 2f } ?: corrected.bounds.left,
+            y = lineCenter?.let { it.y - lineHeight!! / 2f } ?: corrected.bounds.top,
+            width = lineWidth ?: (corrected.bounds.right - corrected.bounds.left).coerceAtLeast(2_000f),
+            height = lineHeight ?: (corrected.bounds.bottom - corrected.bounds.top).coerceAtLeast(2_000f),
+            kind = corrected.kind,
+            strokeArgb = style.argb,
+            strokeWidth = style.maximumWidth,
+            rotation = lineRotation,
+            zIndex = zIndex,
+        )
+        tab.persistObjects()
+    }
+
+    DisposableEffect(tab.id) {
+        onDispose {
+            activeAudioRecording?.let { active ->
+                active.recording.set(false)
+                runCatching { active.recorder.stop() }
+                runCatching { active.worker.join(1_500) }
+                runCatching { active.recorder.release() }
+                active.file.delete()
+            }
+        }
+    }
+
+    fun recognizeImageText(image: SceneObject.Image) {
+        if (ocrBusy) return
+        ocrBusy = true
+        val cropped = runCatching {
+            val left = (image.bitmap.width * image.crop.leftFraction).roundToInt()
+            val top = (image.bitmap.height * image.crop.topFraction).roundToInt()
+            val width = (image.bitmap.width * (1f - image.crop.leftFraction - image.crop.rightFraction)).roundToInt().coerceAtLeast(1)
+            val height = (image.bitmap.height * (1f - image.crop.topFraction - image.crop.bottomFraction)).roundToInt().coerceAtLeast(1)
+            Bitmap.createBitmap(image.bitmap, left, top, width, height)
+        }.getOrDefault(image.bitmap)
+        textRecognizer.process(InputImage.fromBitmap(cropped, 0))
+            .addOnSuccessListener { result ->
+                ocrBusy = false
+                ocrText = result.text.ifBlank { "No readable text was found in this image." }
+                if (cropped !== image.bitmap && !cropped.isRecycled) cropped.recycle()
+            }
+            .addOnFailureListener { error ->
+                ocrBusy = false
+                ocrText = "Text recognition failed: ${error.message ?: "Unknown error"}"
+                if (cropped !== image.bitmap && !cropped.isRecycled) cropped.recycle()
+            }
+    }
+    var actionFeedback by remember { mutableStateOf<String?>(null) }
+    var inkOverlay by remember { mutableStateOf<InkAuthoringOverlayView?>(null) }
+    val pendingInk = remember(tab.id) { mutableStateListOf<PendingInkStroke>() }
+    var actionRecognitionJob by remember(tab.id) { mutableStateOf<Job?>(null) }
+    val actionScope = rememberCoroutineScope()
+    val pageJumpPadding = with(LocalDensity.current) { 20.dp.toPx() }
+    val objectHandleRadius = with(LocalDensity.current) { 30.dp.toPx() }
+    val selectionColor = MaterialTheme.colorScheme.primary
+    val visibleWorldTop = -viewport.offsetY / viewport.scale
+    val visibleWorldBottom = (viewportHeight - viewport.offsetY) / viewport.scale
+    layout.pages.asSequence()
+        .filter { it.bottom >= visibleWorldTop && it.top <= visibleWorldBottom }
+        .forEach { it.page.ensureRuntimeStrokes() }
+
+    fun selectedImage(): Pair<PageEntry, SceneObject.Image>? {
+        val page = tab.pages.getOrNull(selectedObjectPage) ?: return null
+        val image = page.objects.getOrNull(selectedObject) as? SceneObject.Image ?: return null
+        return page to image
+    }
+
+    fun selectedSceneObject(): Pair<PageEntry, SceneObject>? {
+        val page = tab.pages.getOrNull(selectedObjectPage) ?: return null
+        return page to (page.objects.getOrNull(selectedObject) ?: return null)
+    }
+
+    fun replaceSelectedObject(operation: (SceneObject) -> SceneObject) {
+        val (page, item) = selectedSceneObject() ?: return
+        tab.recordObjectEdit(page)
+        page.objects[selectedObject] = operation(item)
+        tab.persistObjects()
+    }
+
+    fun removeSelectedObject() {
+        val (page, _) = selectedSceneObject() ?: return
+        tab.recordObjectEdit(page)
+        page.objects.removeAt(selectedObject)
+        page.reindexObjects()
+        selectedObject = -1
+        selectedObjectPage = -1
+        tab.persistObjects()
+    }
+
+    fun moveSelectedObjectToFront(front: Boolean) {
+        val (page, item) = selectedSceneObject() ?: return
+        tab.recordObjectEdit(page)
+        page.objects.removeAt(selectedObject)
+        if (front) page.objects.add(item) else page.objects.add(0, item)
+        page.reindexObjects()
+        selectedObject = if (front) page.objects.lastIndex else 0
+        tab.persistObjects()
+    }
+
+    fun replaceSelectedImage(operation: (SceneObject.Image) -> SceneObject.Image) {
+        val page = tab.pages.getOrNull(selectedObjectPage) ?: return
+        val image = page.objects.getOrNull(selectedObject) as? SceneObject.Image ?: return
+        tab.recordObjectEdit(page)
+        page.objects[selectedObject] = operation(image)
+        tab.persistObjects()
+    }
+
+    fun removeSelectedImage(copyFirst: Boolean) {
+        val page = tab.pages.getOrNull(selectedObjectPage) ?: return
+        val image = page.objects.getOrNull(selectedObject) as? SceneObject.Image ?: return
+        if (copyFirst) copiedImage = image
+        tab.recordObjectEdit(page)
+        page.objects.removeAt(selectedObject)
+        page.reindexObjects()
+        selectedObject = -1
+        selectedObjectPage = -1
+        tab.persistObjects()
+    }
+
+    fun moveSelectedImageToFront(front: Boolean) {
+        val page = tab.pages.getOrNull(selectedObjectPage) ?: return
+        val image = page.objects.getOrNull(selectedObject) as? SceneObject.Image ?: return
+        tab.recordObjectEdit(page)
+        page.objects.removeAt(selectedObject)
+        if (front) page.objects.add(image) else page.objects.add(0, image)
+        page.reindexObjects()
+        selectedObject = if (front) page.objects.lastIndex else 0
+        tab.persistObjects()
+    }
+
+    fun copyMixedSelection(): SelectionClipboard? {
+        val selection = mixedSelection ?: return null
+        val page = tab.pages.getOrNull(selection.pageIndex) ?: return null
+        return SelectionClipboard(
+            strokes = page.session.page.strokes.filter { it.id in selection.strokeIds },
+            objects = page.objects.filter { it.id in selection.objectIds },
+        ).also { selectionClipboard = it }
+    }
+
+    fun deleteMixedSelection() {
+        val selection = mixedSelection ?: return
+        val page = tab.pages.getOrNull(selection.pageIndex) ?: return
+        if (selection.strokeIds.isNotEmpty()) {
+            page.session.deleteStrokes(selection.strokeIds)
+            page.syncRuntimeStrokes()
+        }
+        if (selection.objectIds.isNotEmpty()) {
+            tab.recordObjectEdit(page)
+            page.objects.removeAll { it.id in selection.objectIds }
+            page.reindexObjects()
+            tab.persistObjects()
+        }
+        mixedSelection = null
+    }
+
+    fun pasteMixedSelection(targetPageIndex: Int = tab.selectedPageIndex) {
+        val clipboard = selectionClipboard ?: return
+        val page = tab.pages.getOrNull(targetPageIndex) ?: return
+        val newStrokeIds = page.session.pasteStrokes(clipboard.strokes)
+        if (newStrokeIds.isNotEmpty()) page.syncRuntimeStrokes()
+        val newObjects = clipboard.objects.map { source ->
+            source.duplicate().move(5_000f, 5_000f).withZIndex((page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L)
+        }
+        if (newObjects.isNotEmpty()) {
+            tab.recordObjectEdit(page)
+            page.objects.addAll(newObjects)
+            page.reindexObjects()
+            tab.persistObjects()
+        }
+        mixedSelection = MixedSelection(targetPageIndex, newStrokeIds, newObjects.mapTo(linkedSetOf(), SceneObject::id))
+    }
+
+    fun transformMixedSelection(translation: PagePoint = PagePoint(0f, 0f), rotationRadians: Float = 0f) {
+        val selection = mixedSelection ?: return
+        val page = tab.pages.getOrNull(selection.pageIndex) ?: return
+        val bounds = mixedSelectionBounds(selection, tab.pages) ?: return
+        val pivot = PagePoint((bounds.left + bounds.right) / 2f, (bounds.top + bounds.bottom) / 2f)
+        val selectedStrokes = page.session.page.strokes.filter { it.id in selection.strokeIds }
+        val previousRuntimes = selectedStrokes.associate { it.id to page.renderStrokes[it.id] }
+        val newStrokeIds = page.session.replaceStrokes(selection.strokeIds) { stroke ->
+            LassoSelection.transform(stroke, SelectionTransform(
+                translateX = translation.x,
+                translateY = translation.y,
+                rotationRadians = rotationRadians,
+                pivot = pivot,
+            ))
+        }
+        if (selection.strokeIds.isNotEmpty()) {
+            selection.strokeIds.forEach(page.renderStrokes::remove)
+            if (rotationRadians == 0f && selectedStrokes.size == newStrokeIds.size) {
+                selectedStrokes.zip(newStrokeIds).forEach { (before, newId) ->
+                    previousRuntimes[before.id]?.let { runtime ->
+                        page.renderStrokes[newId] = runtime.copy(
+                            inputOriginX = runtime.inputOriginX - translation.x,
+                            inputOriginY = runtime.inputOriginY - translation.y,
+                        )
+                    }
+                }
+            }
+            page.syncRuntimeStrokes()
+        }
+        if (selection.objectIds.isNotEmpty()) {
+            tab.recordObjectEdit(page)
+            page.objects.indices.forEach { index ->
+                val item = page.objects[index]
+                if (item.id in selection.objectIds) {
+                    val moved = item.move(translation.x, translation.y)
+                    page.objects[index] = if (rotationRadians == 0f) moved else moved.rotateBy(Math.toDegrees(rotationRadians.toDouble()).toFloat())
+                }
+            }
+            tab.persistObjects()
+        }
+        mixedSelection = selection.copy(strokeIds = newStrokeIds.ifEmpty { selection.strokeIds })
+    }
+
+    fun commitPendingInk(strokes: List<PendingInkStroke> = pendingInk.toList()) {
+        if (strokes.isEmpty()) return
+        strokes.forEach { pending ->
+            val strokeId = pending.page.session.acceptCompletedStroke(
+                pending.nativeStroke.samples,
+                pending.nativeStroke.style,
+                detectScribbleErase = false,
+            )
+            if (strokeId != null) {
+                InkActivityTracker.recordStroke(context)
+                pending.page.renderStrokes[strokeId] = RuntimeInkStroke(
+                    stroke = pending.nativeStroke.renderStroke,
+                    inputOriginX = pending.inputOriginX,
+                    inputOriginY = pending.inputOriginY,
+                )
+            }
+            pendingInk.remove(pending)
+        }
+    }
+
+    fun resolvePendingInk() {
+        val strokes = pendingInk.toList()
+        if (strokes.isEmpty()) return
+        val drawing = GestureDrawing(strokes.map { pending ->
+            pending.nativeStroke.samples.map { sample ->
+                GesturePoint(sample.position.x, sample.position.y)
+            }
+        })
+        val match = actionRecognizer.recognize(drawing, actionMappings)
+        if (match == null) {
+            commitPendingInk(strokes)
+        } else {
+            strokes.forEach { pending ->
+                pendingInk.remove(pending)
+            }
+            onAction(match.mapping.action)
+            actionFeedback = "${match.mapping.name} · ${(match.confidence * 100).roundToInt()}%"
+        }
+    }
+
+    DisposableEffect(tab.id) {
+        tab.flushPendingInk = {
+            actionRecognitionJob?.cancel()
+            commitPendingInk()
+        }
+        onDispose {
+            tab.flushPendingInk()
+            tab.flushPendingInk = {}
+        }
+    }
+
+    LaunchedEffect(actionMappings.isEmpty()) {
+        if (actionMappings.isEmpty()) {
+            actionRecognitionJob?.cancel()
+            commitPendingInk()
+        }
+    }
+
+    fun updateViewport(value: ViewportTransform) {
+        viewport = value.copy(pageWidth = layout.width, pageHeight = layout.height)
+            .clampedToDocument(viewportWidth.toFloat(), viewportHeight.toFloat())
+    }
+
+    fun scrollDocument(deltaY: Float) {
+        updateViewport(viewport.copy(offsetY = viewport.offsetY + deltaY))
+        val center = viewport.toPage(viewportWidth / 2f, viewportHeight / 2f)
+        layout.pageAt(center)?.let { placement ->
+            if (tab.selectedPageIndex != placement.index) tab.selectedPageIndex = placement.index
+        }
+    }
+
+    LaunchedEffect(tab.pageNavigationGeneration) {
+        if (tab.pageNavigationGeneration == 0 || viewportHeight <= 1) return@LaunchedEffect
+        val placement = layout.pages.getOrNull(tab.selectedPageIndex) ?: return@LaunchedEffect
+        val renderedPageHeight = placement.page.size.heightMicrons * viewport.scale
+        val desiredTop = if (renderedPageHeight + pageJumpPadding * 2f <= viewportHeight) {
+            (viewportHeight - renderedPageHeight) / 2f
+        } else {
+            pageJumpPadding
+        }
+        val target = viewport.copy(
+            offsetY = desiredTop - placement.top * viewport.scale,
+        ).clampedToDocument(viewportWidth.toFloat(), viewportHeight.toFloat())
+        val startingViewport = viewport
+        Animatable(startingViewport.offsetY).animateTo(
+            target.offsetY,
+            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+        ) {
+            updateViewport(startingViewport.copy(offsetY = value))
+        }
+    }
+
+    LaunchedEffect(tab.viewportResetGeneration) {
+        if (viewportWidth <= 1 || viewportHeight <= 1) return@LaunchedEffect
+        updateViewport(viewport.copy(scale = minimumScale, offsetX = 0f, offsetY = 0f))
+    }
+
+    Box(
+        modifier.fillMaxSize().background(Color(0xFF0E1014)).clip(RoundedCornerShape(2.dp))
+            .onSizeChanged { size ->
+                viewportWidth = size.width
+                viewportHeight = size.height
+                val nextMinimum = (size.width * .90f / layout.width).coerceAtLeast(.0001f)
+                val wasAtMinimum = viewport.scale <= minimumScale * 1.01f
+                minimumScale = nextMinimum
+                val nextScale = if (wasAtMinimum) nextMinimum else viewport.scale.coerceAtLeast(nextMinimum)
+                updateViewport(viewport.copy(scale = nextScale))
+            },
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val worldTop = -viewport.offsetY / viewport.scale
+            val worldBottom = (size.height - viewport.offsetY) / viewport.scale
+            layout.pages.filter { it.bottom >= worldTop && it.top <= worldBottom }.forEach { placement ->
+                drawPlacedPage(placement, viewport, placement.index == tab.selectedPageIndex)
+                placement.page.objects.forEachIndexed { objectIndex, item ->
+                    val previewItem = if (
+                        movingSelection && mixedSelection?.pageIndex == placement.index &&
+                        item.id in mixedSelection!!.objectIds
+                    ) item.move(selectionDrag.x, selectionDrag.y) else item
+                    drawPlacedObject(
+                        previewItem, placement, viewport,
+                        selectedObjectPage == placement.index && selectedObject == objectIndex,
+                    )
+                }
+            }
+        }
+        AndroidView(
+            factory = { context -> InkAuthoringOverlayView(context).also { inkOverlay = it } },
+            update = { view ->
+                view.viewport = viewport
+                val permanentStrokes = layout.pages.asSequence()
+                    .filter { it.bottom >= visibleWorldTop && it.top <= visibleWorldBottom }
+                    .flatMap { placement ->
+                        placement.page.session.page.strokes.asSequence()
+                            .filterNot { stroke ->
+                                movingSelection && mixedSelection?.pageIndex == placement.index &&
+                                    stroke.id in mixedSelection!!.strokeIds
+                            }
+                            .mapNotNull { stroke ->
+                            placement.page.renderStrokes[stroke.id]?.let { runtime ->
+                                CommittedInkStroke(
+                                    stroke = runtime.stroke,
+                                    strokeToViewTransform = Matrix().apply {
+                                        setValues(
+                                            floatArrayOf(
+                                                viewport.scale,
+                                                0f,
+                                                viewport.offsetX +
+                                                    (placement.left - runtime.inputOriginX) * viewport.scale,
+                                                0f,
+                                                viewport.scale,
+                                                viewport.offsetY +
+                                                    (placement.top - runtime.inputOriginY) * viewport.scale,
+                                                0f,
+                                                0f,
+                                                1f,
+                                            ),
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    .toList()
+                val stagedStrokes = pendingInk.asSequence().mapNotNull { pending ->
+                    val placement = layout.pages.firstOrNull { it.page === pending.page }
+                        ?.takeIf { it.bottom >= visibleWorldTop && it.top <= visibleWorldBottom }
+                        ?: return@mapNotNull null
+                    CommittedInkStroke(
+                        stroke = pending.nativeStroke.renderStroke,
+                        strokeToViewTransform = Matrix().apply {
+                            setValues(
+                                floatArrayOf(
+                                    viewport.scale,
+                                    0f,
+                                    viewport.offsetX +
+                                        (placement.left - pending.inputOriginX) * viewport.scale,
+                                    0f,
+                                    viewport.scale,
+                                    viewport.offsetY +
+                                        (placement.top - pending.inputOriginY) * viewport.scale,
+                                    0f,
+                                    0f,
+                                    1f,
+                                ),
+                            )
+                        },
+                    )
+                }.toList()
+                view.committedStrokes = permanentStrokes + stagedStrokes
+                view.minimumScale = minimumScale
+                view.stylusInputEnabled = mode == EditorMode.Ink
+                view.alwaysRecognizeActionGestures = actionMappings.isNotEmpty() && actionActivationMode != ActionActivationMode.Disabled
+                view.style = tab.session.currentStyle()
+                view.onObjectStylusDown = { point ->
+                    val placement = layout.pageAt(point)
+                    val local = placement?.toLocal(point)
+                    val selectedImageForStylus = placement?.page?.objects?.getOrNull(selectedObject) as? SceneObject.Image
+                    val selectedImageHandleHit = placement != null && local != null &&
+                        selectedObjectPage == placement.index && selectedImageForStylus != null && !selectedImageForStylus.locked &&
+                        selectedImageForStylus.resizeHandleContains(local, objectHandleRadius / viewport.scale)
+                    when {
+                        placement == null -> false
+                        mixedSelection != null && mode != EditorMode.Lasso -> false
+                        selectedImageHandleHit -> {
+                            tab.recordObjectEdit(placement.page)
+                            stylusObjectPage = placement.index
+                            stylusObjectIndex = selectedObject
+                            stylusCanTransformObject = true
+                            stylusResizingObject = true
+                            true
+                        }
+                        mode == EditorMode.Lasso -> {
+                            selectedObject = -1
+                            selectedObjectPage = -1
+                            val local = placement.toLocal(point)
+                            val bounds = mixedSelection?.takeIf { it.pageIndex == placement.index }
+                                ?.let { mixedSelectionBounds(it, tab.pages) }
+                            movingSelection = bounds != null &&
+                                local.x in bounds.left..bounds.right && local.y in bounds.top..bounds.bottom
+                            selectionDrag = PagePoint(0f, 0f)
+                            if (!movingSelection) {
+                                mixedSelection = null
+                                lassoPoints = listOf(point)
+                            }
+                            true
+                        }
+                        mode == EditorMode.Object -> {
+                            val local = placement.toLocal(point)
+                            val selectedItem = placement.page.objects.getOrNull(selectedObject)
+                                ?.takeIf { selectedObjectPage == placement.index }
+                            val selectedHandleHit = selectedItem?.resizeHandleContains(
+                                local,
+                                objectHandleRadius / viewport.scale,
+                            ) == true
+                            val index = if (selectedHandleHit) selectedObject else {
+                                placement.page.objects.indexOfLast { it.contains(local) }
+                            }
+                            if (index < 0) false else {
+                                val alreadySelected = selectedObjectPage == placement.index && selectedObject == index
+                                val item = placement.page.objects[index]
+                                val locked = item is SceneObject.Image && item.locked
+                                stylusObjectPage = placement.index
+                                stylusObjectIndex = index
+                                selectedObjectPage = placement.index
+                                selectedObject = index
+                                tab.selectedPageIndex = placement.index
+                                stylusCanTransformObject = alreadySelected && !locked
+                                stylusResizingObject = stylusCanTransformObject && item.resizeHandleContains(
+                                    local,
+                                    objectHandleRadius / viewport.scale,
+                                )
+                                if (stylusCanTransformObject) tab.recordObjectEdit(placement.page)
+                                true
+                            }
+                        }
+                        mode == EditorMode.Text -> {
+                            val local = placement.toLocal(point)
+                            val index = placement.page.objects.indexOfLast { it is SceneObject.TextBox && it.contains(local) }
+                            if (index >= 0) {
+                                val alreadySelected = selectedObjectPage == placement.index && selectedObject == index
+                                selectedObjectPage = placement.index
+                                selectedObject = index
+                                stylusObjectPage = placement.index
+                                stylusObjectIndex = index
+                                stylusCanTransformObject = alreadySelected
+                                if (alreadySelected) tab.recordObjectEdit(placement.page)
+                            } else {
+                                val zIndex = (placement.page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
+                                tab.recordObjectEdit(placement.page)
+                                placement.page.objects += SceneObject.TextBox("Text", local.x, local.y, 8_000f, zIndex = zIndex)
+                                stylusObjectPage = placement.index
+                                stylusObjectIndex = placement.page.objects.lastIndex
+                                selectedObjectPage = placement.index
+                                selectedObject = stylusObjectIndex
+                                stylusCanTransformObject = false
+                                showTextEditor = true
+                            }
+                            stylusResizingObject = false
+                            tab.selectedPageIndex = placement.index
+                            true
+                        }
+                        mode == EditorMode.Shape -> {
+                            val local = placement.toLocal(point)
+                            val selectedShape = placement.page.objects.getOrNull(selectedObject)
+                                ?.takeIf { selectedObjectPage == placement.index } as? SceneObject.Rectangle
+                            val selectedHandleHit = selectedShape?.resizeHandleContains(
+                                local,
+                                objectHandleRadius / viewport.scale,
+                            ) == true
+                            val shapeIndex = if (selectedHandleHit) selectedObject else {
+                                placement.page.objects.indexOfLast {
+                                    it is SceneObject.Rectangle && it.contains(local)
+                                }
+                            }
+                            if (shapeIndex >= 0) {
+                                val shape = placement.page.objects[shapeIndex] as SceneObject.Rectangle
+                                val alreadySelected = selectedObjectPage == placement.index && selectedObject == shapeIndex
+                                selectedObjectPage = placement.index
+                                selectedObject = shapeIndex
+                                tab.selectedPageIndex = placement.index
+                                stylusObjectPage = placement.index
+                                stylusObjectIndex = shapeIndex
+                                stylusCanTransformObject = alreadySelected
+                                stylusResizingObject = alreadySelected && selectedHandleHit
+                                if (stylusCanTransformObject) {
+                                    tab.recordObjectEdit(placement.page)
+                                    if (stylusResizingObject) {
+                                        stylusShapeAnchor = PagePoint(shape.x, shape.y)
+                                        stylusShapeCurrent = PagePoint(shape.x + shape.width, shape.y + shape.height)
+                                    }
+                                }
+                            } else {
+                                val zIndex = (placement.page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
+                                tab.recordObjectEdit(placement.page)
+                                placement.page.objects += SceneObject.Rectangle(
+                                    local.x,
+                                    local.y,
+                                    1f,
+                                    1f,
+                                    zIndex = zIndex,
+                                )
+                                stylusObjectPage = placement.index
+                                stylusObjectIndex = placement.page.objects.lastIndex
+                                selectedObjectPage = placement.index
+                                selectedObject = stylusObjectIndex
+                                tab.selectedPageIndex = placement.index
+                                stylusCanTransformObject = true
+                                stylusResizingObject = true
+                                stylusShapeAnchor = local
+                                stylusShapeCurrent = local
+                            }
+                            true
+                        }
+                        mode == EditorMode.Audio -> {
+                            val localPoint = placement.toLocal(point)
+                            val index = placement.page.objects.indexOfLast {
+                                it is SceneObject.Audio && it.contains(localPoint)
+                            }
+                            if (index < 0) {
+                                requestAudioRecording(point)
+                                true
+                            } else {
+                                val alreadySelected = selectedObjectPage == placement.index && selectedObject == index
+                                selectedObjectPage = placement.index
+                                selectedObject = index
+                                tab.selectedPageIndex = placement.index
+                                stylusObjectPage = placement.index
+                                stylusObjectIndex = index
+                                stylusCanTransformObject = alreadySelected
+                                stylusResizingObject = false
+                                if (alreadySelected) tab.recordObjectEdit(placement.page)
+                                true
+                            }
+                        }
+                        else -> false
+                    }
+                }
+                view.onObjectStylusDrag = { dx, dy ->
+                    if (mode == EditorMode.Lasso) {
+                        if (movingSelection) {
+                            selectionDrag = PagePoint(selectionDrag.x + dx, selectionDrag.y + dy)
+                        } else {
+                            val previous = lassoPoints.lastOrNull()
+                            if (previous != null) lassoPoints = lassoPoints + PagePoint(previous.x + dx, previous.y + dy)
+                        }
+                    } else {
+                        val page = tab.pages.getOrNull(stylusObjectPage)
+                        val item = page?.objects?.getOrNull(stylusObjectIndex)
+                        if (page != null && item != null && stylusCanTransformObject) {
+                            page.objects[stylusObjectIndex] = if (
+                                stylusResizingObject && item is SceneObject.Rectangle && stylusShapeAnchor != null
+                            ) {
+                                val anchor = stylusShapeAnchor!!
+                                val previous = stylusShapeCurrent ?: PagePoint(item.x + item.width, item.y + item.height)
+                                val current = PagePoint(previous.x + dx, previous.y + dy)
+                                stylusShapeCurrent = current
+                                item.copy(
+                                    x = minOf(anchor.x, current.x),
+                                    y = minOf(anchor.y, current.y),
+                                    width = kotlin.math.abs(current.x - anchor.x).coerceAtLeast(1f),
+                                    height = kotlin.math.abs(current.y - anchor.y).coerceAtLeast(1f),
+                                )
+                            } else if (stylusResizingObject) {
+                                val delta = if (item is SceneObject.Image) item.toUnrotatedDelta(dx, dy) else PagePoint(dx, dy)
+                                if (item is SceneObject.Image) item.resizeFromLeftBottom(delta.x, delta.y)
+                                else item.resize(delta.x, delta.y)
+                            } else {
+                                item.move(dx, dy)
+                            }
+                        }
+                    }
+                }
+                view.onObjectStylusUp = {
+                    if (mode == EditorMode.Lasso) {
+                        if (movingSelection) {
+                            if (selectionDrag.x != 0f || selectionDrag.y != 0f) transformMixedSelection(selectionDrag)
+                        } else if (lassoPoints.size >= 3) {
+                            val placement = layout.pageAt(lassoPoints.first())
+                            if (placement != null && lassoPoints.all(placement::contains)) {
+                                val polygon = lassoPoints.map(placement::toLocal)
+                                val strokes = LassoSelection.select(placement.page.session.page.strokes, polygon)
+                                val objects = placement.page.objects.filter { item ->
+                                    val center = when (item) {
+                                        is SceneObject.Image -> PagePoint(item.x + item.width / 2f, item.y + item.height / 2f)
+                                        is SceneObject.Rectangle -> PagePoint(item.x + item.width / 2f, item.y + item.height / 2f)
+                                        is SceneObject.TextBox -> PagePoint(item.x + item.width / 2f, item.y + item.height / 2f)
+                                        is SceneObject.Audio -> PagePoint(item.x + item.width / 2f, item.y + item.height / 2f)
+                                    }
+                                    LassoSelection.contains(polygon, center)
+                                }
+                                if (strokes.isNotEmpty() || objects.isNotEmpty()) {
+                                    mixedSelection = MixedSelection(
+                                        placement.index,
+                                        strokes.mapTo(linkedSetOf(), InkStroke::id),
+                                        objects.mapTo(linkedSetOf(), SceneObject::id),
+                                    )
+                                    tab.selectedPageIndex = placement.index
+                                }
+                            }
+                        }
+                        lassoPoints = emptyList()
+                        movingSelection = false
+                        selectionDrag = PagePoint(0f, 0f)
+                    } else if (stylusObjectPage >= 0) tab.persistObjects()
+                    stylusObjectPage = -1
+                    stylusObjectIndex = -1
+                    stylusResizingObject = false
+                    stylusCanTransformObject = false
+                    stylusShapeAnchor = null
+                    stylusShapeCurrent = null
+                }
+                view.onMotionEventObserved = tab.session::observeMotionEvent
+                view.onStylusButtonPressed = onStylusButtonPressed
+                view.onViewportChanged = ::updateViewport
+                view.onOneFingerScroll = ::scrollDocument
+                view.onCanvasTouchAt = { point ->
+                    layout.pageAt(point)?.let { tab.selectedPageIndex = it.index }
+                }
+                view.onFingerObjectDown = { point ->
+                    val placement = layout.pageAt(point)
+                    if (placement == null) {
+                        fingerResizingImage = false
+                        FingerObjectGesture.Canvas
+                    } else {
+                        val local = placement.toLocal(point)
+                        val activeMixedSelection = mixedSelection
+                        if (activeMixedSelection != null) {
+                            val bounds = mixedSelectionBounds(activeMixedSelection, tab.pages)
+                            val inside = activeMixedSelection.pageIndex == placement.index && bounds != null &&
+                                local.x in bounds.left..bounds.right && local.y in bounds.top..bounds.bottom
+                            movingSelection = inside
+                            selectionDrag = PagePoint(0f, 0f)
+                            if (inside) FingerObjectGesture.Move else FingerObjectGesture.Canvas
+                        } else if (mode == EditorMode.Text) {
+                            val textIndex = placement.page.objects.indexOfLast { it is SceneObject.TextBox && it.contains(local) }
+                            val alreadySelected = textIndex >= 0 &&
+                                selectedObjectPage == placement.index && selectedObject == textIndex
+                            if (alreadySelected) {
+                                tab.recordObjectEdit(placement.page)
+                                FingerObjectGesture.Move
+                            } else FingerObjectGesture.Canvas
+                        } else {
+                            val item = placement.page.objects.getOrNull(selectedObject)
+                                ?.takeIf { selectedObjectPage == placement.index }
+                            if (item == null || !item.contains(local) && !item.resizeHandleContains(
+                                    local,
+                                    objectHandleRadius / viewport.scale,
+                                )
+                            ) {
+                                fingerResizingImage = false
+                                FingerObjectGesture.Canvas
+                            } else {
+                                val image = item as? SceneObject.Image
+                                fingerResizingImage = image != null && !image.locked && image.resizeHandleContains(
+                                    local, objectHandleRadius / viewport.scale,
+                                )
+                                if (image?.locked == true) FingerObjectGesture.SelectOnly else {
+                                    tab.recordObjectEdit(placement.page)
+                                    FingerObjectGesture.Move
+                                }
+                            }
+                        }
+                    }
+                }
+                view.onFingerObjectDrag = { dx, dy ->
+                    if (movingSelection && mixedSelection != null) {
+                        selectionDrag = PagePoint(selectionDrag.x + dx, selectionDrag.y + dy)
+                    } else {
+                        val page = tab.pages.getOrNull(selectedObjectPage)
+                        val item = page?.objects?.getOrNull(selectedObject)
+                        if (page != null && item != null && (item !is SceneObject.Image || !item.locked)) {
+                            page.objects[selectedObject] = if (fingerResizingImage && item is SceneObject.Image) {
+                                val delta = item.toUnrotatedDelta(dx, dy)
+                                item.resizeFromLeftBottom(delta.x, delta.y)
+                            } else item.move(dx, dy)
+                        }
+                    }
+                }
+                view.onFingerObjectUp = {
+                    if (movingSelection && mixedSelection != null) {
+                        if (selectionDrag.x != 0f || selectionDrag.y != 0f) transformMixedSelection(selectionDrag)
+                        selectionDrag = PagePoint(0f, 0f)
+                        movingSelection = false
+                    } else if (selectedSceneObject() != null) tab.persistObjects()
+                    fingerResizingImage = false
+                }
+                view.onFingerTap = fingerTap@{ point ->
+                    val placement = layout.pageAt(point) ?: return@fingerTap
+                    val local = placement.toLocal(point)
+                    if (mixedSelection != null) return@fingerTap
+                    when (mode) {
+                        EditorMode.Text -> {
+                            val textIndex = placement.page.objects.indexOfLast {
+                                it is SceneObject.TextBox && it.contains(local)
+                            }
+                            if (textIndex >= 0) {
+                                selectedObjectPage = placement.index
+                                selectedObject = textIndex
+                                tab.selectedPageIndex = placement.index
+                                showAudioPlayer = false
+                            } else if (selectedObject >= 0) {
+                                selectedObject = -1
+                                selectedObjectPage = -1
+                                showTextEditor = false
+                            } else {
+                                val zIndex = (placement.page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
+                                tab.recordObjectEdit(placement.page)
+                                placement.page.objects += SceneObject.TextBox("Text", local.x, local.y, 8_000f, zIndex = zIndex)
+                                selectedObjectPage = placement.index
+                                selectedObject = placement.page.objects.lastIndex
+                                tab.selectedPageIndex = placement.index
+                                showTextEditor = true
+                                tab.persistObjects()
+                            }
+                        }
+                        EditorMode.Audio -> {
+                            val audioIndex = placement.page.objects.indexOfLast {
+                                it is SceneObject.Audio && it.contains(local)
+                            }
+                            if (audioIndex >= 0) {
+                                selectedObjectPage = placement.index
+                                selectedObject = audioIndex
+                                tab.selectedPageIndex = placement.index
+                                showAudioPlayer = false
+                            } else if (selectedObject >= 0) {
+                                selectedObject = -1
+                                selectedObjectPage = -1
+                                showAudioPlayer = false
+                            } else requestAudioRecording(point)
+                        }
+                        else -> {
+                            val candidateIndex = placement.page.objects.indexOfLast { item ->
+                                (item is SceneObject.Image || item is SceneObject.Audio ||
+                                    item is SceneObject.TextBox || item is SceneObject.Rectangle) && item.contains(local)
+                            }
+                            if (candidateIndex >= 0) {
+                                selectedObjectPage = placement.index
+                                selectedObject = candidateIndex
+                                tab.selectedPageIndex = placement.index
+                                showAudioPlayer = false
+                            } else {
+                                selectedObject = -1
+                                selectedObjectPage = -1
+                                showAudioPlayer = false
+                            }
+                        }
+                    }
+                }
+                view.onStrokeFinished = { finished ->
+                    layout.pageAt(finished.samples.first().position)?.let { placement ->
+                        tab.selectedPageIndex = placement.index
+                        val localized = finished.copy(
+                            samples = finished.samples.map { sample ->
+                                sample.copy(position = placement.toLocal(sample.position))
+                            },
+                        )
+                        val corrected = if (
+                            drawAndHoldEnabled &&
+                            localized.style.tool in setOf(InkTool.Pen, InkTool.Pencil)
+                        ) DrawHoldShapeDetector.detect(localized.samples) else null
+                        if (corrected != null) {
+                            addCorrectedShape(placement.page, corrected, localized.style)
+                            view.removeFinishedStroke(localized.id)
+                        } else if (placement.page.session.eraseScribbleIfDetected(
+                                localized.samples,
+                                localized.style,
+                            )
+                        ) {
+                            view.removeFinishedStroke(localized.id)
+                        } else {
+                            if (pendingInk.any { it.page !== placement.page }) commitPendingInk()
+                            val pending = PendingInkStroke(
+                                page = placement.page,
+                                nativeStroke = localized,
+                                inputOriginX = placement.left,
+                                inputOriginY = placement.top,
+                            )
+                            pendingInk += pending
+                            // Display pending Action Map ink in the viewport-aware renderer. The native
+                            // wet layer uses release-time screen coordinates and otherwise floats while panning.
+                            view.removeFinishedStroke(localized.id)
+                            actionRecognitionJob?.cancel()
+                            if (actionMappings.isEmpty() || actionActivationMode == ActionActivationMode.Disabled || !localized.actionCandidate) {
+                                commitPendingInk(listOf(pending))
+                            } else {
+                                val pendingStrokeCount = pendingInk.size
+                                val mappedStrokeCounts = actionMappings.flatMap { mapping ->
+                                    mapping.examples.map { it.strokes.size }
+                                }
+                                if (pendingStrokeCount in mappedStrokeCounts && mappedStrokeCounts.none { it > pendingStrokeCount }) {
+                                    resolvePendingInk()
+                                } else {
+                                    actionRecognitionJob = actionScope.launch {
+                                        // Keep the gesture batch open long enough for deliberate multi-stroke maps.
+                                        delay(1_300)
+                                        resolvePendingInk()
+                                    }
+                                }
+                            }
+                        }
+                    } ?: view.removeFinishedStroke(finished.id)
+                }
+                view.onStrokeProgress = { _, samples, style, _ ->
+                    val placement = samples.firstOrNull()?.position?.let(layout::pageAt)
+                    val corrected = if (
+                        placement != null && drawAndHoldEnabled &&
+                        style.tool in setOf(InkTool.Pen, InkTool.Pencil)
+                    ) {
+                        DrawHoldShapeDetector.detect(
+                            samples.map { it.copy(position = placement.toLocal(it.position)) },
+                        )
+                    } else null
+                    if (placement != null && corrected != null) {
+                        addCorrectedShape(placement.page, corrected, style)
+                        true
+                    } else false
+                }
+                view.onErase = { point ->
+                    layout.pageAt(point)?.let { placement ->
+                        tab.selectedPageIndex = placement.index
+                        val local = placement.toLocal(point)
+                        placement.page.session.eraseAt(local)
+                        val eraserRadius = (tab.session.currentStyle().maximumWidth / 2f).coerceAtLeast(2_500f)
+                        val shapeIndex = placement.page.objects.indexOfLast { item ->
+                            item is SceneObject.Rectangle && item.hitByEraser(local, eraserRadius)
+                        }
+                        if (shapeIndex >= 0) {
+                            if (!shapeEraseUndoRecorded) {
+                                tab.recordObjectEdit(placement.page)
+                                shapeEraseUndoRecorded = true
+                            }
+                            placement.page.objects.removeAt(shapeIndex)
+                            if (selectedObjectPage == placement.index && selectedObject == shapeIndex) {
+                                selectedObject = -1
+                                selectedObjectPage = -1
+                            }
+                            tab.persistObjects()
+                        }
+                    }
+                }
+                view.onEraseFinished = { shapeEraseUndoRecorded = false }
+            },
+            modifier = Modifier.fillMaxSize().graphicsLayer { clip = true },
+        )
+        if (lassoPoints.isNotEmpty() || mixedSelection != null) {
+            Canvas(Modifier.fillMaxSize().zIndex(30f)) {
+                if (lassoPoints.size >= 2) {
+                    val path = Path()
+                    lassoPoints.forEachIndexed { index, point ->
+                        val screen = viewport.toScreen(point)
+                        if (index == 0) path.moveTo(screen.x, screen.y) else path.lineTo(screen.x, screen.y)
+                    }
+                    drawPath(path, selectionColor, style = Stroke(2.dp.toPx()))
+                }
+                mixedSelection?.let { selection ->
+                    val placement = layout.pages.getOrNull(selection.pageIndex)
+                    val bounds = mixedSelectionBounds(selection, tab.pages)
+                    if (placement != null && bounds != null) {
+                        if (movingSelection) {
+                            placement.page.session.page.strokes.filter { it.id in selection.strokeIds }.forEach { stroke ->
+                                val path = Path()
+                                stroke.samples.forEachIndexed { index, sample ->
+                                    val screen = viewport.toScreen(PagePoint(
+                                        placement.left + sample.position.x + selectionDrag.x,
+                                        placement.top + sample.position.y + selectionDrag.y,
+                                    ))
+                                    if (index == 0) path.moveTo(screen.x, screen.y) else path.lineTo(screen.x, screen.y)
+                                }
+                                drawPath(
+                                    path,
+                                    Color(stroke.style.argb).copy(alpha = stroke.style.opacity),
+                                    style = Stroke((stroke.style.maximumWidth * viewport.scale).coerceAtLeast(1f), cap = StrokeCap.Round),
+                                )
+                            }
+                        }
+                        val left = viewport.offsetX + (placement.left + bounds.left + selectionDrag.x) * viewport.scale
+                        val top = viewport.offsetY + (placement.top + bounds.top + selectionDrag.y) * viewport.scale
+                        val width = (bounds.right - bounds.left) * viewport.scale
+                        val height = (bounds.bottom - bounds.top) * viewport.scale
+                        drawRect(selectionColor.copy(alpha = .08f), Offset(left, top), Size(width, height))
+                        drawRect(selectionColor, Offset(left, top), Size(width, height), style = Stroke(2.dp.toPx()))
+                    }
+                }
+            }
+        }
+        mixedSelection?.let { selection ->
+            MixedSelectionBar(
+                hasClipboard = selectionClipboard != null,
+                canMovePrevious = selection.pageIndex > 0,
+                canMoveNext = selection.pageIndex < tab.pages.lastIndex,
+                onCut = { copyMixedSelection(); deleteMixedSelection() },
+                onCopy = { copyMixedSelection() },
+                onPaste = { pasteMixedSelection(selection.pageIndex) },
+                onDuplicate = { copyMixedSelection(); pasteMixedSelection(selection.pageIndex) },
+                onDelete = { confirmMixedDelete = true },
+                onRecolor = {
+                    val page = tab.pages.getOrNull(selection.pageIndex) ?: return@MixedSelectionBar
+                    val color = tab.session.currentStyle().argb
+                    val nextIds = page.session.replaceStrokes(selection.strokeIds) { stroke -> stroke.copy(style = stroke.style.copy(argb = color)) }
+                    page.syncRuntimeStrokes()
+                    mixedSelection = selection.copy(strokeIds = nextIds.ifEmpty { selection.strokeIds })
+                },
+                onWidth = {
+                    val page = tab.pages.getOrNull(selection.pageIndex) ?: return@MixedSelectionBar
+                    val width = tab.session.toolWidthMicrons(tab.session.selectedTool)
+                    val nextIds = page.session.replaceStrokes(selection.strokeIds) { stroke ->
+                        val ratio = if (stroke.style.maximumWidth > 0f) stroke.style.minimumWidth / stroke.style.maximumWidth else 1f
+                        stroke.copy(style = stroke.style.copy(minimumWidth = width * ratio, maximumWidth = width))
+                    }
+                    page.syncRuntimeStrokes()
+                    mixedSelection = selection.copy(strokeIds = nextIds.ifEmpty { selection.strokeIds })
+                },
+                onRotate = { transformMixedSelection(rotationRadians = (Math.PI / 2.0).toFloat()) },
+                onUndo = { tab.undoObjectEdit(); mixedSelection = null },
+                onRedo = { tab.redoObjectEdit(); mixedSelection = null },
+                onMovePage = { direction ->
+                    val source = tab.pages.getOrNull(selection.pageIndex) ?: return@MixedSelectionBar
+                    val targetIndex = (selection.pageIndex + direction).coerceIn(0, tab.pages.lastIndex)
+                    if (targetIndex != selection.pageIndex) {
+                        copyMixedSelection()
+                        deleteMixedSelection()
+                        tab.selectedPageIndex = targetIndex
+                        pasteMixedSelection(targetIndex)
+                    }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(46f),
+            )
+        }
+        if (mixedSelection == null) selectedImage()?.let { (_, image) ->
+            ImageSelectionBar(
+                locked = image.locked,
+                canPaste = copiedImage != null,
+                onCrop = { showCropEditor = true },
+                onCut = { removeSelectedImage(copyFirst = true) },
+                onCopy = { copiedImage = image },
+                onPaste = {
+                    val page = tab.pages.getOrNull(selectedObjectPage) ?: return@ImageSelectionBar
+                    val source = copiedImage ?: return@ImageSelectionBar
+                    tab.recordObjectEdit(page)
+                    page.objects += source.copy(
+                        id = ObjectId(UUID.randomUUID().toString()),
+                        x = source.x + 5_000f,
+                        y = source.y + 5_000f,
+                        locked = false,
+                        zIndex = (page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L,
+                    )
+                    selectedObject = page.objects.lastIndex
+                    tab.persistObjects()
+                },
+                onLock = { replaceSelectedImage { it.copy(locked = true) } },
+                onUnlock = { replaceSelectedImage { it.copy(locked = false) } },
+                onRotate = { replaceSelectedImage { it.copy(rotation = (it.rotation + 90f) % 360f) } },
+                onRecognizeText = { selectedImage()?.second?.let(::recognizeImageText) },
+                onBringToFront = { moveSelectedImageToFront(front = true) },
+                onSendToBack = { moveSelectedImageToFront(front = false) },
+                onDelete = { confirmSelectedDelete = true },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(45f),
+            )
+        }
+        if (mixedSelection == null && !showTextEditor && !showShapeEditor) selectedSceneObject()
+            ?.takeIf { it.second !is SceneObject.Image && it.second !is SceneObject.Audio }
+            ?.let { (_, item) ->
+            ObjectSelectionBar(
+                onEdit = { if (item is SceneObject.TextBox) showTextEditor = true else showShapeEditor = true },
+                onCopy = { selectionClipboard = SelectionClipboard(emptyList(), listOf(item)) },
+                onDuplicate = {
+                    val page = tab.pages.getOrNull(selectedObjectPage) ?: return@ObjectSelectionBar
+                    tab.recordObjectEdit(page)
+                    page.objects += item.duplicate().move(5_000f, 5_000f)
+                        .withZIndex((page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L)
+                    selectedObject = page.objects.lastIndex
+                    tab.persistObjects()
+                },
+                onRotate = { replaceSelectedObject { it.rotateBy(15f) } },
+                onFront = { moveSelectedObjectToFront(true) },
+                onBack = { moveSelectedObjectToFront(false) },
+                onDelete = { confirmSelectedDelete = true },
+                onUndo = { tab.undoObjectEdit(); selectedObject = -1; selectedObjectPage = -1 },
+                onRedo = { tab.redoObjectEdit(); selectedObject = -1; selectedObjectPage = -1 },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(45f),
+            )
+        }
+        if (mixedSelection == null) (selectedSceneObject()?.second as? SceneObject.Audio)?.let { audio ->
+            AudioSelectionBar(
+                onListen = { showAudioPlayer = true },
+                onDelete = { confirmSelectedDelete = true },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(45f),
+            )
+            if (showAudioPlayer) AudioNotePanel(
+                audio = audio,
+                referenceShortSide = (minOf(viewportWidth, viewportHeight).coerceAtLeast(1) / viewport.scale),
+                onScale = { diameter ->
+                    replaceSelectedObject {
+                        val current = it as SceneObject.Audio
+                        current.copy(
+                            x = current.x + (current.width - diameter) / 2f,
+                            y = current.y + (current.height - diameter) / 2f,
+                            width = diameter,
+                            height = diameter,
+                        )
+                    }
+                },
+                onDelete = ::removeSelectedObject,
+                onDismiss = { showAudioPlayer = false },
+            )
+        }
+        if (confirmSelectedDelete) AlertDialog(
+            onDismissRequest = { confirmSelectedDelete = false },
+            title = { Text("Delete selected item?") },
+            text = { Text("The selected item will be removed from this page.") },
+            dismissButton = { TextButton(onClick = { confirmSelectedDelete = false }) { Text("Cancel") } },
+            confirmButton = {
+                TextButton(onClick = { confirmSelectedDelete = false; removeSelectedObject() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+        )
+        if (confirmMixedDelete) AlertDialog(
+            onDismissRequest = { confirmMixedDelete = false },
+            title = { Text("Delete selection?") },
+            text = { Text("All selected ink and objects will be removed from this page.") },
+            dismissButton = { TextButton(onClick = { confirmMixedDelete = false }) { Text("Cancel") } },
+            confirmButton = {
+                TextButton(onClick = { confirmMixedDelete = false; deleteMixedSelection() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+        )
+        if (showCropEditor) {
+            selectedImage()?.second?.let { image ->
+                ImageCropDialog(
+                    image = image,
+                    onApply = { crop ->
+                        replaceSelectedImage { current ->
+                            val croppedWidth = current.bitmap.width *
+                                (1f - crop.leftFraction - crop.rightFraction)
+                            val croppedHeight = current.bitmap.height *
+                                (1f - crop.topFraction - crop.bottomFraction)
+                            val croppedAspectRatio = croppedWidth / croppedHeight.coerceAtLeast(1f)
+                            val nextHeight = (current.width / croppedAspectRatio).coerceAtLeast(5_000f)
+                            current.copy(
+                                y = current.y + (current.height - nextHeight) / 2f,
+                                height = nextHeight,
+                                crop = crop,
+                            )
+                        }
+                        showCropEditor = false
+                    },
+                    onDismiss = { showCropEditor = false },
+                )
+            } ?: run { showCropEditor = false }
+        }
+        if (showTextEditor) {
+            (selectedSceneObject()?.second as? SceneObject.TextBox)?.let { textBox ->
+                TextObjectDialog(
+                    value = textBox,
+                    customFonts = customFonts,
+                    onApply = { updated -> replaceSelectedObject { updated }; showTextEditor = false },
+                    onDismiss = { showTextEditor = false },
+                )
+            } ?: run { showTextEditor = false }
+        }
+        if (showShapeEditor) {
+            (selectedSceneObject()?.second as? SceneObject.Rectangle)?.let { shape ->
+                ShapeObjectDialog(
+                    value = shape,
+                    onApply = { updated -> replaceSelectedObject { updated }; showShapeEditor = false },
+                    onDismiss = { showShapeEditor = false },
+                )
+            } ?: run { showShapeEditor = false }
+        }
+        strokeSizePreview?.let { preview ->
+            StrokeSizePreviewOverlay(
+                preview = preview,
+                viewportScale = viewport.scale,
+                modifier = Modifier.align(Alignment.Center).zIndex(35f),
+            )
+        }
+        if (ocrBusy) {
+            Surface(
+                modifier = Modifier.align(Alignment.Center).zIndex(60f),
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xF020242B),
+            ) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Reading text…")
+                }
+            }
+        }
+        ocrText?.let { result ->
+            OcrResultDialog(result, onDismiss = { ocrText = null })
+        }
+        activeAudioRecording?.let { recording ->
+            Surface(
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp).zIndex(70f),
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xF02A2023),
+                shadowElevation = 10.dp,
+            ) {
+                Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(Color(0xFFEF4444)))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Recording audio note")
+                    Spacer(Modifier.width(12.dp))
+                    TextButton(onClick = ::stopAudioRecording) {
+                        Icon(Icons.Outlined.Stop, null)
+                        Spacer(Modifier.width(5.dp))
+                        Text("Stop")
+                    }
+                }
+            }
+        }
+        audioError?.let { message ->
+            AlertDialog(
+                onDismissRequest = { audioError = null },
+                title = { Text("Audio note") },
+                text = { Text(message) },
+                confirmButton = { TextButton(onClick = { audioError = null }) { Text("OK") } },
+            )
+        }
+        actionFeedback?.let { message ->
+            LaunchedEffect(message) {
+                delay(1_800)
+                actionFeedback = null
+            }
+            Surface(
+                color = Color(0xEE20242B),
+                shape = RoundedCornerShape(12.dp),
+                shadowElevation = 8.dp,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp).zIndex(40f),
+            ) { Text(message, Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun StrokeSizePreviewOverlay(
+    preview: StrokeSizePreview,
+    viewportScale: Float,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val entrance = remember { Animatable(0f) }
+    LaunchedEffect(preview.tool) {
+        entrance.snapTo(0f)
+        entrance.animateTo(1f, tween(durationMillis = 320, easing = BackOutEasing))
+    }
+    val maximumDiameter = with(density) { 72.dp.toPx() }
+    val diameterPx = (preview.widthMicrons * viewportScale).coerceIn(3f, maximumDiameter)
+    val diameterDp = with(density) { diameterPx.toDp() }
+    val sizeMillimeters = preview.widthMicrons / 1_000f
+    val sizeLabel = if (sizeMillimeters < 10f) {
+        "${(sizeMillimeters * 10f).roundToInt() / 10f} mm"
+    } else {
+        "${sizeMillimeters.roundToInt()} mm"
+    }
+    val previewColor = when (preview.tool) {
+        InkTool.Eraser -> Color(0xFFF3F5F8)
+        InkTool.Highlighter -> Color(0x88F7D34A)
+        InkTool.Pencil -> Color(0xFF59636F)
+        InkTool.Pen -> Color(0xFF17212B)
+    }
+    Surface(
+        modifier = modifier.graphicsLayer {
+            alpha = entrance.value.coerceIn(0f, 1f)
+            scaleX = .82f + .18f * entrance.value
+            scaleY = .82f + .18f * entrance.value
+            translationY = with(density) { 12.dp.toPx() } * (1f - entrance.value)
+        },
+        color = Color(0xE61B1F26),
+        shape = RoundedCornerShape(18.dp),
+        shadowElevation = 12.dp,
+    ) {
+        Column(
+            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(Modifier.size(82.dp), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.size(diameterDp.coerceAtLeast(3.dp))) {
+                    drawCircle(
+                        color = previewColor,
+                        radius = size.minDimension / 2f,
+                    )
+                    drawCircle(
+                        color = Color.White.copy(alpha = .8f),
+                        radius = (size.minDimension / 2f - 1f).coerceAtLeast(1f),
+                        style = Stroke(width = 2f),
+                    )
+                }
+            }
+            Text(
+                "${preview.tool.name} · $sizeLabel",
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Text("Drag vertically", color = Color(0xFFB9C0CA), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun ExportPdfDialog(
+    pageCount: Int,
+    currentPage: Int,
+    onExport: (List<Int>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var scope by remember { mutableStateOf("all") }
+    var range by remember { mutableStateOf("1-$pageCount") }
+    fun parsedRange(): List<Int> = range.split(',').flatMap { token ->
+        val values = token.trim().split('-').mapNotNull(String::toIntOrNull)
+        when (values.size) {
+            1 -> listOf(values[0] - 1)
+            2 -> (minOf(values[0], values[1])..maxOf(values[0], values[1])).map { it - 1 }
+            else -> emptyList()
+        }
+    }.filter { it in 0 until pageCount }.distinct().sorted()
+    val pages = when (scope) {
+        "current" -> listOf(currentPage)
+        "range" -> parsedRange()
+        else -> (0 until pageCount).toList()
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Export PDF") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SelectablePill("All pages", scope == "all") { scope = "all" }
+                    SelectablePill("Current", scope == "current") { scope = "current" }
+                    SelectablePill("Range", scope == "range") { scope = "range" }
+                }
+                if (scope == "range") OutlinedTextField(range, { range = it }, label = { Text("Pages, e.g. 1-3, 7") }, singleLine = true)
+                Text("${pages.size} page${if (pages.size == 1) "" else "s"} will be exported", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(enabled = pages.isNotEmpty(), onClick = { onExport(pages) }) { Text("Export") } },
+    )
+}
+
+@Composable
+private fun PdfNavigationDialog(tab: EditorTab, onDismiss: () -> Unit) {
+    var query by remember { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
+    var hits by remember { mutableStateOf<List<PdfNotebookHit>>(emptyList()) }
+    var links by remember { mutableStateOf<List<PdfNotebookLink>>(emptyList()) }
+    LaunchedEffect(tab.id) { tab.pdfLinks { links = it } }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxWidth(.7f).fillMaxHeight(.72f), shape = RoundedCornerShape(22.dp), tonalElevation = 8.dp) {
+            Column(Modifier.padding(22.dp)) {
+                Text("Navigate document", style = MaterialTheme.typography.headlineSmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(query, { query = it }, singleLine = true, label = { Text("Search PDF text") }, modifier = Modifier.weight(1f))
+                    TextButton(enabled = query.isNotBlank() && !searching, onClick = {
+                        searching = true
+                        tab.searchPdf(query) { hits = it; searching = false }
+                    }) { Text(if (searching) "Searching…" else "Search") }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Results", style = MaterialTheme.typography.titleMedium)
+                        LazyColumn {
+                            itemsIndexed(hits) { _, hit ->
+                                TextButton(onClick = { tab.navigateToPage(hit.notebookPageIndex); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Page ${hit.notebookPageIndex + 1} · ${hit.matchCount} match${if (hit.matchCount == 1) "" else "es"}", Modifier.fillMaxWidth())
+                                }
+                            }
+                        }
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Bookmarks", style = MaterialTheme.typography.titleMedium)
+                        tab.pages.forEachIndexed { index, page -> if (page.bookmarked) {
+                            TextButton(onClick = { tab.navigateToPage(index); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Page ${index + 1}", Modifier.fillMaxWidth()) }
+                        } }
+                        Spacer(Modifier.height(12.dp))
+                        Text("PDF links / outline", style = MaterialTheme.typography.titleMedium)
+                        if (links.isEmpty()) Text("No navigable outline links found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        links.take(100).forEach { link ->
+                            TextButton(onClick = { tab.navigateToPage(link.targetNotebookPageIndex); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Page ${link.sourceNotebookPageIndex + 1} → ${link.targetNotebookPageIndex + 1}", Modifier.fillMaxWidth())
+                            }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = onDismiss) { Text("Close") } }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ObjectSelectionBar(
+    onEdit: () -> Unit,
+    onCopy: () -> Unit,
+    onDuplicate: () -> Unit,
+    onRotate: () -> Unit,
+    onFront: () -> Unit,
+    onBack: () -> Unit,
+    onDelete: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SelectionActionStrip(
+        listOf(
+            ImageActionSpec(Icons.Outlined.Edit, stringResource(R.string.edit), onEdit),
+            ImageActionSpec(Icons.Outlined.ContentCopy, stringResource(R.string.copy), onCopy),
+            ImageActionSpec(Icons.Outlined.Add, stringResource(R.string.duplicate), onDuplicate),
+            ImageActionSpec(Icons.Outlined.RotateRight, stringResource(R.string.rotate), onRotate),
+            ImageActionSpec(Icons.Outlined.FlipToFront, stringResource(R.string.front), onFront),
+            ImageActionSpec(Icons.Outlined.FlipToBack, stringResource(R.string.back), onBack),
+            ImageActionSpec(Icons.Outlined.Undo, stringResource(R.string.undo), onUndo),
+            ImageActionSpec(Icons.Outlined.Redo, stringResource(R.string.redo), onRedo),
+            ImageActionSpec(Icons.Outlined.Delete, stringResource(R.string.delete), onDelete),
+        ),
+        modifier,
+    )
+}
+
+@Composable
+private fun TextObjectDialog(
+    value: SceneObject.TextBox,
+    customFonts: List<String>,
+    onApply: (SceneObject.TextBox) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember(value.id) { mutableStateOf(value.text) }
+    var size by remember(value.id) { mutableStateOf(value.size) }
+    var color by remember(value.id) { mutableIntStateOf(value.argb) }
+    var bold by remember(value.id) { mutableStateOf(value.bold) }
+    var italic by remember(value.id) { mutableStateOf(value.italic) }
+    var underline by remember(value.id) { mutableStateOf(value.underline) }
+    var alignment by remember(value.id) { mutableStateOf(value.alignment) }
+    var font by remember(value.id) { mutableStateOf(value.fontFamily) }
+    var outlineEnabled by remember(value.id) { mutableStateOf(value.outlineArgb != null) }
+    var outlineColor by remember(value.id) { mutableIntStateOf(value.outlineArgb ?: 0xFFFFFFFF.toInt()) }
+    var outlineWidth by remember(value.id) { mutableStateOf(value.outlineWidth.coerceAtLeast(400f)) }
+    var curveDegrees by remember(value.id) { mutableStateOf(value.curveDegrees) }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 8.dp) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Edit text", style = MaterialTheme.typography.headlineSmall)
+                OutlinedTextField(text, { text = it }, label = { Text("Text") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                Text("Size ${(size / 1_000f).let { ((it * 10).roundToInt() / 10f) }} mm")
+                Slider(size, { size = it }, valueRange = 2_000f..20_000f)
+                ColorChoiceRow(listOf(0xFF20242B.toInt(), 0xFFFFFFFF.toInt(), 0xFF2563EB.toInt(), 0xFFD43D3D.toInt(), 0xFF2B8A57.toInt()), color) { color = it }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SelectablePill("Bold", bold) { bold = !bold }
+                    SelectablePill("Italic", italic) { italic = !italic }
+                    SelectablePill("Underline", underline) { underline = !underline }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextAlignment.entries.forEach { choice -> SelectablePill(choice.name, alignment == choice) { alignment = choice } }
+                }
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (listOf("sans-serif", "serif", "monospace") + customFonts.map { "file:$it" }).forEach { choice ->
+                        val label = if (choice.startsWith("file:")) File(choice.removePrefix("file:")).nameWithoutExtension
+                        else choice.substringBefore('-').replaceFirstChar(Char::uppercase)
+                        SelectablePill(label, font == choice) { font = choice }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Outline", Modifier.weight(1f))
+                    Switch(outlineEnabled, { outlineEnabled = it })
+                }
+                if (outlineEnabled) {
+                    ColorChoiceRow(listOf(0xFFFFFFFF.toInt(), 0xFF20242B.toInt(), 0xFF2563EB.toInt(), 0xFFD43D3D.toInt()), outlineColor) { outlineColor = it }
+                    Text("Outline ${(outlineWidth / 1_000f * 10f).roundToInt() / 10f} mm")
+                    Slider(outlineWidth, { outlineWidth = it }, valueRange = 200f..3_000f)
+                }
+                Text("Curve ${curveDegrees.roundToInt()}°")
+                Slider(curveDegrees, { curveDegrees = it }, valueRange = -180f..180f)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(enabled = text.isNotBlank(), onClick = {
+                        onApply(value.copy(
+                            text = text, size = size, argb = color, bold = bold, italic = italic,
+                            underline = underline, alignment = alignment, fontFamily = font,
+                            outlineArgb = outlineColor.takeIf { outlineEnabled },
+                            outlineWidth = outlineWidth.takeIf { outlineEnabled } ?: 0f,
+                            curveDegrees = curveDegrees,
+                        ))
+                    }) { Text("Apply") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShapeObjectDialog(
+    value: SceneObject.Rectangle,
+    onApply: (SceneObject.Rectangle) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var kind by remember(value.id) { mutableStateOf(value.kind) }
+    var strokeColor by remember(value.id) { mutableIntStateOf(value.strokeArgb) }
+    var lineWidth by remember(value.id) { mutableStateOf(value.strokeWidth) }
+    var fillEnabled by remember(value.id) { mutableStateOf(value.fillArgb != null) }
+    var fillColor by remember(value.id) { mutableIntStateOf(value.fillArgb ?: 0x332563EB) }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 8.dp) {
+            Column(Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Edit shape", style = MaterialTheme.typography.headlineSmall)
+                ShapeKind.entries.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { choice -> SelectablePill(choice.name.replace("RoundedRectangle", "Rounded"), kind == choice) { kind = choice } }
+                    }
+                }
+                Text("Stroke")
+                ColorChoiceRow(listOf(0xFF20242B.toInt(), 0xFFFFFFFF.toInt(), 0xFF2563EB.toInt(), 0xFFD43D3D.toInt(), 0xFF2B8A57.toInt()), strokeColor) { strokeColor = it }
+                Text("Line ${(lineWidth / 1_000f * 10).roundToInt() / 10f} mm")
+                Slider(lineWidth, { lineWidth = it }, valueRange = 300f..8_000f)
+                Row(verticalAlignment = Alignment.CenterVertically) { Text("Fill", Modifier.weight(1f)); Switch(fillEnabled, { fillEnabled = it }) }
+                if (fillEnabled) ColorChoiceRow(listOf(0x332563EB, 0x33D43D3D, 0x332B8A57, 0x66FFD84D, 0x33000000), fillColor) { fillColor = it }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(onClick = { onApply(value.copy(kind = kind, strokeArgb = strokeColor, strokeWidth = lineWidth, fillArgb = fillColor.takeIf { fillEnabled })) }) { Text("Apply") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MixedSelectionBar(
+    hasClipboard: Boolean,
+    canMovePrevious: Boolean,
+    canMoveNext: Boolean,
+    onCut: () -> Unit,
+    onCopy: () -> Unit,
+    onPaste: () -> Unit,
+    onDuplicate: () -> Unit,
+    onDelete: () -> Unit,
+    onRecolor: () -> Unit,
+    onWidth: () -> Unit,
+    onRotate: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onMovePage: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val actions = buildList {
+        add(ImageActionSpec(Icons.Outlined.ContentCut, stringResource(R.string.cut), onCut))
+        add(ImageActionSpec(Icons.Outlined.ContentCopy, stringResource(R.string.copy), onCopy))
+        if (hasClipboard) add(ImageActionSpec(Icons.Outlined.ContentPaste, stringResource(R.string.paste), onPaste))
+        add(ImageActionSpec(Icons.Outlined.Add, stringResource(R.string.duplicate), onDuplicate))
+        add(ImageActionSpec(Icons.Outlined.FormatColorFill, "Use current color", onRecolor))
+        add(ImageActionSpec(Icons.Outlined.LineWeight, "Use current width", onWidth))
+        add(ImageActionSpec(Icons.Outlined.RotateRight, "Rotate 90 degrees", onRotate))
+        if (canMovePrevious) add(ImageActionSpec(Icons.Outlined.NavigateBefore, "Move to previous page") { onMovePage(-1) })
+        if (canMoveNext) add(ImageActionSpec(Icons.Outlined.NavigateNext, "Move to next page") { onMovePage(1) })
+        add(ImageActionSpec(Icons.Outlined.Undo, "Undo object edit", onUndo))
+        add(ImageActionSpec(Icons.Outlined.Redo, "Redo object edit", onRedo))
+        add(ImageActionSpec(Icons.Outlined.Delete, stringResource(R.string.delete), onDelete))
+    }
+    SelectionActionStrip(actions, modifier)
+}
+
+@Composable
+private fun ImageSelectionBar(
+    locked: Boolean,
+    canPaste: Boolean,
+    onCrop: () -> Unit,
+    onCut: () -> Unit,
+    onCopy: () -> Unit,
+    onPaste: () -> Unit,
+    onLock: () -> Unit,
+    onUnlock: () -> Unit,
+    onRotate: () -> Unit,
+    onRecognizeText: () -> Unit,
+    onBringToFront: () -> Unit,
+    onSendToBack: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val actions = if (locked) {
+        listOf(ImageActionSpec(Icons.Outlined.LockOpen, stringResource(R.string.unlock), onUnlock))
+    } else {
+        buildList {
+            add(ImageActionSpec(Icons.Outlined.Crop, stringResource(R.string.crop), onCrop))
+            add(ImageActionSpec(Icons.Outlined.ContentCut, stringResource(R.string.cut), onCut))
+            add(ImageActionSpec(Icons.Outlined.ContentCopy, stringResource(R.string.copy), onCopy))
+            if (canPaste) add(ImageActionSpec(Icons.Outlined.ContentPaste, stringResource(R.string.paste), onPaste))
+            add(ImageActionSpec(Icons.Outlined.Lock, stringResource(R.string.lock), onLock))
+            add(ImageActionSpec(Icons.Outlined.RotateRight, stringResource(R.string.rotate), onRotate))
+            add(ImageActionSpec(Icons.Outlined.Search, stringResource(R.string.read_text), onRecognizeText))
+            add(ImageActionSpec(Icons.Outlined.FlipToFront, stringResource(R.string.front), onBringToFront))
+            add(ImageActionSpec(Icons.Outlined.FlipToBack, stringResource(R.string.back), onSendToBack))
+            add(ImageActionSpec(Icons.Outlined.Delete, stringResource(R.string.delete), onDelete))
+        }
+    }
+    SelectionActionStrip(actions, modifier)
+}
+
+@Composable
+private fun AudioSelectionBar(
+    onListen: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SelectionActionStrip(
+        listOf(
+            ImageActionSpec(Icons.Outlined.PlayArrow, "Listen", onListen),
+            ImageActionSpec(Icons.Outlined.Delete, stringResource(R.string.delete), onDelete),
+        ),
+        modifier,
+    )
+}
+
+@Composable
+private fun OcrResultDialog(text: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            Modifier.fillMaxWidth(.72f).fillMaxHeight(.72f),
+            shape = RoundedCornerShape(22.dp),
+            shadowElevation = 18.dp,
+        ) {
+            Column(Modifier.fillMaxSize().padding(22.dp)) {
+                Text("Text from image", style = MaterialTheme.typography.headlineSmall)
+                Text("The result stays on your device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(
+                    Modifier.fillMaxWidth().weight(1f).padding(vertical = 14.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(text, Modifier.padding(16.dp).verticalScroll(rememberScrollState()))
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Recognized text", text))
+                    }) { Text("Copy") }
+                    TextButton(onClick = onDismiss) { Text("Done") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioNotePanel(
+    audio: SceneObject.Audio,
+    referenceShortSide: Float,
+    onScale: (Float) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var player by remember(audio.id) { mutableStateOf<MediaPlayer?>(null) }
+    var playing by remember(audio.id) { mutableStateOf(false) }
+    var position by remember(audio.id) { mutableStateOf(0f) }
+    val transcript = audio.transcript
+    var playbackError by remember(audio.id) { mutableStateOf<String?>(null) }
+    var confirmDelete by remember(audio.id) { mutableStateOf(false) }
+    var iconFraction by remember(audio.id) {
+        mutableStateOf((audio.width / referenceShortSide.coerceAtLeast(1f)).coerceIn(.08f, .40f))
+    }
+
+    fun preparedPlayer(): MediaPlayer? {
+        player?.let { return it }
+        return runCatching {
+            check(audio.asset.isFile && audio.asset.length() > 44L) { "Recording file is missing or empty" }
+            MediaPlayer().apply {
+                setDataSource(audio.asset.absolutePath)
+                prepare()
+                setOnCompletionListener { playing = false; position = 0f }
+            }.also { player = it; playbackError = null }
+        }.onFailure { playbackError = "Playback unavailable: ${it.message ?: "invalid recording"}" }.getOrNull()
+    }
+
+    DisposableEffect(audio.id) {
+        onDispose {
+            runCatching { player?.release() }
+            player = null
+        }
+    }
+    LaunchedEffect(audio.id) {
+        preparedPlayer()
+    }
+    LaunchedEffect(playing) {
+        while (playing && isActive) {
+            val active = player
+            if (active != null) position = active.currentPosition.toFloat()
+            delay(100)
+        }
+    }
+    val duration = (player?.duration?.toFloat() ?: audio.durationMillis.toFloat()).coerceAtLeast(1f)
+    val highlightedTranscript = remember(transcript, position, duration) {
+        synchronizedTranscript(transcript, position / duration)
+    }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            Modifier.fillMaxWidth(.90f).fillMaxHeight(.86f),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 20.dp,
+        ) {
+            Column(Modifier.fillMaxSize().padding(22.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = RoundedCornerShape(50), color = Color(0x22EF4444), modifier = Modifier.size(44.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Mic, null, tint = Color(0xFFEF4444)) }
+                    }
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text("Audio note", style = MaterialTheme.typography.headlineSmall)
+                        Text("The transcript follows playback; use the timeline to seek", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Outlined.Delete, "Delete audio note") }
+                    IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "Close audio note") }
+                }
+                HorizontalDivider(Modifier.padding(vertical = 16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Icon size ${(iconFraction * 100f).roundToInt()}%", Modifier.width(112.dp))
+                    Slider(
+                        value = iconFraction,
+                        onValueChange = { iconFraction = it },
+                        onValueChangeFinished = { onScale(referenceShortSide * iconFraction) },
+                        valueRange = 0.08f..0.40f,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Surface(
+                    Modifier.fillMaxWidth().weight(1f),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Box(Modifier.fillMaxSize().padding(22.dp)) {
+                        when {
+                            transcript.isNotBlank() -> Text(
+                                highlightedTranscript,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                            )
+                            else -> Text(
+                                playbackError ?: "No transcript is embedded in this audio note.",
+                                modifier = Modifier.align(Alignment.Center),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Slider(
+                    value = position.coerceIn(0f, duration),
+                    onValueChange = { position = it },
+                    onValueChangeFinished = { preparedPlayer()?.seekTo(position.roundToInt()) },
+                    valueRange = 0f..duration,
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(formatAudioTime(position.toLong()), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                    IconButton(onClick = {
+                        preparedPlayer()?.let { active ->
+                            active.seekTo((active.currentPosition - 10_000).coerceAtLeast(0))
+                            position = active.currentPosition.toFloat()
+                        }
+                    }) { Icon(Icons.Outlined.NavigateBefore, "Back 10 seconds") }
+                    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primaryContainer) {
+                        IconButton(onClick = {
+                            preparedPlayer()?.let { active ->
+                                if (active.isPlaying) { active.pause(); playing = false }
+                                else { active.start(); playing = true }
+                            }
+                        }, modifier = Modifier.size(56.dp)) {
+                            Icon(if (playing) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, if (playing) "Pause" else "Play")
+                        }
+                    }
+                    IconButton(onClick = {
+                        preparedPlayer()?.let { active ->
+                            active.seekTo((active.currentPosition + 10_000).coerceAtMost(active.duration))
+                            position = active.currentPosition.toFloat()
+                        }
+                    }) { Icon(Icons.Outlined.NavigateNext, "Forward 10 seconds") }
+                    Text(formatAudioTime(duration.toLong()), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete audio note?") },
+            text = { Text("This recording will be removed from the page. This action cannot be undone from this popup.") },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDelete(); onDismiss() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+        )
+    }
+}
+
+private fun synchronizedTranscript(text: String, progress: Float): AnnotatedString {
+    if (text.isBlank()) return AnnotatedString("")
+    val tokens = Regex("\\S+|\\s+").findAll(text).map { it.value }.toList()
+    val wordCount = tokens.count { it.any(Char::isLetterOrDigit) }.coerceAtLeast(1)
+    val activeWord = (progress.coerceIn(0f, .9999f) * wordCount).toInt()
+    var wordIndex = 0
+    return buildAnnotatedString {
+        tokens.forEach { token ->
+            if (token.any(Char::isLetterOrDigit)) {
+                if (wordIndex == activeWord) withStyle(
+                    SpanStyle(
+                        color = Color(0xFF111827),
+                        background = Color(0xFFFACC15),
+                        fontWeight = FontWeight.Bold,
+                    ),
+                ) { append(token) } else append(token)
+                wordIndex++
+            } else append(token)
+        }
+    }
+}
+
+private fun formatAudioTime(milliseconds: Long): String {
+    val totalSeconds = (milliseconds / 1_000L).coerceAtLeast(0L)
+    return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
+}
+
+private data class ImageActionSpec(
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val label: String,
+    val onClick: () -> Unit,
+)
+
+@Composable
+private fun SelectionActionStrip(actions: List<ImageActionSpec>, modifier: Modifier = Modifier) {
+    Surface(modifier, color = Color.Transparent, shadowElevation = 0.dp) {
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            actions.forEachIndexed { index, action ->
+                key(action.label) { StaggeredImageAction(index, action) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StaggeredImageAction(index: Int, action: ImageActionSpec) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(index * 44L)
+        visible = true
+    }
+    val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(150), label = "selection-action-alpha")
+    val scale by animateFloatAsState(if (visible) 1f else .76f, tween(300, easing = BackOutEasing), label = "selection-action-scale")
+    val translationY by animateFloatAsState(if (visible) 0f else 14f, tween(300, easing = BackOutEasing), label = "selection-action-y")
+    Box(Modifier.graphicsLayer {
+        this.alpha = alpha
+        scaleX = scale
+        scaleY = scale
+        this.translationY = translationY
+    }) {
+        ImageActionButton(action.icon, action.label, action.onClick)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ImageActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    val tooltipState = rememberTooltipState(isPersistent = true)
+    val scope = rememberCoroutineScope()
+    val stylusHover = Modifier.pointerInput(label) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                if (event.changes.any { it.type == PointerType.Stylus || it.type == PointerType.Eraser }) {
+                    when (event.type) {
+                        PointerEventType.Enter -> scope.launch { tooltipState.show() }
+                        PointerEventType.Exit -> tooltipState.dismiss()
+                    }
+                }
+            }
+        }
+    }
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = tooltipState,
+    ) {
+        Surface(
+            onClick = onClick,
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 5.dp,
+            shadowElevation = 5.dp,
+            modifier = Modifier.size(42.dp).then(stylusHover),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, label, Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImageCropDialog(
+    image: SceneObject.Image,
+    onApply: (ObjectCrop) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var left by remember(image.id) { mutableStateOf(image.crop.leftFraction) }
+    var top by remember(image.id) { mutableStateOf(image.crop.topFraction) }
+    var right by remember(image.id) { mutableStateOf(image.crop.rightFraction) }
+    var bottom by remember(image.id) { mutableStateOf(image.crop.bottomFraction) }
+    var previewSize by remember { mutableStateOf(IntSize(1, 1)) }
+    var activeCorner by remember { mutableIntStateOf(0) }
+    val cropHandleColor = MaterialTheme.colorScheme.primary
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(20.dp), shadowElevation = 18.dp) {
+            Column(
+                Modifier.fillMaxWidth().padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Crop image", style = MaterialTheme.typography.headlineSmall)
+                Canvas(
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(image.bitmap.width / image.bitmap.height.toFloat())
+                        .clip(RoundedCornerShape(12.dp))
+                        .onSizeChanged { previewSize = it }
+                        .pointerInput(image.id, previewSize) {
+                            detectDragGestures(
+                                onDragStart = { point ->
+                                    val corners = listOf(
+                                        Offset(left * size.width, top * size.height),
+                                        Offset((1f - right) * size.width, top * size.height),
+                                        Offset(left * size.width, (1f - bottom) * size.height),
+                                        Offset((1f - right) * size.width, (1f - bottom) * size.height),
+                                    )
+                                    activeCorner = corners.indices.minBy { index ->
+                                        val delta = corners[index] - point
+                                        delta.x * delta.x + delta.y * delta.y
+                                    }
+                                },
+                            ) { change, amount ->
+                                change.consume()
+                                val dx = amount.x / size.width.coerceAtLeast(1)
+                                val dy = amount.y / size.height.coerceAtLeast(1)
+                                if (activeCorner == 0 || activeCorner == 2) left = (left + dx).coerceIn(0f, .9f - right)
+                                else right = (right - dx).coerceIn(0f, .9f - left)
+                                if (activeCorner == 0 || activeCorner == 1) top = (top + dy).coerceIn(0f, .9f - bottom)
+                                else bottom = (bottom - dy).coerceIn(0f, .9f - top)
+                            }
+                        },
+                ) {
+                    drawImage(
+                        image.bitmap.asImageBitmap(),
+                        dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
+                    )
+                    val cropLeft = left * size.width
+                    val cropTop = top * size.height
+                    val cropRight = (1f - right) * size.width
+                    val cropBottom = (1f - bottom) * size.height
+                    val shade = Color.Black.copy(alpha = .58f)
+                    drawRect(shade, Offset.Zero, Size(size.width, cropTop))
+                    drawRect(shade, Offset(0f, cropBottom), Size(size.width, size.height - cropBottom))
+                    drawRect(shade, Offset(0f, cropTop), Size(cropLeft, cropBottom - cropTop))
+                    drawRect(shade, Offset(cropRight, cropTop), Size(size.width - cropRight, cropBottom - cropTop))
+                    drawRect(
+                        Color.White,
+                        Offset(cropLeft, cropTop),
+                        Size(cropRight - cropLeft, cropBottom - cropTop),
+                        style = Stroke(2.dp.toPx()),
+                    )
+                    listOf(
+                        Offset(cropLeft, cropTop), Offset(cropRight, cropTop),
+                        Offset(cropLeft, cropBottom), Offset(cropRight, cropBottom),
+                    ).forEach { handle ->
+                        drawCircle(Color.White, 8.dp.toPx(), handle)
+                        drawCircle(cropHandleColor, 8.dp.toPx(), handle, style = Stroke(2.dp.toPx()))
+                    }
+                }
+                Text("Drag any corner. The dark area will be cropped out.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { left = 0f; top = 0f; right = 0f; bottom = 0f }) { Text("Reset") }
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(onClick = { onApply(ObjectCrop(left, top, right, bottom)) }) { Text("Apply") }
+                }
+            }
+        }
+    }
+}
+
+private fun ViewportTransform.clampedToDocument(viewWidth: Float, viewHeight: Float): ViewportTransform {
+    val margin = 28f
+    val contentWidth = pageWidth * scale
+    val contentHeight = pageHeight * scale
+    val x = if (contentWidth <= viewWidth) (viewWidth - contentWidth) / 2f
+    else offsetX.coerceIn(viewWidth - margin - contentWidth, margin)
+    val y = if (contentHeight <= viewHeight) (viewHeight - contentHeight) / 2f
+    else offsetY.coerceIn(viewHeight - margin - contentHeight, margin)
+    return copy(offsetX = x, offsetY = y)
+}
+
+private fun SceneObject.Image.toUnrotatedPoint(point: PagePoint): PagePoint {
+    if (rotation == 0f) return point
+    val centerX = x + width / 2f
+    val centerY = y + height / 2f
+    val radians = Math.toRadians((-rotation).toDouble())
+    val dx = point.x - centerX
+    val dy = point.y - centerY
+    return PagePoint(
+        centerX + (dx * kotlin.math.cos(radians) - dy * kotlin.math.sin(radians)).toFloat(),
+        centerY + (dx * kotlin.math.sin(radians) + dy * kotlin.math.cos(radians)).toFloat(),
+    )
+}
+
+private fun SceneObject.Image.toUnrotatedDelta(dx: Float, dy: Float): PagePoint {
+    if (rotation == 0f) return PagePoint(dx, dy)
+    val radians = Math.toRadians((-rotation).toDouble())
+    return PagePoint(
+        (dx * kotlin.math.cos(radians) - dy * kotlin.math.sin(radians)).toFloat(),
+        (dx * kotlin.math.sin(radians) + dy * kotlin.math.cos(radians)).toFloat(),
+    )
+}
+
+private fun SceneObject.Rectangle.toUnrotatedPoint(point: PagePoint): PagePoint {
+    if (rotation == 0f) return point
+    val centerX = x + width / 2f
+    val centerY = y + height / 2f
+    val radians = Math.toRadians((-rotation).toDouble())
+    val dx = point.x - centerX
+    val dy = point.y - centerY
+    return PagePoint(
+        centerX + (dx * kotlin.math.cos(radians) - dy * kotlin.math.sin(radians)).toFloat(),
+        centerY + (dx * kotlin.math.sin(radians) + dy * kotlin.math.cos(radians)).toFloat(),
+    )
+}
+
+private fun SceneObject.TextBox.visualBounds(): PageRect {
+    val lineCount = text.lines().size.coerceAtLeast(1)
+    val contentHeight = size + (lineCount - 1) * size * 1.2f + size * .25f
+    val visualHeight = maxOf(height, contentHeight)
+    val bend = width * (kotlin.math.abs(curveDegrees) / 180f) * .45f
+    val extraTop = bend.takeIf { curveDegrees > 0f } ?: 0f
+    val extraBottom = bend.takeIf { curveDegrees < 0f } ?: 0f
+    return PageRect(x, y - size - extraTop, x + width, y - size + visualHeight + extraBottom)
+}
+
+private fun SceneObject.TextBox.toUnrotatedPoint(point: PagePoint): PagePoint {
+    if (rotation == 0f) return point
+    val bounds = visualBounds()
+    val centerX = (bounds.left + bounds.right) / 2f
+    val centerY = (bounds.top + bounds.bottom) / 2f
+    val radians = Math.toRadians((-rotation).toDouble())
+    val dx = point.x - centerX
+    val dy = point.y - centerY
+    return PagePoint(
+        centerX + (dx * kotlin.math.cos(radians) - dy * kotlin.math.sin(radians)).toFloat(),
+        centerY + (dx * kotlin.math.sin(radians) + dy * kotlin.math.cos(radians)).toFloat(),
+    )
+}
+
+private fun SceneObject.contains(point: PagePoint): Boolean = when (this) {
+    is SceneObject.Image -> toUnrotatedPoint(point).let { it.x in x..(x + width) && it.y in y..(y + height) }
+    is SceneObject.Rectangle -> if (kind == ShapeKind.Line || kind == ShapeKind.Arrow) {
+        hitByEraser(point, 3_500f)
+    } else {
+        toUnrotatedPoint(point).let { it.x in x..(x + width) && it.y in y..(y + height) }
+    }
+    is SceneObject.TextBox -> {
+        val bounds = visualBounds()
+        toUnrotatedPoint(point).let { it.x in bounds.left..bounds.right && it.y in bounds.top..bounds.bottom }
+    }
+    is SceneObject.Audio -> point.x in x..(x + width) && point.y in y..(y + height)
+}
+
+private fun SceneObject.Rectangle.hitByEraser(point: PagePoint, radius: Float): Boolean {
+    val localPoint = toUnrotatedPoint(point)
+    val tolerance = radius + strokeWidth / 2f
+    fun distanceToSegment(start: PagePoint, end: PagePoint): Float {
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        val lengthSquared = dx * dx + dy * dy
+        if (lengthSquared <= 1f) return hypot(localPoint.x - start.x, localPoint.y - start.y)
+        val t = (((localPoint.x - start.x) * dx + (localPoint.y - start.y) * dy) / lengthSquared).coerceIn(0f, 1f)
+        return hypot(localPoint.x - (start.x + t * dx), localPoint.y - (start.y + t * dy))
+    }
+    val leftTop = PagePoint(x, y)
+    val rightTop = PagePoint(x + width, y)
+    val leftBottom = PagePoint(x, y + height)
+    val rightBottom = PagePoint(x + width, y + height)
+    return when (kind) {
+        ShapeKind.Line, ShapeKind.Arrow -> distanceToSegment(leftTop, rightBottom) <= tolerance
+        ShapeKind.Rectangle, ShapeKind.RoundedRectangle -> listOf(
+            leftTop to rightTop,
+            rightTop to rightBottom,
+            rightBottom to leftBottom,
+            leftBottom to leftTop,
+        ).any { (start, end) -> distanceToSegment(start, end) <= tolerance }
+        ShapeKind.Triangle -> {
+            val peak = PagePoint(x + width / 2f, y)
+            listOf(peak to rightBottom, rightBottom to leftBottom, leftBottom to peak)
+                .any { (start, end) -> distanceToSegment(start, end) <= tolerance }
+        }
+        ShapeKind.Ellipse -> {
+            val radiusX = width / 2f
+            val radiusY = height / 2f
+            if (radiusX <= 0f || radiusY <= 0f) false else {
+                val normalized = hypot((localPoint.x - x - radiusX) / radiusX, (localPoint.y - y - radiusY) / radiusY)
+                kotlin.math.abs(normalized - 1f) * minOf(radiusX, radiusY) <= tolerance
+            }
+        }
+    }
+}
+
+private fun SceneObject.move(dx: Float, dy: Float): SceneObject = when (this) {
+    is SceneObject.Image -> copy(x = x + dx, y = y + dy)
+    is SceneObject.Rectangle -> copy(x = x + dx, y = y + dy)
+    is SceneObject.TextBox -> copy(x = x + dx, y = y + dy)
+    is SceneObject.Audio -> copy(x = x + dx, y = y + dy)
+}
+
+private fun SceneObject.resizeHandleContains(point: PagePoint, radius: Float): Boolean {
+    val hitPoint = when (this) {
+        is SceneObject.Image -> toUnrotatedPoint(point)
+        is SceneObject.Rectangle -> toUnrotatedPoint(point)
+        is SceneObject.TextBox -> toUnrotatedPoint(point)
+        else -> point
+    }
+    val handle = when (this) {
+        is SceneObject.Image -> PagePoint(x, y + height)
+        is SceneObject.Rectangle -> PagePoint(x + width, y + height)
+        is SceneObject.TextBox -> visualBounds().let { PagePoint(it.right, it.bottom) }
+        is SceneObject.Audio -> PagePoint(x + width, y + height)
+    }
+    val dx = hitPoint.x - handle.x
+    val dy = hitPoint.y - handle.y
+    return dx * dx + dy * dy <= radius * radius
+}
+
+private fun SceneObject.resize(deltaWidth: Float, deltaHeight: Float): SceneObject = when (this) {
+    is SceneObject.Image -> {
+        val horizontalScale = (width + deltaWidth) / width
+        val verticalScale = (height + deltaHeight) / height
+        val requestedScale = if (kotlin.math.abs(horizontalScale - 1f) >= kotlin.math.abs(verticalScale - 1f)) {
+            horizontalScale
+        } else {
+            verticalScale
+        }
+        val minimumScale = maxOf(5_000f / width, 5_000f / height)
+        val scale = requestedScale.coerceAtLeast(minimumScale)
+        copy(width = width * scale, height = height * scale)
+    }
+    is SceneObject.Rectangle -> copy(
+        width = (width + deltaWidth).coerceAtLeast(5_000f),
+        height = (height + deltaHeight).coerceAtLeast(5_000f),
+    )
+    is SceneObject.TextBox -> copy(
+        width = (width + deltaWidth).coerceAtLeast(10_000f),
+        height = (height + deltaHeight).coerceAtLeast(size * 1.2f),
+    )
+    is SceneObject.Audio -> copy(
+        width = (width + deltaWidth).coerceAtLeast(6_000f),
+        height = (height + deltaHeight).coerceAtLeast(6_000f),
+    )
+}
+
+private fun SceneObject.Image.resizeFromLeftBottom(deltaX: Float, deltaY: Float): SceneObject.Image {
+    val horizontalScale = (width - deltaX) / width
+    val verticalScale = (height + deltaY) / height
+    val requestedScale = if (kotlin.math.abs(horizontalScale - 1f) >= kotlin.math.abs(verticalScale - 1f)) {
+        horizontalScale
+    } else {
+        verticalScale
+    }
+    val minimumScale = maxOf(5_000f / width, 5_000f / height)
+    val scale = requestedScale.coerceAtLeast(minimumScale)
+    val nextWidth = width * scale
+    val nextHeight = height * scale
+    return copy(x = x + width - nextWidth, width = nextWidth, height = nextHeight)
+}
+
+private fun mixedSelectionBounds(selection: MixedSelection, pages: List<PageEntry>): PageRect? {
+    val page = pages.getOrNull(selection.pageIndex) ?: return null
+    val strokeBounds = page.session.page.strokes.filter { it.id in selection.strokeIds }.map(InkStroke::bounds)
+    val objectBounds = page.objects.filter { it.id in selection.objectIds }.map { item ->
+        when (item) {
+            is SceneObject.Image -> PageRect(item.x, item.y, item.x + item.width, item.y + item.height)
+            is SceneObject.Rectangle -> PageRect(
+                minOf(item.x, item.x + item.width), minOf(item.y, item.y + item.height),
+                maxOf(item.x, item.x + item.width), maxOf(item.y, item.y + item.height),
+            )
+            is SceneObject.TextBox -> item.visualBounds()
+            is SceneObject.Audio -> PageRect(item.x, item.y, item.x + item.width, item.y + item.height)
+        }
+    }
+    val values = strokeBounds + objectBounds
+    if (values.isEmpty()) return null
+    return PageRect(values.minOf(PageRect::left), values.minOf(PageRect::top), values.maxOf(PageRect::right), values.maxOf(PageRect::bottom))
+}
+
+private fun SceneObject.duplicate(): SceneObject = when (this) {
+    is SceneObject.Image -> copy(id = ObjectId(UUID.randomUUID().toString()))
+    is SceneObject.Rectangle -> copy(id = ObjectId(UUID.randomUUID().toString()))
+    is SceneObject.TextBox -> copy(id = ObjectId(UUID.randomUUID().toString()))
+    is SceneObject.Audio -> copy(id = ObjectId(UUID.randomUUID().toString()))
+}
+
+private fun PageEntry.reindexObjects() {
+    objects.indices.forEach { index -> objects[index] = objects[index].withZIndex(index.toLong()) }
+}
+
+private fun SceneObject.withZIndex(value: Long): SceneObject = when (this) {
+    is SceneObject.Image -> copy(zIndex = value)
+    is SceneObject.Rectangle -> copy(zIndex = value)
+    is SceneObject.TextBox -> copy(zIndex = value)
+    is SceneObject.Audio -> copy(zIndex = value)
+}
+
+private fun SceneObject.rotateBy(degrees: Float): SceneObject = when (this) {
+    is SceneObject.Image -> copy(rotation = (rotation + degrees) % 360f)
+    is SceneObject.Rectangle -> copy(rotation = (rotation + degrees) % 360f)
+    is SceneObject.TextBox -> copy(rotation = (rotation + degrees) % 360f)
+    is SceneObject.Audio -> this
+}
+
+private fun DrawScope.drawPlacedPage(placement: PagePlacement, viewport: ViewportTransform, selected: Boolean) {
+    val left = viewport.offsetX + placement.left * viewport.scale
+    val top = viewport.offsetY + placement.top * viewport.scale
+    val width = placement.page.size.widthMicrons * viewport.scale
+    val height = placement.page.size.heightMicrons * viewport.scale
+    drawRect(Color(0x44000000), Offset(left + 5f, top + 7f), Size(width, height))
+    drawRect(Color(placement.page.backgroundArgb), Offset(left, top), Size(width, height))
+    val templateColor = Color(placement.page.templateLineArgb)
+    if (selected) drawRect(Color(0xFF5B8DEF), Offset(left, top), Size(width, height), style = Stroke(2.dp.toPx()))
+    placement.page.pdfBackground?.let { bitmap ->
+        drawImage(bitmap.asImageBitmap(), dstOffset = IntOffset(left.roundToInt(), top.roundToInt()), dstSize = IntSize(width.roundToInt(), height.roundToInt()))
+        return
+    }
+    when (placement.page.template) {
+        PageTemplate.Blank -> Unit
+        PageTemplate.Ruled -> {
+            var y = 9_000f
+            while (y < placement.page.size.heightMicrons) {
+                val screenY = top + y * viewport.scale
+                drawLine(templateColor, Offset(left, screenY), Offset(left + width, screenY), 1f)
+                y += 9_000f
+            }
+        }
+        PageTemplate.Grid -> {
+            var y = 8_000f
+            while (y < placement.page.size.heightMicrons) {
+                val screenY = top + y * viewport.scale
+                drawLine(templateColor, Offset(left, screenY), Offset(left + width, screenY), 1f)
+                y += 8_000f
+            }
+            var x = 8_000f
+            while (x < placement.page.size.widthMicrons) {
+                val screenX = left + x * viewport.scale
+                drawLine(templateColor, Offset(screenX, top), Offset(screenX, top + height), 1f)
+                x += 8_000f
+            }
+        }
+        PageTemplate.Dotted -> {
+            var y = 8_000f
+            while (y < placement.page.size.heightMicrons) {
+                var x = 8_000f
+                while (x < placement.page.size.widthMicrons) {
+                    drawCircle(templateColor, (viewport.scale * 500f).coerceAtLeast(.7f), Offset(left + x * viewport.scale, top + y * viewport.scale))
+                    x += 8_000f
+                }
+                y += 8_000f
+            }
+        }
+        PageTemplate.Cornell -> {
+            var y = 36_000f
+            while (y < placement.page.size.heightMicrons) {
+                val screenY = top + y * viewport.scale
+                drawLine(templateColor, Offset(left, screenY), Offset(left + width, screenY), 1f)
+                y += 9_000f
+            }
+            drawLine(templateColor, Offset(left + 45_000f * viewport.scale, top), Offset(left + 45_000f * viewport.scale, top + height), 1f)
+            drawLine(templateColor, Offset(left, top + 27_000f * viewport.scale), Offset(left + width, top + 27_000f * viewport.scale), 1f)
+        }
+        PageTemplate.MusicStaff -> {
+            var staffTop = 18_000f
+            while (staffTop < placement.page.size.heightMicrons) {
+                repeat(5) { line ->
+                    val screenY = top + (staffTop + line * 2_500f) * viewport.scale
+                    drawLine(templateColor, Offset(left, screenY), Offset(left + width, screenY), 1f)
+                }
+                staffTop += 24_000f
+            }
+        }
+    }
+}
+
+private fun DrawScope.drawPlacedObject(item: SceneObject, placement: PagePlacement, viewport: ViewportTransform, selected: Boolean) {
+    val originX = viewport.offsetX + placement.left * viewport.scale
+    val originY = viewport.offsetY + placement.top * viewport.scale
+    val rotation = when (item) {
+        is SceneObject.Image -> item.rotation
+        is SceneObject.Rectangle -> item.rotation
+        is SceneObject.TextBox -> item.rotation
+        is SceneObject.Audio -> 0f
+    }
+    val pivot = when (item) {
+        is SceneObject.Image -> Offset(originX + (item.x + item.width / 2f) * viewport.scale, originY + (item.y + item.height / 2f) * viewport.scale)
+        is SceneObject.Rectangle -> Offset(originX + (item.x + item.width / 2f) * viewport.scale, originY + (item.y + item.height / 2f) * viewport.scale)
+        is SceneObject.TextBox -> item.visualBounds().let {
+            Offset(originX + (it.left + it.right) / 2f * viewport.scale, originY + (it.top + it.bottom) / 2f * viewport.scale)
+        }
+        is SceneObject.Audio -> Offset(originX + (item.x + item.width / 2f) * viewport.scale, originY + (item.y + item.height / 2f) * viewport.scale)
+    }
+    val canvasCheckpoint = drawContext.canvas.nativeCanvas.save()
+    if (rotation != 0f) drawContext.canvas.nativeCanvas.rotate(rotation, pivot.x, pivot.y)
+    val bounds = when (item) {
+        is SceneObject.Image -> {
+            drawImage(
+                item.bitmap.asImageBitmap(),
+                srcOffset = IntOffset(
+                    (item.bitmap.width * item.crop.leftFraction).roundToInt(),
+                    (item.bitmap.height * item.crop.topFraction).roundToInt(),
+                ),
+                srcSize = IntSize(
+                    (item.bitmap.width * (1f - item.crop.leftFraction - item.crop.rightFraction)).roundToInt(),
+                    (item.bitmap.height * (1f - item.crop.topFraction - item.crop.bottomFraction)).roundToInt(),
+                ),
+                dstOffset = IntOffset(
+                    (originX + item.x * viewport.scale).roundToInt(),
+                    (originY + item.y * viewport.scale).roundToInt(),
+                ),
+                dstSize = IntSize(
+                    (item.width * viewport.scale).roundToInt(),
+                    (item.height * viewport.scale).roundToInt(),
+                ),
+                alpha = item.opacity,
+            )
+            floatArrayOf(item.x, item.y, item.width, item.height)
+        }
+        is SceneObject.Rectangle -> {
+            val topLeft = Offset(originX + item.x * viewport.scale, originY + item.y * viewport.scale)
+            val shapeSize = Size(item.width * viewport.scale, item.height * viewport.scale)
+            val stroke = Stroke((item.strokeWidth * viewport.scale).coerceAtLeast(2f))
+            when (item.kind) {
+                ShapeKind.Line, ShapeKind.Arrow -> drawLine(
+                    Color(item.strokeArgb), topLeft, topLeft + Offset(shapeSize.width, shapeSize.height),
+                    stroke.width,
+                )
+                ShapeKind.Rectangle -> {
+                    item.fillArgb?.let { drawRect(Color(it), topLeft, shapeSize) }
+                    drawRect(Color(item.strokeArgb), topLeft, shapeSize, style = stroke)
+                }
+                ShapeKind.RoundedRectangle -> {
+                    item.fillArgb?.let { drawRoundRect(Color(it), topLeft, shapeSize, androidx.compose.ui.geometry.CornerRadius(12.dp.toPx())) }
+                    drawRoundRect(Color(item.strokeArgb), topLeft, shapeSize, androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()), style = stroke)
+                }
+                ShapeKind.Ellipse -> {
+                    item.fillArgb?.let { drawOval(Color(it), topLeft, shapeSize) }
+                    drawOval(Color(item.strokeArgb), topLeft, shapeSize, style = stroke)
+                }
+                ShapeKind.Triangle -> {
+                    val path = Path().apply {
+                        moveTo(topLeft.x + shapeSize.width / 2f, topLeft.y)
+                        lineTo(topLeft.x + shapeSize.width, topLeft.y + shapeSize.height)
+                        lineTo(topLeft.x, topLeft.y + shapeSize.height)
+                        close()
+                    }
+                    item.fillArgb?.let { drawPath(path, Color(it)) }
+                    drawPath(path, Color(item.strokeArgb), style = stroke)
+                }
+            }
+            floatArrayOf(item.x, item.y, item.width, item.height)
+        }
+        is SceneObject.TextBox -> {
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = item.argb
+                textSize = item.size * viewport.scale
+                isUnderlineText = item.underline
+                typeface = android.graphics.Typeface.create(
+                    if (item.fontFamily.startsWith("file:")) null else item.fontFamily,
+                    when {
+                        item.bold && item.italic -> android.graphics.Typeface.BOLD_ITALIC
+                        item.bold -> android.graphics.Typeface.BOLD
+                        item.italic -> android.graphics.Typeface.ITALIC
+                        else -> android.graphics.Typeface.NORMAL
+                    },
+                )
+                textAlign = when (item.alignment) {
+                    TextAlignment.Start -> Paint.Align.LEFT
+                    TextAlignment.Center -> Paint.Align.CENTER
+                    TextAlignment.End -> Paint.Align.RIGHT
+                }
+            }
+            if (item.fontFamily.startsWith("file:")) runCatching {
+                paint.typeface = android.graphics.Typeface.createFromFile(item.fontFamily.removePrefix("file:"))
+            }
+            val baseX = originX + when (item.alignment) {
+                TextAlignment.Start -> item.x
+                TextAlignment.Center -> item.x + item.width / 2f
+                TextAlignment.End -> item.x + item.width
+            } * viewport.scale
+            item.text.lines().forEachIndexed { index, line ->
+                val baseline = originY + (item.y + index * item.size * 1.2f) * viewport.scale
+                val curvePath = item.curveDegrees.takeIf { kotlin.math.abs(it) >= 1f }?.let { curve ->
+                    android.graphics.Path().apply {
+                        val startX = originX + item.x * viewport.scale
+                        val width = item.width * viewport.scale
+                        moveTo(startX, baseline)
+                        quadTo(startX + width / 2f, baseline - width * (curve / 180f) * .45f, startX + width, baseline)
+                    }
+                }
+                item.outlineArgb?.takeIf { item.outlineWidth > 0f }?.let { outlineColor ->
+                    val fillColor = paint.color
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeWidth = item.outlineWidth * viewport.scale
+                    paint.color = outlineColor
+                    if (curvePath == null) drawContext.canvas.nativeCanvas.drawText(line, baseX, baseline, paint)
+                    else drawContext.canvas.nativeCanvas.drawTextOnPath(line, curvePath, 0f, 0f, paint)
+                    paint.style = Paint.Style.FILL
+                    paint.color = fillColor
+                }
+                if (curvePath == null) drawContext.canvas.nativeCanvas.drawText(line, baseX, baseline, paint)
+                else drawContext.canvas.nativeCanvas.drawTextOnPath(line, curvePath, 0f, 0f, paint)
+            }
+            item.visualBounds().let { floatArrayOf(it.left, it.top, it.right - it.left, it.bottom - it.top) }
+        }
+        is SceneObject.Audio -> {
+            val center = Offset(
+                originX + (item.x + item.width / 2f) * viewport.scale,
+                originY + (item.y + item.height / 2f) * viewport.scale,
+            )
+            val radius = minOf(item.width, item.height) * viewport.scale / 2f
+            drawCircle(Color(0xFFEF4444), radius, center)
+            drawRoundRect(
+                Color.White,
+                topLeft = Offset(center.x - radius * .22f, center.y - radius * .48f),
+                size = Size(radius * .44f, radius * .70f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius * .24f),
+            )
+            drawLine(
+                Color.White,
+                Offset(center.x, center.y + radius * .20f),
+                Offset(center.x, center.y + radius * .55f),
+                (radius * .12f).coerceAtLeast(2f),
+            )
+            floatArrayOf(item.x, item.y, item.width, item.height)
+        }
+    }
+    if (selected) {
+        val selectionTopLeft = Offset(
+            originX + bounds[0] * viewport.scale,
+            originY + bounds[1] * viewport.scale,
+        )
+        val selectionSize = Size(bounds[2] * viewport.scale, bounds[3] * viewport.scale)
+        drawRect(Color(0xFF3B82F6), selectionTopLeft, selectionSize, style = Stroke(2.dp.toPx()))
+        if (item !is SceneObject.Image || !item.locked) {
+            val handle = if (item is SceneObject.Image) {
+                selectionTopLeft + Offset(0f, selectionSize.height)
+            } else {
+                selectionTopLeft + Offset(selectionSize.width, selectionSize.height)
+            }
+            drawCircle(Color.White, 10.dp.toPx(), handle)
+            drawCircle(Color(0xFF3B82F6), 10.dp.toPx(), handle, style = Stroke(3.dp.toPx()))
+        }
+    }
+    drawContext.canvas.nativeCanvas.restoreToCount(canvasCheckpoint)
+}
+
+private fun floatingNotesShortcutCode(stylusButton: Int): Int = -stylusButton
+
+private fun readableKeyName(keyCode: Int): String {
+    if (keyCode < 0) return when (-keyCode) {
+        android.view.MotionEvent.BUTTON_STYLUS_PRIMARY -> "Stylus primary button"
+        android.view.MotionEvent.BUTTON_STYLUS_SECONDARY -> "Stylus secondary button"
+        else -> "Stylus button ${-keyCode}"
+    }
+    return KeyEvent.keyCodeToString(keyCode)
+        .removePrefix("KEYCODE_")
+        .lowercase()
+        .split('_')
+        .joinToString(" ") { word -> word.replaceFirstChar(Char::uppercase) }
+}
+
+@Composable
+private fun FloatingNotesOverlay(
+    notebooks: List<EditorTab>,
+    selectedTabId: Int,
+    onOpen: (EditorTab) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    BackHandler(onBack = onDismiss)
+    val groups = notebooks.groupBy { it.folderPath ?: "Unfiled" }
+        .toList()
+        .sortedWith(compareBy<Pair<String, List<EditorTab>>> { it.first == "Unfiled" }.thenBy { it.first.lowercase() })
+    BoxWithConstraints(
+        Modifier.fillMaxSize().background(Color(0xE60A0C11)).zIndex(95f),
+    ) {
+        val columns = (maxWidth / 184.dp).toInt().coerceAtLeast(1)
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(26.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Floating notes", style = MaterialTheme.typography.headlineMedium, color = Color.White)
+                    Text(
+                        "Notes in the same folder stay close together",
+                        color = Color.White.copy(alpha = .68f),
+                    )
+                }
+                IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "Close", tint = Color.White) }
+            }
+            groups.forEach { (folder, folderNotes) ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Folder, null, tint = MaterialTheme.colorScheme.primary)
+                        Text(
+                            folder,
+                            Modifier.padding(start = 8.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                        )
+                        Text(
+                            "  ${folderNotes.size}",
+                            color = Color.White.copy(alpha = .55f),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                    folderNotes.sortedBy { it.title.lowercase() }.chunked(columns).forEach { rowNotes ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowNotes.forEach { note ->
+                                val seed = note.persistentId.hashCode()
+                                val offsetX = ((seed and 7) - 3).dp
+                                val offsetY = (((seed ushr 3) and 7) - 3).dp
+                                val rotation = (((seed ushr 6) and 7) - 3) * .7f
+                                Box(Modifier.weight(1f).height(112.dp), contentAlignment = Alignment.Center) {
+                                    Surface(
+                                        onClick = { onOpen(note) },
+                                        modifier = Modifier.fillMaxWidth().height(88.dp)
+                                            .padding(horizontal = 5.dp)
+                                            .offset(offsetX, offsetY)
+                                            .graphicsLayer { rotationZ = rotation },
+                                        shape = RoundedCornerShape(18.dp),
+                                        color = Color(note.coverArgb),
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            if (note.id == selectedTabId) 3.dp else 1.dp,
+                                            if (note.id == selectedTabId) MaterialTheme.colorScheme.primary
+                                            else Color.White.copy(alpha = .20f),
+                                        ),
+                                        shadowElevation = 12.dp,
+                                    ) {
+                                        Column(
+                                            Modifier.fillMaxSize().padding(14.dp),
+                                            verticalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Text(
+                                                note.title,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = if (Color(note.coverArgb).luminance() > .45f) Color(0xFF111318) else Color.White,
+                                                style = MaterialTheme.typography.titleSmall,
+                                            )
+                                            Text(
+                                                "${note.pages.size} page${if (note.pages.size == 1) "" else "s"}",
+                                                color = if (Color(note.coverArgb).luminance() > .45f) Color(0xB3111318) else Color.White.copy(alpha = .70f),
+                                                style = MaterialTheme.typography.labelSmall,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            repeat(columns - rowNotes.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(30.dp))
+        }
+    }
+}
+
+@Composable
+private fun AppSettingsDialog(
+    settings: AppSettings,
+    hardwareKeySequence: Int,
+    hardwareKeyCode: Int,
+    onSettingsChanged: (AppSettings) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val fontPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        val displayName = runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null,
+            )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        }.getOrNull().orEmpty().ifBlank { "Custom font.ttf" }
+        val extension = displayName.substringAfterLast('.', "ttf").lowercase().takeIf { it in setOf("ttf", "otf") } ?: "ttf"
+        val directory = File(context.filesDir, "fonts").apply { mkdirs() }
+        val safeName = displayName.substringBeforeLast('.').replace(Regex("[^A-Za-z0-9._ -]"), "_").take(64).ifBlank { "Custom font" }
+        val target = generateSequence(0) { it + 1 }
+            .map { suffix -> File(directory, if (suffix == 0) "$safeName.$extension" else "$safeName ($suffix).$extension") }
+            .first { !it.exists() }
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use(input::copyTo) }
+                ?: error("Font file could not be opened")
+            android.graphics.Typeface.createFromFile(target)
+        }.onSuccess {
+            onSettingsChanged(settings.copy(customFonts = (settings.customFonts + target.absolutePath).distinct()))
+        }.onFailure { target.delete() }
+    }
+    var settingsSection by remember { mutableStateOf(AppSettingsSection.General) }
+    var editingId by remember { mutableStateOf<String?>(settings.selectedThemeId) }
+    var name by remember { mutableStateOf("") }
+    var dark by remember { mutableStateOf(true) }
+    var primary by remember { mutableStateOf("") }
+    var secondary by remember { mutableStateOf("") }
+    var background by remember { mutableStateOf("") }
+    var surface by remember { mutableStateOf("") }
+    var themePendingDelete by remember { mutableStateOf<AppThemePreset?>(null) }
+    var waitingForFloatingNotesKey by remember { mutableStateOf(false) }
+
+    LaunchedEffect(hardwareKeySequence) {
+        if (waitingForFloatingNotesKey && hardwareKeySequence > 0 && hardwareKeyCode != KeyEvent.KEYCODE_UNKNOWN) {
+            onSettingsChanged(settings.copy(floatingNotesKeyCode = hardwareKeyCode))
+            waitingForFloatingNotesKey = false
+        }
+    }
+
+    fun edit(preset: AppThemePreset) {
+        editingId = preset.id
+        name = preset.name
+        dark = preset.dark
+        primary = formatThemeColor(preset.primaryArgb)
+        secondary = formatThemeColor(preset.secondaryArgb)
+        background = formatThemeColor(preset.backgroundArgb)
+        surface = formatThemeColor(preset.surfaceArgb)
+    }
+
+    fun newTheme() {
+        editingId = null
+        name = ""
+        val source = settings.activeTheme
+        dark = source.dark
+        primary = formatThemeColor(source.primaryArgb)
+        secondary = formatThemeColor(source.secondaryArgb)
+        background = formatThemeColor(source.backgroundArgb)
+        surface = formatThemeColor(source.surfaceArgb)
+    }
+
+    LaunchedEffect(Unit) { edit(settings.activeTheme) }
+    val parsedColors = listOf(primary, secondary, background, surface).map(::parseThemeColor)
+    val colorsAreValid = parsedColors.all { it != null }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            Modifier.fillMaxWidth(.92f).fillMaxHeight(.90f)
+                .pointerInteropFilter { event ->
+                    val stylus = event.isFromSource(android.view.InputDevice.SOURCE_STYLUS) ||
+                        event.getToolType(event.actionIndex) == android.view.MotionEvent.TOOL_TYPE_STYLUS ||
+                        event.getToolType(event.actionIndex) == android.view.MotionEvent.TOOL_TYPE_ERASER
+                    val buttons = event.buttonState and (
+                        android.view.MotionEvent.BUTTON_STYLUS_PRIMARY or
+                            android.view.MotionEvent.BUTTON_STYLUS_SECONDARY or
+                            android.view.MotionEvent.BUTTON_SECONDARY or
+                            android.view.MotionEvent.BUTTON_TERTIARY
+                        )
+                    if (waitingForFloatingNotesKey && stylus && buttons != 0) {
+                        onSettingsChanged(
+                            settings.copy(
+                                floatingNotesKeyCode = floatingNotesShortcutCode(Integer.lowestOneBit(buttons)),
+                            ),
+                        )
+                        waitingForFloatingNotesKey = false
+                    }
+                    false
+                },
+            shape = RoundedCornerShape(22.dp),
+            shadowElevation = 20.dp,
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 22.dp, end = 10.dp, top = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.app_settings), style = MaterialTheme.typography.headlineSmall)
+                        Text("Appearance and drawing limits", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "Close app settings") }
+                }
+                HorizontalDivider()
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 18.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AppSettingsSection.entries.forEach { section ->
+                        val label = when (section) {
+                            AppSettingsSection.General -> stringResource(R.string.general)
+                            AppSettingsSection.Appearance -> stringResource(R.string.appearance)
+                            AppSettingsSection.Drawing -> stringResource(R.string.drawing)
+                            AppSettingsSection.Fonts -> "Fonts"
+                            AppSettingsSection.Input -> stringResource(R.string.input_gestures)
+                        }
+                        SelectablePill(label, settingsSection == section) { settingsSection = section }
+                    }
+                }
+                HorizontalDivider()
+                if (settingsSection == AppSettingsSection.Appearance) Row(Modifier.fillMaxSize()) {
+                    Column(
+                        Modifier.width(280.dp).fillMaxHeight().padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(stringResource(R.string.theme_presets), style = MaterialTheme.typography.titleSmall)
+                        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                            itemsIndexed(settings.themes, key = { _, item -> item.id }) { _, preset ->
+                                Surface(
+                                    onClick = {
+                                        onSettingsChanged(settings.copy(selectedThemeId = preset.id))
+                                        edit(preset)
+                                    },
+                                    color = if (preset.id == settings.selectedThemeId) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                ) {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(start = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(
+                                            Modifier.size(14.dp).clip(RoundedCornerShape(50))
+                                                .background(Color(preset.primaryArgb)),
+                                        )
+                                        Text(preset.name, Modifier.padding(start = 9.dp).weight(1f), maxLines = 1)
+                                        IconButton(onClick = { edit(preset) }, Modifier.size(34.dp)) {
+                                            Icon(Icons.Outlined.Edit, "Edit theme", Modifier.size(17.dp))
+                                        }
+                                        IconButton(
+                                            onClick = { if (settings.themes.size > 1) themePendingDelete = preset },
+                                            modifier = Modifier.size(34.dp),
+                                        ) { Icon(Icons.Outlined.Delete, "Delete theme", Modifier.size(17.dp)) }
+                                    }
+                                }
+                            }
+                        }
+                        TextButton(onClick = ::newTheme, Modifier.fillMaxWidth()) { Text("Add preset") }
+                        TextButton(
+                            onClick = {
+                                val reset = settings.copy(
+                                    themes = defaultThemePresets,
+                                    selectedThemeId = defaultThemePresets.first().id,
+                                )
+                                onSettingsChanged(reset)
+                                edit(reset.activeTheme)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Restore 30 defaults") }
+                    }
+                    Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outline))
+                    Column(
+                        Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Text(if (editingId == null) "New theme" else "Edit theme", style = MaterialTheme.typography.titleLarge)
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("Preset name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ThemeColorField("Primary", primary, { primary = it }, Modifier.weight(1f))
+                            ThemeColorField("Secondary", secondary, { secondary = it }, Modifier.weight(1f))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ThemeColorField("Background", background, { background = it }, Modifier.weight(1f))
+                            ThemeColorField("Surface", surface, { surface = it }, Modifier.weight(1f))
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Dark appearance")
+                                Text("Also controls status-bar icon contrast", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(dark, { dark = it })
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(
+                                onClick = {
+                                    val preset = AppThemePreset(
+                                        id = editingId ?: "custom-${UUID.randomUUID()}",
+                                        name = name.trim().ifBlank { "Custom theme" },
+                                        dark = dark,
+                                        primaryArgb = parsedColors[0]!!,
+                                        secondaryArgb = parsedColors[1]!!,
+                                        backgroundArgb = parsedColors[2]!!,
+                                        surfaceArgb = parsedColors[3]!!,
+                                    )
+                                    val existing = settings.themes.indexOfFirst { it.id == preset.id }
+                                    val updated = settings.themes.toMutableList().apply {
+                                        if (existing >= 0) set(existing, preset) else add(preset)
+                                    }
+                                    onSettingsChanged(settings.copy(themes = updated, selectedThemeId = preset.id))
+                                    edit(preset)
+                                },
+                                enabled = colorsAreValid,
+                            ) { Text(if (editingId == null) "Add theme" else "Save theme") }
+                        }
+                    }
+                } else {
+                    AppPreferencesSection(
+                        settingsSection,
+                        settings,
+                        onSettingsChanged,
+                        onImportFont = { fontPicker.launch(arrayOf("font/ttf", "font/otf", "application/x-font-ttf", "application/vnd.ms-opentype")) },
+                        onRemoveFont = { path -> onSettingsChanged(settings.copy(customFonts = settings.customFonts - path)) },
+                        waitingForFloatingNotesKey = waitingForFloatingNotesKey,
+                        onCaptureFloatingNotesKey = { waitingForFloatingNotesKey = true },
+                    )
+                }
+            }
+        }
+    }
+    themePendingDelete?.let { preset ->
+        AlertDialog(
+            onDismissRequest = { themePendingDelete = null },
+            title = { Text("Delete theme preset?") },
+            text = { Text("${preset.name} will be removed. This cannot be undone unless you restore the defaults.") },
+            dismissButton = { TextButton(onClick = { themePendingDelete = null }) { Text("Cancel") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    val remaining = settings.themes.filterNot { it.id == preset.id }
+                    val selected = if (settings.selectedThemeId == preset.id) remaining.first().id else settings.selectedThemeId
+                    onSettingsChanged(settings.copy(themes = remaining, selectedThemeId = selected))
+                    edit(remaining.first { it.id == selected })
+                    themePendingDelete = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun AppPreferencesSection(
+    section: AppSettingsSection,
+    settings: AppSettings,
+    onSettingsChanged: (AppSettings) -> Unit,
+    onImportFont: () -> Unit,
+    onRemoveFont: (String) -> Unit,
+    waitingForFloatingNotesKey: Boolean,
+    onCaptureFloatingNotesKey: () -> Unit,
+) {
+    var editingColorPreset by remember { mutableStateOf<Pair<InkTool, Int>?>(null) }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        when (section) {
+            AppSettingsSection.General -> {
+                Text(stringResource(R.string.general), style = MaterialTheme.typography.titleLarge)
+                Text("UI scale · ${(settings.uiScale * 100).roundToInt()}%")
+                Slider(
+                    value = settings.uiScale,
+                    onValueChange = { onSettingsChanged(settings.copy(uiScale = it)) },
+                    valueRange = .75f..1.35f,
+                    steps = 11,
+                )
+                Text("Changes the size of menus, tabs, toolbars, and text.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Ask before inserting a page")
+                        Text("Show size, orientation, color, and template choices", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(settings.askBeforeInsertingPage, { onSettingsChanged(settings.copy(askBeforeInsertingPage = it)) })
+                }
+            }
+            AppSettingsSection.Drawing -> {
+                Text(stringResource(R.string.drawing), style = MaterialTheme.typography.titleLarge)
+                Text("Maximum tool width")
+                Text("${(settings.maximumStrokeWidthMicrons / 100f).roundToInt() / 10f} mm")
+                Slider(
+                    value = settings.maximumStrokeWidthMicrons,
+                    onValueChange = { onSettingsChanged(settings.copy(maximumStrokeWidthMicrons = it)) },
+                    valueRange = 1_000f..20_000f,
+                    steps = 18,
+                )
+                Text("The default is 5 mm. Each writing tool keeps its own three size presets.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.ink_color_presets), style = MaterialTheme.typography.titleMedium)
+                listOf(InkTool.Pen, InkTool.Pencil, InkTool.Highlighter).forEach { tool ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(tool.name, Modifier.width(92.dp))
+                        settings.colorPresets(tool).forEachIndexed { index, argb ->
+                            ColorSwatch(Color(argb), onClick = { editingColorPreset = tool to index })
+                        }
+                        Text(stringResource(R.string.tap_color_edit), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Draw and hold correction")
+                        Text("Hold at the end to create a clean line, rectangle, or ellipse", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(settings.drawAndHoldEnabled, { onSettingsChanged(settings.copy(drawAndHoldEnabled = it)) })
+                }
+            }
+            AppSettingsSection.Fonts -> {
+                Text("Custom fonts", style = MaterialTheme.typography.titleLarge)
+                Text("Import TrueType or OpenType fonts. Existing text keeps its selected font.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = onImportFont) {
+                    Icon(Icons.Outlined.Add, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Import font")
+                }
+                settings.customFonts.forEach { path ->
+                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.TextFields, null)
+                            Text(File(path).nameWithoutExtension, Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            IconButton(onClick = { onRemoveFont(path) }) { Icon(Icons.Outlined.Delete, "Remove font") }
+                        }
+                    }
+                }
+                if (settings.customFonts.isEmpty()) Text("No custom fonts imported yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            AppSettingsSection.Input -> {
+                Text(stringResource(R.string.input_gestures), style = MaterialTheme.typography.titleLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Floating notes shortcut")
+                        Text(
+                            if (waitingForFloatingNotesKey) "Press the key you want to use…"
+                            else "Currently ${readableKeyName(settings.floatingNotesKeyCode)}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = onCaptureFloatingNotesKey) {
+                        Text(if (waitingForFloatingNotesKey) "Listening…" else "Change key")
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Recognize Action Maps while writing")
+                        Text(
+                            "Works with pen, pencil, and highlighter. A stroke is kept normally when it does not match.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = settings.actionActivationMode != ActionActivationMode.Disabled,
+                        onCheckedChange = { enabled ->
+                            onSettingsChanged(settings.copy(actionActivationMode = if (enabled) ActionActivationMode.Explicit else ActionActivationMode.Disabled))
+                        },
+                    )
+                }
+            }
+            AppSettingsSection.Appearance -> Unit
+        }
+    }
+    editingColorPreset?.let { (tool, index) ->
+        ThemeColorPickerDialog(
+            title = "${tool.name} preset ${index + 1}",
+            initialArgb = settings.colorPresets(tool)[index],
+            onSelect = { color ->
+                val updated = settings.colorPresets(tool).toMutableList().apply { this[index] = color }
+                onSettingsChanged(settings.withColorPresets(tool, updated))
+                editingColorPreset = null
+            },
+            onDismiss = { editingColorPreset = null },
+        )
+    }
+}
+
+@Composable
+private fun ThemeColorField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val color = parseThemeColor(value) ?: 0xFF000000.toInt()
+    Surface(
+        onClick = { showPicker = true },
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(30.dp).clip(RoundedCornerShape(50)).background(Color(color)))
+            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                Text(label, style = MaterialTheme.typography.labelLarge)
+                Text("Tap to choose a color", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+            }
+            Icon(Icons.Outlined.Palette, null)
+        }
+    }
+    if (showPicker) ThemeColorPickerDialog(
+        title = label,
+        initialArgb = color,
+        onSelect = { onValueChange(formatThemeColor(it)); showPicker = false },
+        onDismiss = { showPicker = false },
+    )
+}
+
+@Composable
+private fun ThemeColorPickerDialog(
+    title: String,
+    initialArgb: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 8.dp, shadowElevation = 18.dp) {
+            Column(Modifier.width(360.dp).padding(top = 18.dp)) {
+                Text("Choose $title", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp))
+                CircularColorPickerContent(initialArgb, onSelect, onDismiss, wheelSize = 230.dp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CircularColorPickerContent(
+    initialArgb: Int,
+    onApply: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    wheelSize: Dp,
+) {
+    val initialHsv = remember(initialArgb) { FloatArray(3).also { android.graphics.Color.colorToHSV(initialArgb, it) } }
+    var hue by remember(initialArgb) { mutableStateOf(initialHsv[0]) }
+    var saturation by remember(initialArgb) { mutableStateOf(initialHsv[1]) }
+    var brightness by remember(initialArgb) { mutableStateOf(initialHsv[2]) }
+    var alpha by remember(initialArgb) { mutableIntStateOf(android.graphics.Color.alpha(initialArgb)) }
+    var hex by remember(initialArgb) { mutableStateOf(formatThemeColor(initialArgb)) }
+
+    fun updateHex() {
+        hex = formatThemeColor(android.graphics.Color.HSVToColor(alpha, floatArrayOf(hue, saturation, brightness)))
+    }
+    fun updateWheel(point: Offset, width: Float, height: Float) {
+        val centerX = width / 2f
+        val centerY = height / 2f
+        val dx = point.x - centerX
+        val dy = point.y - centerY
+        val radius = minOf(width, height) / 2f
+        saturation = (sqrt(dx * dx + dy * dy) / radius).coerceIn(0f, 1f)
+        hue = ((Math.toDegrees(atan2(dy, dx).toDouble()).toFloat() + 360f) % 360f)
+        updateHex()
+    }
+    fun updateBrightness(y: Float, height: Float) {
+        brightness = (1f - y / height).coerceIn(0f, 1f)
+        updateHex()
+    }
+
+    val selected = parseThemeColor(hex)
+        ?: android.graphics.Color.HSVToColor(alpha, floatArrayOf(hue, saturation, brightness))
+    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Canvas(
+                Modifier.size(wheelSize).pointerInput(initialArgb) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        updateWheel(down.position, size.width.toFloat(), size.height.toFloat())
+                        drag(down.id) { change ->
+                            updateWheel(change.position, size.width.toFloat(), size.height.toFloat())
+                            change.consume()
+                        }
+                    }
+                },
+            ) {
+                val radius = minOf(size.width, size.height) / 2f
+                val center = Offset(size.width / 2f, size.height / 2f)
+                val native = drawContext.canvas.nativeCanvas
+                val huePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    shader = android.graphics.SweepGradient(
+                        center.x, center.y,
+                        intArrayOf(
+                            android.graphics.Color.RED,
+                            android.graphics.Color.YELLOW,
+                            android.graphics.Color.GREEN,
+                            android.graphics.Color.CYAN,
+                            android.graphics.Color.BLUE,
+                            android.graphics.Color.MAGENTA,
+                            android.graphics.Color.RED,
+                        ),
+                        null,
+                    )
+                }
+                native.drawCircle(center.x, center.y, radius, huePaint)
+                val saturationPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    shader = android.graphics.RadialGradient(
+                        center.x, center.y, radius,
+                        intArrayOf(android.graphics.Color.WHITE, android.graphics.Color.TRANSPARENT),
+                        null,
+                        android.graphics.Shader.TileMode.CLAMP,
+                    )
+                }
+                native.drawCircle(center.x, center.y, radius, saturationPaint)
+                val angle = Math.toRadians(hue.toDouble())
+                val marker = Offset(
+                    center.x + cos(angle).toFloat() * saturation * radius,
+                    center.y + sin(angle).toFloat() * saturation * radius,
+                )
+                drawCircle(Color.Black.copy(alpha = .8f), 7.dp.toPx(), marker, style = Stroke(3.dp.toPx()))
+                drawCircle(Color.White, 5.5.dp.toPx(), marker, style = Stroke(2.dp.toPx()))
+            }
+            Spacer(Modifier.width(22.dp))
+            Canvas(
+                Modifier.width(30.dp).height(wheelSize).clip(RoundedCornerShape(8.dp)).pointerInput(initialArgb) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        updateBrightness(down.position.y, size.height.toFloat())
+                        drag(down.id) { change ->
+                            updateBrightness(change.position.y, size.height.toFloat())
+                            change.consume()
+                        }
+                    }
+                },
+            ) {
+                val fullColor = android.graphics.Color.HSVToColor(alpha, floatArrayOf(hue, saturation, 1f))
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    shader = android.graphics.LinearGradient(
+                        0f, 0f, 0f, size.height,
+                        fullColor, android.graphics.Color.BLACK,
+                        android.graphics.Shader.TileMode.CLAMP,
+                    )
+                }
+                drawContext.canvas.nativeCanvas.drawRect(0f, 0f, size.width, size.height, paint)
+                val markerY = (1f - brightness) * size.height
+                drawLine(Color.White, Offset(-2f, markerY), Offset(size.width + 2f, markerY), 3.dp.toPx())
+                drawLine(Color.Black, Offset(-2f, markerY), Offset(size.width + 2f, markerY), 1.dp.toPx())
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(Color(selected)))
+            OutlinedTextField(
+                value = hex,
+                onValueChange = { value ->
+                    hex = value
+                    parseThemeColor(value)?.let { parsed ->
+                        alpha = android.graphics.Color.alpha(parsed)
+                        FloatArray(3).also { android.graphics.Color.colorToHSV(parsed, it) }.let {
+                            hue = it[0]; saturation = it[1]; brightness = it[2]
+                        }
+                    }
+                },
+                label = { Text(stringResource(R.string.hex_color)) },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(enabled = parseThemeColor(hex) != null, onClick = { parseThemeColor(hex)?.let(onApply) }) {
+                Text(stringResource(R.string.apply))
+            }
+        }
+    }
+}
+
+private fun formatThemeColor(argb: Int): String = if (android.graphics.Color.alpha(argb) == 0xFF) {
+    "#%06X".format(argb and 0xFFFFFF)
+} else {
+    "#%08X".format(argb)
+}
+
+private fun parseThemeColor(value: String): Int? = runCatching {
+    val digits = value.trim().removePrefix("#")
+    require(digits.length == 6 || digits.length == 8)
+    val parsed = digits.toLong(16)
+    if (digits.length == 6) (0xFF000000L or parsed).toInt() else parsed.toInt()
+}.getOrNull()
+
+private fun writeWavHeader(file: File, sampleRate: Int, channelCount: Int, bitsPerSample: Int) {
+    val dataSize = (file.length() - 44L).coerceAtLeast(0L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    val byteRate = sampleRate * channelCount * bitsPerSample / 8
+    val blockAlign = channelCount * bitsPerSample / 8
+    RandomAccessFile(file, "rw").use { output ->
+        fun ascii(value: String) = output.write(value.toByteArray(Charsets.US_ASCII))
+        fun littleInt(value: Int) {
+            output.write(value and 0xFF)
+            output.write(value ushr 8 and 0xFF)
+            output.write(value ushr 16 and 0xFF)
+            output.write(value ushr 24 and 0xFF)
+        }
+        fun littleShort(value: Int) {
+            output.write(value and 0xFF)
+            output.write(value ushr 8 and 0xFF)
+        }
+        output.seek(0)
+        ascii("RIFF")
+        littleInt(dataSize + 36)
+        ascii("WAVE")
+        ascii("fmt ")
+        littleInt(16)
+        littleShort(1)
+        littleShort(channelCount)
+        littleInt(sampleRate)
+        littleInt(byteRate)
+        littleShort(blockAlign)
+        littleShort(bitsPerSample)
+        ascii("data")
+        littleInt(dataSize)
+    }
+}
+
+@Composable
+private fun EditorSettingsSheet(
+    session: EditorSession,
+    dockEdge: DockEdge,
+    onDockEdge: (DockEdge) -> Unit,
+    onDiagnostics: () -> Unit,
+    onActionMaps: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            Modifier.fillMaxWidth(.76f).fillMaxHeight(.82f),
+            shape = RoundedCornerShape(22.dp),
+            shadowElevation = 18.dp,
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Editor settings", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+                    IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "Close settings") }
+                }
+                Column(
+                    Modifier.weight(1f).verticalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+            Text("Current tool width", style = MaterialTheme.typography.titleSmall)
+            Text("${(session.toolWidthMicrons(session.selectedTool) / 100f).roundToInt() / 10f} mm")
+            Slider(value = session.widthScale, onValueChange = session::updateWidthScale, valueRange = .02f..1f)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { Text("Pressure sensitivity"); Text("Vary width with stylus pressure", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Switch(session.pressureEnabled, session::updatePressureEnabled)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Scribble to erase")
+                    Text("Scratch over existing ink to remove it", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(session.scribbleEraseEnabled, session::updateScribbleEraseEnabled)
+            }
+            if (session.scribbleEraseEnabled) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ScribbleSensitivity.entries.forEach { sensitivity ->
+                        Surface(
+                            onClick = { session.updateScribbleSensitivity(sensitivity) },
+                            color = if (session.scribbleSensitivity == sensitivity) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(10.dp),
+                        ) { Text(sensitivity.name, Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) }
+                    }
+                }
+            }
+            Text("Toolbar position", style = MaterialTheme.typography.titleSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DockEdge.entries.forEach { edge -> TextButton(onClick = { onDockEdge(edge) }) { Text(edge.name) } }
+            }
+            if (session.selectedTool == InkTool.Eraser) {
+                TextButton(onClick = session::toggleEraserMode) {
+                    Text("Eraser: ${if (session.eraserMode == EraserMode.WholeStroke) "whole stroke" else "partial"}")
+                }
+            }
+            TextButton(onClick = onActionMaps) { Text("Manage Action Maps") }
+            TextButton(onClick = onDiagnostics) { Text("Toggle stylus diagnostics") }
+            Spacer(Modifier.height(24.dp))
+                }
+                Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Done") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionMapManager(
+    mappings: List<ActionMapping>,
+    onSave: (ActionMapping) -> Unit,
+    onDelete: (ActionMapping) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var action by remember { mutableStateOf(MappedAction.Undo) }
+    var actionMenu by remember { mutableStateOf(false) }
+    var rotationInvariant by remember { mutableStateOf(false) }
+    var threshold by remember { mutableStateOf(.78f) }
+    var padStrokes by remember { mutableStateOf<List<List<GesturePoint>>>(emptyList()) }
+    var examples by remember { mutableStateOf<List<GestureDrawing>>(emptyList()) }
+    var editingId by remember { mutableStateOf<String?>(null) }
+    var mappingPendingDelete by remember { mutableStateOf<ActionMapping?>(null) }
+
+    fun resetEditor() {
+        editingId = null
+        name = ""
+        action = MappedAction.Undo
+        rotationInvariant = false
+        threshold = .78f
+        padStrokes = emptyList()
+        examples = emptyList()
+    }
+
+    fun edit(mapping: ActionMapping) {
+        editingId = mapping.id
+        name = mapping.name
+        action = mapping.action
+        rotationInvariant = mapping.rotationInvariant
+        threshold = mapping.confidenceThreshold
+        padStrokes = emptyList()
+        examples = mapping.examples
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            Modifier.fillMaxWidth(.92f).fillMaxHeight(.90f),
+            shape = RoundedCornerShape(22.dp),
+            shadowElevation = 20.dp,
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 22.dp, end = 10.dp, top = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Action Maps", style = MaterialTheme.typography.headlineSmall)
+                        Text(
+                            "Draw any symbol 3–5 times. Recognition works with pen, pencil, and highlighter.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "Close Action Maps") }
+                }
+                HorizontalDivider()
+                Row(Modifier.fillMaxSize()) {
+                    Column(
+                        Modifier.width(260.dp).fillMaxHeight().padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("Saved gestures", style = MaterialTheme.typography.titleSmall)
+                        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                    itemsIndexed(mappings, key = { _, item -> item.id }) { _, mapping ->
+                                Surface(
+                                    onClick = { edit(mapping) },
+                                    color = if (editingId == mapping.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                    shape = RoundedCornerShape(10.dp),
+                                ) {
+                            Row(Modifier.fillMaxWidth().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(mapping.name, Modifier.weight(1f), maxLines = 1)
+                                IconButton(onClick = { edit(mapping) }, Modifier.size(36.dp)) {
+                                    Icon(Icons.Outlined.Edit, "Edit Action Map", Modifier.size(18.dp))
+                                }
+                                IconButton(onClick = {
+                                    mappingPendingDelete = mapping
+                                }, Modifier.size(36.dp)) {
+                                    Icon(Icons.Outlined.Delete, "Delete Action Map", Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+                        TextButton(onClick = ::resetEditor, Modifier.fillMaxWidth()) { Text("New gesture") }
+                    }
+                    Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outline))
+                    Column(
+                        Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())
+                            .padding(horizontal = 22.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+            Text(if (editingId == null) "New gesture" else "Edit gesture", style = MaterialTheme.typography.titleLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Gesture name (optional)") },
+                    placeholder = { Text(nextGestureName(mappings, editingId)) },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                Box {
+                    Surface(
+                        onClick = { actionMenu = true },
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                    ) { Text(action.label, Modifier.padding(horizontal = 16.dp, vertical = 18.dp)) }
+                    DropdownMenu(actionMenu, onDismissRequest = { actionMenu = false }) {
+                        MappedAction.entries.forEach { choice ->
+                            DropdownMenuItem(
+                                text = { Text(choice.label) },
+                                onClick = { action = choice; actionMenu = false },
+                            )
+                        }
+                    }
+                }
+            }
+            GestureCapturePad(padStrokes, onStrokesChanged = { padStrokes = it })
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Examples: ${examples.size} of 5 · ${if (examples.size >= 3) "ready" else "3 required"}",
+                    Modifier.weight(1f),
+                )
+                TextButton(onClick = { padStrokes = emptyList() }, enabled = padStrokes.isNotEmpty()) { Text("Clear") }
+                TextButton(onClick = { examples = emptyList() }, enabled = examples.isNotEmpty()) { Text("Reset examples") }
+                TextButton(
+                    onClick = {
+                        examples = examples + GestureDrawing(padStrokes)
+                        padStrokes = emptyList()
+                    },
+                    enabled = padStrokes.isNotEmpty() && examples.size < 5,
+                ) { Text("Add example") }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Ignore rotation")
+                    Text("Match the symbol at any angle", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(rotationInvariant, { rotationInvariant = it })
+            }
+            Text("Minimum confidence ${(threshold * 100).roundToInt()}%")
+            Slider(value = threshold, onValueChange = { threshold = it }, valueRange = .65f..0.95f)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (editingId != null) TextButton(onClick = ::resetEditor) { Text("Cancel edit") }
+                TextButton(
+                    onClick = {
+                        val resolvedName = name.trim().ifBlank { nextGestureName(mappings, editingId) }
+                        onSave(ActionMapping(
+                            id = editingId ?: UUID.randomUUID().toString(),
+                            name = resolvedName,
+                            action = action,
+                            examples = examples,
+                            rotationInvariant = rotationInvariant,
+                            confidenceThreshold = threshold,
+                        ))
+                        resetEditor()
+                    },
+                    enabled = examples.size >= 3,
+                ) { Text(if (editingId == null) "Save map" else "Update map") }
+            }
+                    }
+                }
+            }
+        }
+    }
+    mappingPendingDelete?.let { mapping ->
+        AlertDialog(
+            onDismissRequest = { mappingPendingDelete = null },
+            title = { Text("Delete Action Map?") },
+            text = { Text("${mapping.name} will be deleted. This cannot be undone.") },
+            dismissButton = { TextButton(onClick = { mappingPendingDelete = null }) { Text("Cancel") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(mapping)
+                    if (editingId == mapping.id) resetEditor()
+                    mappingPendingDelete = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+        )
+    }
+}
+
+private fun nextGestureName(mappings: List<ActionMapping>, editingId: String?): String {
+    val usedNames = mappings.asSequence()
+        .filterNot { it.id == editingId }
+        .map { it.name.lowercase() }
+        .toSet()
+    var number = 1
+    while ("gesture $number" in usedNames) number++
+    return "Gesture $number"
+}
+
+@Composable
+private fun GestureCapturePad(
+    strokes: List<List<GesturePoint>>,
+    onStrokesChanged: (List<List<GesturePoint>>) -> Unit,
+) {
+    var active by remember { mutableStateOf<List<GesturePoint>>(emptyList()) }
+    Canvas(
+        Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF101318))
+            .pointerInput(strokes) {
+                detectDragGestures(
+                    onDragStart = { active = listOf(GesturePoint(it.x, it.y)) },
+                    onDragCancel = { active = emptyList() },
+                    onDragEnd = {
+                        if (active.isNotEmpty()) onStrokesChanged(strokes + listOf(active))
+                        active = emptyList()
+                    },
+                ) { change, _ ->
+                    change.consume()
+                    active = active + GesturePoint(change.position.x, change.position.y)
+                }
+            },
+    ) {
+        (strokes + listOf(active).filter { it.isNotEmpty() }).forEach { stroke ->
+            stroke.zipWithNext().forEach { (a, b) ->
+                drawLine(Color(0xFF7CA7FF), Offset(a.x, a.y), Offset(b.x, b.y), 5.dp.toPx(), StrokeCap.Round)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticsPanel(session: EditorSession) {
+    val value = session.diagnostics
+    Column(Modifier.width(230.dp).fillMaxHeight().background(Color(0xFF15181E)).padding(16.dp)) {
+        Text("Stylus diagnostics", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(12.dp))
+        Text("${value.action} · ${value.toolType}")
+        Text("Pressure ${value.rawPressure?.let { "%.3f".format(it) } ?: "—"}")
+        Text("Tilt ${value.tiltRadians?.let { "%.3f".format(it) } ?: "—"}")
+        Text("Pointers ${value.pointerCount}")
+    }
+}
+
+@Composable
+private fun SaveStatusIcon(status: SaveStatus) {
+    Text(
+        when (status) { SaveStatus.Saving -> "Saving…"; is SaveStatus.Saved -> "Saved"; is SaveStatus.Failed -> "Save failed" },
+        color = if (status is SaveStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier.padding(horizontal = 8.dp),
+    )
+}
