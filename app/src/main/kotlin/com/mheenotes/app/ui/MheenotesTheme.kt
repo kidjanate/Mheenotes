@@ -28,7 +28,10 @@ enum class ActionActivationMode { Explicit, PauseAfterStroke, Disabled }
 data class AppSettings(
     val themes: List<AppThemePreset> = defaultThemePresets,
     val selectedThemeId: String = defaultThemePresets.first().id,
-    val maximumStrokeWidthMicrons: Float = 5_000f,
+    val penMaximumWidthMicrons: Float = 5_000f,
+    val pencilMaximumWidthMicrons: Float = 5_000f,
+    val highlighterMaximumWidthMicrons: Float = 5_000f,
+    val eraserMaximumWidthMicrons: Float = 5_000f,
     val penWidthPresets: List<Float> = listOf(700f, 1_400f, 2_800f),
     val pencilWidthPresets: List<Float> = listOf(600f, 1_200f, 2_000f),
     val highlighterWidthPresets: List<Float> = listOf(2_500f, 4_000f, 5_000f),
@@ -56,6 +59,23 @@ data class AppSettings(
         InkTool.Pencil -> pencilWidthPresets
         InkTool.Highlighter -> highlighterWidthPresets
         InkTool.Eraser -> emptyList()
+    }
+
+    fun maximumWidthMicrons(tool: InkTool): Float = when (tool) {
+        InkTool.Pen -> penMaximumWidthMicrons
+        InkTool.Pencil -> pencilMaximumWidthMicrons
+        InkTool.Highlighter -> highlighterMaximumWidthMicrons
+        InkTool.Eraser -> eraserMaximumWidthMicrons
+    }
+
+    fun withMaximumWidthMicrons(tool: InkTool, value: Float): AppSettings {
+        val maximum = value.coerceIn(1_000f, 40_000f)
+        return when (tool) {
+            InkTool.Pen -> copy(penMaximumWidthMicrons = maximum)
+            InkTool.Pencil -> copy(pencilMaximumWidthMicrons = maximum)
+            InkTool.Highlighter -> copy(highlighterMaximumWidthMicrons = maximum)
+            InkTool.Eraser -> copy(eraserMaximumWidthMicrons = maximum)
+        }
     }
 
     fun withWidthPresets(tool: InkTool, values: List<Float>): AppSettings = when (tool) {
@@ -145,11 +165,19 @@ class AppSettingsStore(context: Context) {
                 }
             }.ifEmpty { defaultThemePresets }
         }
+        val legacyMaximumWidth = preferences.getFloat("maximumStrokeWidthMicrons", 5_000f)
+            .coerceIn(1_000f, 40_000f)
         AppSettings(
             themes = themes,
             selectedThemeId = preferences.getString("selectedTheme", themes.first().id) ?: themes.first().id,
-            maximumStrokeWidthMicrons = preferences.getFloat("maximumStrokeWidthMicrons", 5_000f)
-                .coerceIn(1_000f, 20_000f),
+            penMaximumWidthMicrons = preferences.getFloat("penMaximumWidthMicrons", legacyMaximumWidth)
+                .coerceIn(1_000f, 40_000f),
+            pencilMaximumWidthMicrons = preferences.getFloat("pencilMaximumWidthMicrons", legacyMaximumWidth)
+                .coerceIn(1_000f, 40_000f),
+            highlighterMaximumWidthMicrons = preferences.getFloat("highlighterMaximumWidthMicrons", legacyMaximumWidth)
+                .coerceIn(1_000f, 40_000f),
+            eraserMaximumWidthMicrons = preferences.getFloat("eraserMaximumWidthMicrons", legacyMaximumWidth)
+                .coerceIn(1_000f, 40_000f),
             penWidthPresets = preferences.widthPresets("penWidthPresets", listOf(700f, 1_400f, 2_800f)),
             pencilWidthPresets = preferences.widthPresets("pencilWidthPresets", listOf(600f, 1_200f, 2_000f)),
             highlighterWidthPresets = preferences.widthPresets("highlighterWidthPresets", listOf(2_500f, 4_000f, 5_000f)),
@@ -191,7 +219,10 @@ class AppSettingsStore(context: Context) {
         preferences.edit()
             .putString("themes", themes.toString())
             .putString("selectedTheme", settings.selectedThemeId)
-            .putFloat("maximumStrokeWidthMicrons", settings.maximumStrokeWidthMicrons)
+            .putFloat("penMaximumWidthMicrons", settings.penMaximumWidthMicrons)
+            .putFloat("pencilMaximumWidthMicrons", settings.pencilMaximumWidthMicrons)
+            .putFloat("highlighterMaximumWidthMicrons", settings.highlighterMaximumWidthMicrons)
+            .putFloat("eraserMaximumWidthMicrons", settings.eraserMaximumWidthMicrons)
             .putString("penWidthPresets", settings.penWidthPresets.joinToString(","))
             .putString("pencilWidthPresets", settings.pencilWidthPresets.joinToString(","))
             .putString("highlighterWidthPresets", settings.highlighterWidthPresets.joinToString(","))

@@ -652,7 +652,10 @@ private class EditorTab(
     private val pendingPdfRenders = mutableSetOf<PageId>()
     private val pendingThumbnailRenders = mutableSetOf<PageId>()
     private val thumbnailCacheOrder = ArrayDeque<PageId>()
-    private var maximumToolWidthMicrons = 5_000f
+    private var penMaximumWidthMicrons = 5_000f
+    private var pencilMaximumWidthMicrons = 5_000f
+    private var highlighterMaximumWidthMicrons = 5_000f
+    private var eraserMaximumWidthMicrons = 5_000f
     private val ownedPageEntries = mutableListOf<PageEntry>()
     private val pageUndo = ArrayDeque<PageListSnapshot>()
     private val pageRedo = ArrayDeque<PageListSnapshot>()
@@ -801,9 +804,19 @@ private class EditorTab(
         persistManifest()
     }
 
-    fun updateMaximumToolWidth(widthMicrons: Float) {
-        maximumToolWidthMicrons = widthMicrons
-        pages.forEach { it.session.updateMaximumToolWidth(widthMicrons) }
+    fun updateMaximumToolWidths(settings: AppSettings) {
+        penMaximumWidthMicrons = settings.penMaximumWidthMicrons
+        pencilMaximumWidthMicrons = settings.pencilMaximumWidthMicrons
+        highlighterMaximumWidthMicrons = settings.highlighterMaximumWidthMicrons
+        eraserMaximumWidthMicrons = settings.eraserMaximumWidthMicrons
+        pages.forEach { sessionPage ->
+            sessionPage.session.updateMaximumToolWidths(
+                penMaximumWidthMicrons,
+                pencilMaximumWidthMicrons,
+                highlighterMaximumWidthMicrons,
+                eraserMaximumWidthMicrons,
+            )
+        }
     }
 
     fun updateToolDefaults(settings: AppSettings) {
@@ -1321,7 +1334,12 @@ private class EditorTab(
         return PageEntry(
             id,
             EditorSession(root.resolve("pages/${id.value}.journal"), id) { recordInkEdit(id) }.apply {
-                updateMaximumToolWidth(maximumToolWidthMicrons)
+                updateMaximumToolWidths(
+                    penMaximumWidthMicrons,
+                    pencilMaximumWidthMicrons,
+                    highlighterMaximumWidthMicrons,
+                    eraserMaximumWidthMicrons,
+                )
                 toolDefaults?.let { configureToolDefaults(this, it) }
             },
         ).also(ownedPageEntries::add)
@@ -1331,7 +1349,12 @@ private class EditorTab(
         session = EditorSession(root.resolve("pages/${page.id.value}.journal"), page.id) {
             recordInkEdit(page.id)
         }.apply {
-            updateMaximumToolWidth(maximumToolWidthMicrons)
+            updateMaximumToolWidths(
+                penMaximumWidthMicrons,
+                pencilMaximumWidthMicrons,
+                highlighterMaximumWidthMicrons,
+                eraserMaximumWidthMicrons,
+            )
             toolDefaults?.let { configureToolDefaults(this, it) }
         },
         bookmarked = page.bookmarked,
@@ -1605,7 +1628,10 @@ fun MheenotesEditor(
     }
 
     LaunchedEffect(
-        appSettings.maximumStrokeWidthMicrons,
+        appSettings.penMaximumWidthMicrons,
+        appSettings.pencilMaximumWidthMicrons,
+        appSettings.highlighterMaximumWidthMicrons,
+        appSettings.eraserMaximumWidthMicrons,
         appSettings.penWidthPresets,
         appSettings.pencilWidthPresets,
         appSettings.highlighterWidthPresets,
@@ -1615,7 +1641,7 @@ fun MheenotesEditor(
         tabs.size,
     ) {
         tabs.forEach {
-            it.updateMaximumToolWidth(appSettings.maximumStrokeWidthMicrons)
+            it.updateMaximumToolWidths(appSettings)
             it.updateToolDefaults(appSettings)
         }
     }
@@ -8357,15 +8383,33 @@ private fun AppPreferencesSection(
             }
             AppSettingsSection.Drawing -> {
                 Text(stringResource(R.string.drawing), style = MaterialTheme.typography.titleLarge)
-                Text("Maximum tool width")
-                Text("${(settings.maximumStrokeWidthMicrons / 100f).roundToInt() / 10f} mm")
-                Slider(
-                    value = settings.maximumStrokeWidthMicrons,
-                    onValueChange = { onSettingsChanged(settings.copy(maximumStrokeWidthMicrons = it)) },
-                    valueRange = 1_000f..20_000f,
-                    steps = 18,
+                Text("Maximum tool widths", style = MaterialTheme.typography.titleMedium)
+                InkTool.entries.forEach { tool ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(tool.name, Modifier.weight(1f))
+                            Text(
+                                "${(settings.maximumWidthMicrons(tool) / 100f).roundToInt() / 10f} mm",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Slider(
+                            value = settings.maximumWidthMicrons(tool),
+                            onValueChange = {
+                                onSettingsChanged(settings.withMaximumWidthMicrons(tool, it))
+                            },
+                            valueRange = 1_000f..40_000f,
+                            steps = 38,
+                        )
+                    }
+                }
+                Text(
+                    "Each tool keeps its own limit. The default is 5 mm per tool.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text("The default is 5 mm. Each writing tool keeps its own three size presets.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(stringResource(R.string.ink_color_presets), style = MaterialTheme.typography.titleMedium)
                 listOf(InkTool.Pen, InkTool.Pencil, InkTool.Highlighter).forEach { tool ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
