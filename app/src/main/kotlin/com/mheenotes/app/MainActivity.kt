@@ -1,5 +1,6 @@
 package com.mheenotes.app
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -98,6 +99,7 @@ class MainActivity : ComponentActivity() {
         incomingNotebookId.value = intent.getStringExtra(EXTRA_NOTEBOOK_ID)
     }
 
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // Capture before Compose, a dialog, or a focused text field gets a chance to consume
         // the event. This is required for Bluetooth and other physical keyboards.

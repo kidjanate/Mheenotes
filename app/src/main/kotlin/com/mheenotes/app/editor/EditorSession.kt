@@ -82,6 +82,7 @@ enum class ToolPreset { BlackPen, BluePen, Pencil, YellowHighlighter }
 class EditorSession(
     journalFile: File? = null,
     private val pageId: PageId = PageId("milestone-1-page"),
+    private val onEditRecorded: (() -> Unit)? = null,
 ) : AutoCloseable {
     private val journal = journalFile?.let { PageJournal(it, pageId) }
     private val loaded = journal?.load()
@@ -325,7 +326,7 @@ class EditorSession(
             zIndex = nextZIndex++,
         )
         val command = AddStroke(stroke)
-        page = history.execute(command)
+        page = execute(command)
         spatialIndex.insert(stroke)
         persist(command)
         return stroke.id
@@ -348,7 +349,7 @@ class EditorSession(
                 .mapTo(linkedSetOf()) { it.id }
             if (hitIds.isNotEmpty()) {
                 val command = DeleteStrokes(hitIds)
-                page = history.execute(command)
+                page = execute(command)
                 hitIds.forEach(spatialIndex::remove)
                 lastScribbleEraseCount = hitIds.size
                 persist(command)
@@ -377,7 +378,7 @@ class EditorSession(
             when (eraserMode) {
                 EraserMode.WholeStroke -> {
                     val command = DeleteStroke(stroke.id)
-                    page = history.execute(command)
+                    page = execute(command)
                     spatialIndex.remove(stroke.id)
                     persist(command)
                 }
@@ -392,7 +393,7 @@ class EditorSession(
                         )
                     }
                     val command = ReplaceStroke(stroke.id, replacements)
-                    page = history.execute(command)
+                    page = execute(command)
                     spatialIndex.remove(stroke.id)
                     replacements.forEach(spatialIndex::insert)
                     persist(command)
@@ -405,7 +406,7 @@ class EditorSession(
         val existing = page.strokes.filter { it.id in ids }.mapTo(linkedSetOf(), InkStroke::id)
         if (existing.isEmpty()) return
         val command = DeleteStrokes(existing)
-        page = history.execute(command)
+        page = execute(command)
         existing.forEach(spatialIndex::remove)
         persist(command)
     }
@@ -429,7 +430,7 @@ class EditorSession(
             )
         }
         val command = AddStrokes(copies)
-        page = history.execute(command)
+        page = execute(command)
         copies.forEach(spatialIndex::insert)
         persist(command)
         return copies.mapTo(linkedSetOf(), InkStroke::id)
@@ -450,7 +451,7 @@ class EditorSession(
         }
         if (replacements.isEmpty()) return emptySet()
         val command = ReplaceStrokes(ids, replacements)
-        page = history.execute(command)
+        page = execute(command)
         ids.forEach(spatialIndex::remove)
         replacements.forEach(spatialIndex::insert)
         persist(command)
@@ -462,6 +463,11 @@ class EditorSession(
         val afterById = after.strokes.associateBy { it.id }
         beforeById.keys.minus(afterById.keys).forEach { persist(com.mheenotes.core.commands.DeleteStroke(it)) }
         afterById.keys.minus(beforeById.keys).forEach { persist(AddStroke(afterById.getValue(it))) }
+    }
+
+    private fun execute(command: com.mheenotes.core.commands.PageCommand): PageState {
+        onEditRecorded?.invoke()
+        return history.execute(command)
     }
 
     private fun persist(command: com.mheenotes.core.commands.PageCommand) {

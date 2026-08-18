@@ -16,7 +16,7 @@ data class CorrectedShape(
 
 /** Conservative release-time recognizer. It only activates after a stationary end hold. */
 object DrawHoldShapeDetector {
-    fun detect(samples: List<StrokeSample>): CorrectedShape? {
+    fun detect(samples: List<StrokeSample>, linesOnly: Boolean = false): CorrectedShape? {
         if (samples.size < 8) return null
         val last = samples.last()
         val holdStartTime = last.elapsedMicros - 320_000L
@@ -40,6 +40,7 @@ object DrawHoldShapeDetector {
             meanDeviation < maxOf(1_400f, diagonal * .055f) &&
             maximumDeviation < maxOf(3_200f, diagonal * .12f)
         ) return CorrectedShape(ShapeKind.Line, bounds, first, end)
+        if (linesOnly) return null
         val closed = distance(first, end) < diagonal * .24f
         if (!closed) return null
         val center = PagePoint((bounds.left + bounds.right) / 2f, (bounds.top + bounds.bottom) / 2f)

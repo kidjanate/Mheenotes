@@ -28,6 +28,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -192,6 +193,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.AnnotatedString
@@ -204,6 +206,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
@@ -237,9 +240,15 @@ import com.mheenotes.app.editor.EditorSession
 import com.mheenotes.app.editor.EraserMode
 import com.mheenotes.app.editor.FinishedInkStroke
 import com.mheenotes.app.editor.FingerObjectGesture
+import com.mheenotes.app.editor.HoverDoubleTapRecognizer
+import com.mheenotes.app.editor.HoverCalibrationView
+import com.mheenotes.app.editor.HoverShortcutCalibrator
+import com.mheenotes.app.editor.HoverShortcutConfig
+import com.mheenotes.app.editor.HoverCalibrationResult
 import com.mheenotes.app.editor.InkAuthoringOverlayView
 import com.mheenotes.app.editor.SaveStatus
 import com.mheenotes.app.editor.ViewportTransform
+import com.mheenotes.app.editor.StylusHoverSample
 import com.mheenotes.app.editor.toAndroidXStroke
 import com.mheenotes.core.model.InkTool
 import com.mheenotes.core.model.InkStroke
@@ -265,6 +274,7 @@ import com.mheenotes.core.model.SourceDocument
 import com.mheenotes.core.model.SourceDocumentId
 import com.mheenotes.core.model.ShapeKind
 import com.mheenotes.core.model.StrokeId
+import com.mheenotes.core.model.StrokeSample
 import com.mheenotes.core.model.StrokeStyle
 import com.mheenotes.core.model.TextAlignment
 import com.mheenotes.core.model.ImageObject as ModelImageObject
@@ -278,6 +288,7 @@ import com.mheenotes.ink.engine.ScribbleSensitivity
 import com.mheenotes.ink.engine.LassoSelection
 import com.mheenotes.ink.engine.SelectionTransform
 import com.mheenotes.ink.engine.DrawHoldShapeDetector
+import com.mheenotes.ink.engine.PressureNormalizer
 import com.mheenotes.ink.engine.CorrectedShape
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -311,6 +322,23 @@ private val BackOutEasing = Easing { progress ->
     val shifted = progress - 1f
     1f + 2.70158f * shifted * shifted * shifted + 1.70158f * shifted * shifted
 }
+
+@Composable
+private fun Modifier.staggeredEntrance(key: Any, index: Int): Modifier {
+    val reveal = remember(key) { Animatable(0f) }
+    val rise = with(LocalDensity.current) { 18.dp.toPx() }
+    LaunchedEffect(key) {
+        delay((index.coerceIn(0, 12) * 34L))
+        reveal.animateTo(1f, tween(360, easing = FastOutSlowInEasing))
+    }
+    return graphicsLayer {
+        alpha = reveal.value
+        translationY = (1f - reveal.value) * rise
+        val scale = .96f + reveal.value * .04f
+        scaleX = scale
+        scaleY = scale
+    }
+}
 private enum class LibrarySection { Main, Recent, Favorites, Trash }
 private enum class LibraryLayout { Grid, List }
 private enum class LibrarySort { Name, Recent, PageCount }
@@ -330,7 +358,12 @@ private data class PendingSaveExport(
     val pageIndices: List<Int> = emptyList(),
 )
 private enum class DockEdge { Top, Left, Right }
-private enum class EditorMode { Ink, Lasso, Object, Text, Shape, Audio }
+private enum class EditorMode { Ink, Lasso, Object, Image, Text, Shape, Audio }
+private data class RadialToolItem(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val action: MappedAction,
+)
 private enum class AppSettingsSection { General, Appearance, Drawing, Fonts, Input }
 
 private fun normalizedFolderPaths(rawPaths: Iterable<String>): List<String> {
@@ -574,6 +607,9 @@ private data class PageEntry(
     // This map is read directly by the permanent-ink Canvas. It must participate in
     // Compose snapshots so the wet stroke is not removed before the dry layer redraws.
     val renderStrokes: MutableMap<StrokeId, RuntimeInkStroke> = mutableStateMapOf(),
+    // Native AndroidX Ink reconstruction is intentionally optional. A failed stroke remains in
+    // the domain model and is drawn by the direct Canvas fallback instead of disappearing.
+    val renderStrokeFailures: MutableMap<StrokeId, String> = mutableStateMapOf(),
 )
 
 private data class PageListSnapshot(
@@ -590,6 +626,19 @@ private data class SavedNotebookViewport(
 private data class ObjectListSnapshot(
     val pageId: PageId,
     val objects: List<SceneObject>,
+)
+
+private sealed interface EditorHistoryEntry {
+    data class Ink(val pageId: PageId) : EditorHistoryEntry
+    data object Objects : EditorHistoryEntry
+    data object Pages : EditorHistoryEntry
+    data class Composite(val entries: List<EditorHistoryEntry>) : EditorHistoryEntry
+}
+
+private data class PendingImagePlacement(
+    val tabId: Int,
+    val pageId: PageId,
+    val position: PagePoint,
 )
 
 private class EditorTab(
@@ -609,6 +658,11 @@ private class EditorTab(
     private val pageRedo = ArrayDeque<PageListSnapshot>()
     private val objectUndo = ArrayDeque<ObjectListSnapshot>()
     private val objectRedo = ArrayDeque<ObjectListSnapshot>()
+    private val editorUndo = ArrayDeque<EditorHistoryEntry>()
+    private val editorRedo = ArrayDeque<EditorHistoryEntry>()
+    private var historyTransactionDepth = 0
+    private val transactionEntries = mutableListOf<EditorHistoryEntry>()
+    private var historyRecordingSuspended = false
     private var savedViewport = loadSavedViewport()
     private val viewportSaveRunnable = Runnable { persistViewportNow() }
     private var toolDefaults: AppSettings? = null
@@ -706,6 +760,25 @@ private class EditorTab(
         if (cleaned.isNotEmpty()) { title = cleaned; persistManifest() }
     }
 
+    fun editNotebook(spec: NotebookCreationSpec) {
+        val cleaned = spec.title.trim()
+        if (cleaned.isEmpty()) return
+        title = cleaned
+        coverArgb = spec.coverArgb
+        pages.indices.forEach { index ->
+            val page = pages[index]
+            if (page.pdfSource == null) {
+                pages[index] = page.copy(
+                    size = spec.size,
+                    template = spec.template,
+                    backgroundArgb = spec.backgroundArgb,
+                    templateLineArgb = spec.templateLineArgb,
+                )
+            }
+        }
+        persistManifest()
+    }
+
     fun updateFavorite(value: Boolean) { favorite = value; persistManifest() }
     fun moveToFolder(value: String?) { folderPath = value?.trim()?.trim('/')?.takeIf(String::isNotBlank); persistManifest() }
     fun moveToTrash() { trashedAtEpochMillis = System.currentTimeMillis(); persistManifest() }
@@ -754,15 +827,53 @@ private class EditorTab(
         restorePdfBackgrounds()
     }
 
-    val canUndoPageEdit get() = pageUndo.isNotEmpty()
-    val canRedoPageEdit get() = pageRedo.isNotEmpty()
-    val canUndoObjectEdit get() = objectUndo.isNotEmpty()
-    val canRedoObjectEdit get() = objectRedo.isNotEmpty()
+    val canUndo get() = editorUndo.isNotEmpty()
+    val canRedo get() = editorRedo.isNotEmpty()
+    val canUndoPageEdit get() = canUndo
+    val canRedoPageEdit get() = canRedo
+    val canUndoObjectEdit get() = canUndo
+    val canRedoObjectEdit get() = canRedo
+
+    private fun recordHistory(entry: EditorHistoryEntry) {
+        if (historyRecordingSuspended) return
+        if (historyTransactionDepth > 0) {
+            transactionEntries += entry
+            return
+        }
+        editorUndo.addLast(entry)
+        while (editorUndo.size > 100) editorUndo.removeFirst()
+        editorRedo.clear()
+    }
+
+    fun beginHistoryTransaction() {
+        if (historyTransactionDepth == 0) transactionEntries.clear()
+        historyTransactionDepth++
+    }
+
+    fun endHistoryTransaction() {
+        if (historyTransactionDepth <= 0) return
+        historyTransactionDepth--
+        if (historyTransactionDepth == 0 && transactionEntries.isNotEmpty()) {
+            val entries = transactionEntries.toList()
+            transactionEntries.clear()
+            recordHistory(if (entries.size == 1) entries.single() else EditorHistoryEntry.Composite(entries))
+        }
+    }
+
+    fun <T> historyTransaction(operation: () -> T): T {
+        beginHistoryTransaction()
+        return try { operation() } finally { endHistoryTransaction() }
+    }
+
+    private fun recordInkEdit(pageId: PageId) {
+        recordHistory(EditorHistoryEntry.Ink(pageId))
+    }
 
     fun recordObjectEdit(page: PageEntry) {
         objectUndo.addLast(ObjectListSnapshot(page.id, page.objects.toList()))
         while (objectUndo.size > 100) objectUndo.removeFirst()
         objectRedo.clear()
+        recordHistory(EditorHistoryEntry.Objects)
     }
 
     private fun restoreObjects(snapshot: ObjectListSnapshot): ObjectListSnapshot? {
@@ -774,12 +885,12 @@ private class EditorTab(
         return current
     }
 
-    fun undoObjectEdit() {
+    private fun applyObjectUndo() {
         if (objectUndo.isEmpty()) return
         restoreObjects(objectUndo.removeLast())?.let(objectRedo::addLast)
     }
 
-    fun redoObjectEdit() {
+    private fun applyObjectRedo() {
         if (objectRedo.isEmpty()) return
         restoreObjects(objectRedo.removeLast())?.let(objectUndo::addLast)
     }
@@ -790,6 +901,7 @@ private class EditorTab(
         pageUndo.addLast(pageSnapshot())
         while (pageUndo.size > 100) pageUndo.removeFirst()
         pageRedo.clear()
+        recordHistory(EditorHistoryEntry.Pages)
     }
 
     private fun restorePageSnapshot(snapshot: PageListSnapshot) {
@@ -799,16 +911,50 @@ private class EditorTab(
         persistManifest()
     }
 
-    fun undoPageEdit() {
+    private fun applyPageUndo() {
         if (pageUndo.isEmpty()) return
         pageRedo.addLast(pageSnapshot())
         restorePageSnapshot(pageUndo.removeLast())
     }
 
-    fun redoPageEdit() {
+    private fun applyPageRedo() {
         if (pageRedo.isEmpty()) return
         pageUndo.addLast(pageSnapshot())
         restorePageSnapshot(pageRedo.removeLast())
+    }
+
+    private fun applyUndo(entry: EditorHistoryEntry) {
+        when (entry) {
+            is EditorHistoryEntry.Ink -> pages.firstOrNull { it.id == entry.pageId }?.session?.undo()
+            EditorHistoryEntry.Objects -> applyObjectUndo()
+            EditorHistoryEntry.Pages -> applyPageUndo()
+            is EditorHistoryEntry.Composite -> entry.entries.asReversed().forEach(::applyUndo)
+        }
+    }
+
+    private fun applyRedo(entry: EditorHistoryEntry) {
+        when (entry) {
+            is EditorHistoryEntry.Ink -> pages.firstOrNull { it.id == entry.pageId }?.session?.redo()
+            EditorHistoryEntry.Objects -> applyObjectRedo()
+            EditorHistoryEntry.Pages -> applyPageRedo()
+            is EditorHistoryEntry.Composite -> entry.entries.forEach(::applyRedo)
+        }
+    }
+
+    fun undo() {
+        if (editorUndo.isEmpty()) return
+        val entry = editorUndo.removeLast()
+        historyRecordingSuspended = true
+        try { applyUndo(entry) } finally { historyRecordingSuspended = false }
+        editorRedo.addLast(entry)
+    }
+
+    fun redo() {
+        if (editorRedo.isEmpty()) return
+        val entry = editorRedo.removeLast()
+        historyRecordingSuspended = true
+        try { applyRedo(entry) } finally { historyRecordingSuspended = false }
+        editorUndo.addLast(entry)
     }
 
     fun addPage(after: Boolean = true, spec: PageInsertSpec? = null) {
@@ -829,23 +975,25 @@ private class EditorTab(
     }
     fun duplicatePage() {
         flushPendingInk()
-        recordPageEdit()
-        val source = pages[selectedPageIndex]
-        val duplicate = newPage().copy(
-            bookmarked = source.bookmarked, rotation = source.rotation,
-            template = source.template, size = source.size,
-            backgroundArgb = source.backgroundArgb, templateLineArgb = source.templateLineArgb,
-            pdfSource = source.pdfSource, pdfBackground = source.pdfBackground,
-            objects = mutableStateListOf<SceneObject>().apply {
-                addAll(source.objects.map(SceneObject::duplicate))
-            },
-        )
-        source.session.page.strokes.forEach { stroke ->
-            duplicate.session.acceptCompletedStroke(stroke.samples, stroke.style, detectScribbleErase = false)
+        historyTransaction {
+            recordPageEdit()
+            val source = pages[selectedPageIndex]
+            val duplicate = newPage().copy(
+                bookmarked = source.bookmarked, rotation = source.rotation,
+                template = source.template, size = source.size,
+                backgroundArgb = source.backgroundArgb, templateLineArgb = source.templateLineArgb,
+                pdfSource = source.pdfSource, pdfBackground = source.pdfBackground,
+                objects = mutableStateListOf<SceneObject>().apply {
+                    addAll(source.objects.map(SceneObject::duplicate))
+                },
+            )
+            source.session.page.strokes.forEach { stroke ->
+                duplicate.session.acceptCompletedStroke(stroke.samples, stroke.style, detectScribbleErase = false)
+            }
+            pages.add(selectedPageIndex + 1, duplicate)
+            navigateToPage(selectedPageIndex + 1)
+            persistManifest()
         }
-        pages.add(selectedPageIndex + 1, duplicate)
-        navigateToPage(selectedPageIndex + 1)
-        persistManifest()
     }
     fun deletePage() {
         flushPendingInk()
@@ -975,6 +1123,7 @@ private class EditorTab(
             pages.addAll(newPages)
             selectedPageIndex = 0
         } else {
+            recordPageEdit()
             pages.addAll(insertionIndex, newPages)
             selectedPageIndex = insertionIndex
         }
@@ -1075,6 +1224,39 @@ private class EditorTab(
             }
         }
     }
+
+    fun pdfTextNear(pageId: PageId, point: PagePoint, result: (Result<String?>) -> Unit) {
+        val page = pages.firstOrNull { it.id == pageId }
+            ?: return result(Result.failure(IllegalArgumentException("Page is unavailable")))
+        val (file, pdfPageIndex) = page.pdfSource
+            ?: return result(Result.success(null))
+        val service = pdfServices
+            ?: return result(Result.failure(IllegalStateException("PDF service is unavailable")))
+        val handler = mainHandler
+            ?: return result(Result.failure(IllegalStateException("Main handler is unavailable")))
+        service.textNear(
+            file = file,
+            pageIndex = pdfPageIndex,
+            xFraction = point.x / page.size.widthMicrons,
+            yFraction = point.y / page.size.heightMicrons,
+        ) { extraction ->
+            handler.post { result(extraction.map { it?.text }) }
+        }
+    }
+
+    fun renderPdfForText(pageId: PageId, result: (Result<Bitmap>) -> Unit) {
+        val page = pages.firstOrNull { it.id == pageId }
+            ?: return result(Result.failure(IllegalArgumentException("Page is unavailable")))
+        val (file, pdfPageIndex) = page.pdfSource
+            ?: return result(Result.failure(IllegalArgumentException("Page is not PDF-backed")))
+        val service = pdfServices
+            ?: return result(Result.failure(IllegalStateException("PDF service is unavailable")))
+        val handler = mainHandler
+            ?: return result(Result.failure(IllegalStateException("Main handler is unavailable")))
+        service.renderPage(file, pdfPageIndex, 1_800) { rendered ->
+            handler.post { result(rendered) }
+        }
+    }
     private fun persistManifest(pageEntries: List<PageEntry> = pages) {
         val now = System.currentTimeMillis()
         val canonicalRoot = root.canonicalFile
@@ -1138,7 +1320,7 @@ private class EditorTab(
         val id = PageId(UUID.randomUUID().toString())
         return PageEntry(
             id,
-            EditorSession(root.resolve("pages/${id.value}.journal"), id).apply {
+            EditorSession(root.resolve("pages/${id.value}.journal"), id) { recordInkEdit(id) }.apply {
                 updateMaximumToolWidth(maximumToolWidthMicrons)
                 toolDefaults?.let { configureToolDefaults(this, it) }
             },
@@ -1146,7 +1328,9 @@ private class EditorTab(
     }
     private fun existingPage(page: NotebookPage) = PageEntry(
         id = page.id,
-        session = EditorSession(root.resolve("pages/${page.id.value}.journal"), page.id).apply {
+        session = EditorSession(root.resolve("pages/${page.id.value}.journal"), page.id) {
+            recordInkEdit(page.id)
+        }.apply {
             updateMaximumToolWidth(maximumToolWidthMicrons)
             toolDefaults?.let { configureToolDefaults(this, it) }
         },
@@ -1342,12 +1526,15 @@ fun MheenotesEditor(
     var showAppSettings by remember { mutableStateOf(false) }
     var showFloatingNotes by remember { mutableStateOf(false) }
     var lastFloatingNotesTriggerAt by remember { mutableLongStateOf(0L) }
+    var radialMenuRequestGeneration by remember { mutableIntStateOf(0) }
+    var lastRadialMenuTriggerAt by remember { mutableLongStateOf(0L) }
     var exportDialogRequest by remember { mutableStateOf<ExportDialogRequest?>(null) }
     var pendingSaveExport by remember { mutableStateOf<PendingSaveExport?>(null) }
     var importError by remember { mutableStateOf<String?>(null) }
     var pdfImportDestination by remember { mutableStateOf(PdfImportDestination.CurrentNotebook) }
     var showDiagnostics by remember { mutableStateOf(false) }
     var openingNoteTitle by remember { mutableStateOf<String?>(null) }
+    var pendingImagePlacement by remember { mutableStateOf<PendingImagePlacement?>(null) }
     val currentTab = { tabs.firstOrNull { it.id == selectedTabId } ?: tabs.first() }
     val sharingScope = rememberCoroutineScope()
 
@@ -1358,11 +1545,22 @@ fun MheenotesEditor(
         showFloatingNotes = !showFloatingNotes
     }
 
+    fun triggerRadialMenu() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastRadialMenuTriggerAt < 180L) return
+        lastRadialMenuTriggerAt = now
+        radialMenuRequestGeneration++
+    }
+
     LaunchedEffect(hardwareKeySequence) {
-        if (
-            hardwareKeySequence > 0 && screen == AppScreen.Editor && !showAppSettings &&
-            hardwareKeyCode == appSettings.floatingNotesKeyCode
-        ) triggerFloatingNotes()
+        if (hardwareKeySequence > 0 && screen == AppScreen.Editor && !showAppSettings) {
+            when (hardwareKeyCode) {
+                appSettings.radialMenuKeyCode -> if (hardwareKeyCode != KeyEvent.KEYCODE_UNKNOWN) {
+                    triggerRadialMenu()
+                }
+                appSettings.floatingNotesKeyCode -> triggerFloatingNotes()
+            }
+        }
     }
 
     BackHandler(enabled = screen == AppScreen.Editor) {
@@ -1423,8 +1621,13 @@ fun MheenotesEditor(
     }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            val tab = currentTab()
+        val placement = pendingImagePlacement
+        pendingImagePlacement = null
+        if (uri != null && placement != null) {
+            val tab = tabs.firstOrNull { it.id == placement.tabId }
+                ?: return@rememberLauncherForActivityResult
+            val pageIndex = tab.pages.indexOfFirst { it.id == placement.pageId }
+            val page = tab.pages.getOrNull(pageIndex) ?: return@rememberLauncherForActivityResult
             val storedAsset = runCatching {
                 context.contentResolver.openInputStream(uri)?.use(tab::storeImageAsset)
                     ?: error("The selected image could not be opened.")
@@ -1436,7 +1639,6 @@ fun MheenotesEditor(
                     importError = "The selected image format could not be decoded."
                     return@let
                 }
-                val page = tab.pages[tab.selectedPageIndex]
                 val maxWidth = page.size.widthMicrons * .55f
                 val maxHeight = page.size.heightMicrons * .45f
                 var width = maxWidth
@@ -1446,14 +1648,15 @@ fun MheenotesEditor(
                 tab.recordObjectEdit(page)
                 page.objects += SceneObject.Image(
                     bitmap, asset,
-                    (page.size.widthMicrons - width) / 2f,
-                    (page.size.heightMicrons - height) / 2f,
+                    (placement.position.x - width / 2f).coerceIn(0f, (page.size.widthMicrons - width).coerceAtLeast(0f)),
+                    (placement.position.y - height / 2f).coerceIn(0f, (page.size.heightMicrons - height).coerceAtLeast(0f)),
                     width, height,
                     assetId = assetId,
                     zIndex = zIndex,
                 )
                 tab.persistObjects()
-                editorMode = EditorMode.Object
+                tab.navigateToPage(pageIndex)
+                if (tab.id == selectedTabId) editorMode = EditorMode.Object
             }
         }
     }
@@ -1687,7 +1890,10 @@ fun MheenotesEditor(
                 dockEdge = dockEdge,
                 onDockEdge = { edge -> dockEdge = edge; onAppSettingsChanged(appSettings.copy(toolbarDock = edge.name)) },
                 onHome = { screen = AppScreen.Library },
-                onImage = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onImage = { pageId, position ->
+                    pendingImagePlacement = PendingImagePlacement(currentTab().id, pageId, position)
+                    pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
                 onImportPdf = {
                     pdfImportDestination = PdfImportDestination.CurrentNotebook
                     importPdf.launch(arrayOf("application/pdf"))
@@ -1702,11 +1908,17 @@ fun MheenotesEditor(
                 actionMappings = actionMappings,
                 actionRecognizer = actionRecognizer,
                 showDiagnostics = showDiagnostics,
+                radialMenuRequestGeneration = radialMenuRequestGeneration,
                 appSettings = appSettings,
                 onAppSettingsChanged = onAppSettingsChanged,
                 onStylusButtonPressed = { button ->
-                    if (!showAppSettings && floatingNotesShortcutCode(button) == appSettings.floatingNotesKeyCode) {
-                        triggerFloatingNotes()
+                    if (!showAppSettings) {
+                        when (floatingNotesShortcutCode(button)) {
+                            appSettings.radialMenuKeyCode -> if (appSettings.radialMenuKeyCode != KeyEvent.KEYCODE_UNKNOWN) {
+                                triggerRadialMenu()
+                            }
+                            appSettings.floatingNotesKeyCode -> triggerFloatingNotes()
+                        }
                     }
                 },
             )
@@ -2067,7 +2279,8 @@ private fun LibraryScreen(
                     ) {
                         items(folderCards, key = { "folder:$it" }) { folder ->
                             val folderIsTrashed = section == LibrarySection.Trash
-                            FolderCard(
+                            Box(Modifier.fillMaxWidth().staggeredEntrance("folder:$folder", folderCards.indexOf(folder))) {
+                                FolderCard(
                                 folder = folder,
                                 noteCount = if (folderIsTrashed) {
                                     tabs.count { it.trashedAtEpochMillis != null && isFolderOrDescendant(it.folderPath, folder) }
@@ -2120,11 +2333,18 @@ private fun LibraryScreen(
                                     dragTargetsRoot = false
                                     dragTargetFolder = null
                                 },
-                            )
+                                )
+                            }
                         }
                         items(visibleTabs, key = EditorTab::id) { tab ->
-                            NotebookCard(
-                                tab, activeFolders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook,
+                            Box(
+                                Modifier.fillMaxWidth().staggeredEntrance(
+                                    "notebook:${tab.id}",
+                                    folderCards.size + visibleTabs.indexOf(tab),
+                                ),
+                            ) {
+                                NotebookCard(
+                                    tab, activeFolders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook,
                                 onDragPosition = { point ->
                                     draggedTabId = tab.id
                                     draggedNotePoint = point
@@ -2150,13 +2370,16 @@ private fun LibraryScreen(
                                     dragTargetsRoot = false
                                     dragTargetFolder = null
                                 },
-                            )
+                                )
+                            }
                         }
                     }
                 } else {
                     LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        itemsIndexed(visibleTabs, key = { _, tab -> tab.id }) { _, tab ->
-                            NotebookListRow(tab, activeFolders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook)
+                        itemsIndexed(visibleTabs, key = { _, tab -> tab.id }) { index, tab ->
+                            Box(Modifier.fillMaxWidth().staggeredEntrance("notebook-row:${tab.id}", index)) {
+                                NotebookListRow(tab, activeFolders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook)
+                            }
                         }
                     }
                 }
@@ -2282,16 +2505,24 @@ private fun LibraryScreen(
 private fun NewNotebookDialog(
     onCreate: (NotebookCreationSpec) -> Unit,
     onDismiss: () -> Unit,
+    initial: NotebookCreationSpec? = null,
 ) {
-    var title by remember { mutableStateOf("Untitled note") }
-    var paper by remember { mutableStateOf(PaperPreset.A4) }
-    var landscape by remember { mutableStateOf(false) }
-    var template by remember { mutableStateOf(PageTemplate.Blank) }
-    var customWidth by remember { mutableStateOf("210") }
-    var customHeight by remember { mutableStateOf("297") }
-    var background by remember { mutableIntStateOf(0xFFFFFEFA.toInt()) }
-    var lines by remember { mutableIntStateOf(0x402563EB) }
-    var cover by remember { mutableIntStateOf(0xFF303747.toInt()) }
+    val initialWidthMm = (initial?.size?.widthMicrons ?: 210_000f) / 1_000f
+    val initialHeightMm = (initial?.size?.heightMicrons ?: 297_000f) / 1_000f
+    val initialPaper = PaperPreset.entries.firstOrNull { preset ->
+        preset != PaperPreset.Custom &&
+            kotlin.math.abs(minOf(initialWidthMm, initialHeightMm) - minOf(preset.widthMm, preset.heightMm)) < .2f &&
+            kotlin.math.abs(maxOf(initialWidthMm, initialHeightMm) - maxOf(preset.widthMm, preset.heightMm)) < .2f
+    } ?: PaperPreset.Custom
+    var title by remember(initial) { mutableStateOf(initial?.title ?: "Untitled note") }
+    var paper by remember(initial) { mutableStateOf(initialPaper) }
+    var landscape by remember(initial) { mutableStateOf(initialWidthMm > initialHeightMm) }
+    var template by remember(initial) { mutableStateOf(initial?.template ?: PageTemplate.Blank) }
+    var customWidth by remember(initial) { mutableStateOf(initialWidthMm.toString()) }
+    var customHeight by remember(initial) { mutableStateOf(initialHeightMm.toString()) }
+    var background by remember(initial) { mutableIntStateOf(initial?.backgroundArgb ?: 0xFFFFFEFA.toInt()) }
+    var lines by remember(initial) { mutableIntStateOf(initial?.templateLineArgb ?: 0x402563EB) }
+    var cover by remember(initial) { mutableIntStateOf(initial?.coverArgb ?: 0xFF303747.toInt()) }
     val widthMm = if (paper == PaperPreset.Custom) customWidth.toFloatOrNull() else paper.widthMm
     val heightMm = if (paper == PaperPreset.Custom) customHeight.toFloatOrNull() else paper.heightMm
     val valid = title.isNotBlank() && widthMm != null && heightMm != null && widthMm in 50f..1_000f && heightMm in 50f..1_000f
@@ -2302,7 +2533,7 @@ private fun NewNotebookDialog(
             tonalElevation = 8.dp,
         ) {
             Column(Modifier.padding(24.dp)) {
-                Text("Create notebook", style = MaterialTheme.typography.headlineSmall)
+                Text(if (initial == null) "Create notebook" else "Edit notebook", style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(18.dp))
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                     Column(Modifier.weight(.9f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2345,6 +2576,11 @@ private fun NewNotebookDialog(
                         ) {
                             Text(template.name, color = if (Color(background).luminance() > .5f) Color.DarkGray else Color.White)
                         }
+                        if (initial != null) Text(
+                            "Paper settings update regular pages. Imported PDF pages keep their original size.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -2354,10 +2590,10 @@ private fun NewNotebookDialog(
                         onClick = {
                             var width = widthMm!! * 1_000f
                             var height = heightMm!! * 1_000f
-                            if (landscape && height > width) width = height.also { height = width }
+                            if (landscape != (width > height)) width = height.also { height = width }
                             onCreate(NotebookCreationSpec(title.trim(), PageSize(width, height), template, background, lines, cover))
                         },
-                    ) { Text("Create") }
+                    ) { Text(if (initial == null) "Create" else "Save changes") }
                 }
             }
         }
@@ -2454,10 +2690,15 @@ private fun InsertPageDialog(
 
 @Composable
 private fun SelectablePill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) .94f else 1f, tween(120), label = "pill-press")
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(10.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        interactionSource = interaction,
+        modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale },
     ) { Text(label, Modifier.padding(horizontal = 11.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge) }
 }
 
@@ -2466,9 +2707,10 @@ private fun ColorChoiceRow(colors: List<Int>, selected: Int, onSelect: (Int) -> 
     var showPicker by remember { mutableStateOf(false) }
     Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
         colors.forEach { argb ->
+            val size by animateDpAsState(if (selected == argb) 38.dp else 34.dp, tween(160), label = "color-choice")
             Surface(
                 onClick = { onSelect(argb) },
-                modifier = Modifier.size(if (selected == argb) 38.dp else 34.dp),
+                modifier = Modifier.size(size),
                 shape = RoundedCornerShape(50),
                 color = Color(argb),
                 border = androidx.compose.foundation.BorderStroke(if (selected == argb) 3.dp else 1.dp, MaterialTheme.colorScheme.primary),
@@ -2496,11 +2738,15 @@ private fun MainNavigationItem(
     onToggle: () -> Unit,
     onClick: () -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) .965f else 1f, tween(120), label = "main-nav-press")
     Surface(
         onClick = onClick,
         color = if (selected || highlighted) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         shape = RoundedCornerShape(12.dp),
-        modifier = modifier,
+        modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale },
+        interactionSource = interaction,
     ) {
         Row(
             Modifier.then(if (compact) Modifier.size(48.dp) else Modifier.fillMaxWidth()).padding(if (compact) 12.dp else 6.dp),
@@ -2626,11 +2872,15 @@ private fun NavigationItem(
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) .965f else 1f, tween(120), label = "nav-press")
     Surface(
         onClick = onClick,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         shape = RoundedCornerShape(12.dp),
-        modifier = modifier,
+        modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale },
+        interactionSource = interaction,
     ) {
         Row(
             Modifier.then(if (compact) Modifier.size(48.dp) else Modifier.fillMaxWidth()).padding(12.dp),
@@ -2861,7 +3111,12 @@ private fun NotebookCard(
     val scope = rememberCoroutineScope()
     val hoverInteraction = remember { MutableInteractionSource() }
     val hovered by hoverInteraction.collectIsHoveredAsState()
-    val cardScale by animateFloatAsState(if (hovered) 1.025f else 1f, tween(150), label = "notebook-hover")
+    val pressed by hoverInteraction.collectIsPressedAsState()
+    val cardScale by animateFloatAsState(
+        when { pressed -> .975f; hovered -> 1.025f; else -> 1f },
+        tween(140),
+        label = "notebook-interaction",
+    )
     var actionsSignal by remember(tab.id) { mutableIntStateOf(0) }
     var cardOrigin by remember(tab.id) { mutableStateOf(Offset.Zero) }
     var dragPointer by remember(tab.id) { mutableStateOf(Offset.Zero) }
@@ -2874,6 +3129,10 @@ private fun NotebookCard(
         previewPage?.let { tab.requestThumbnail(it.id) }
     }
     Card(
+        onClick = {
+            if (suppressNextOpen) suppressNextOpen = false else onClick()
+        },
+        interactionSource = hoverInteraction,
         modifier = Modifier
             .onGloballyPositioned { cardOrigin = it.positionInRoot() }
             .hoverable(hoverInteraction)
@@ -2926,9 +3185,6 @@ private fun NotebookCard(
     ) {
         Column {
             Surface(
-                onClick = {
-                    if (suppressNextOpen) suppressNextOpen = false else onClick()
-                },
                 modifier = Modifier.fillMaxWidth().aspectRatio(.76f),
                 color = Color(tab.coverArgb),
             ) {
@@ -2982,7 +3238,21 @@ private fun NotebookListRow(
     onPermanentDelete: (EditorTab) -> Unit,
     onExportNotebook: (EditorTab) -> Unit,
 ) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
+    val scale by animateFloatAsState(
+        when { pressed -> .975f; hovered -> 1.012f; else -> 1f },
+        tween(130),
+        label = "notebook-row-interaction",
+    )
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface,
+        interactionSource = interaction,
+        modifier = Modifier.hoverable(interaction).graphicsLayer { scaleX = scale; scaleY = scale },
+    ) {
         Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)).background(Color(tab.coverArgb)), contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.Edit, null, tint = Color.White)
@@ -3008,9 +3278,8 @@ private fun NotebookActionsButton(
 ) {
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
-    var rename by remember { mutableStateOf(false) }
+    var editNotebook by remember { mutableStateOf(false) }
     var confirmPermanentDelete by remember { mutableStateOf(false) }
-    var editedName by remember(tab.id) { mutableStateOf(tab.title) }
     LaunchedEffect(externalOpenSignal) {
         if (externalOpenSignal > 0) menu = true
     }
@@ -3033,29 +3302,36 @@ private fun NotebookActionsButton(
                     },
                 )
                 DropdownMenuItem(text = { Text(stringResource(if (tab.favorite) R.string.remove_favorite else R.string.add_favorite)) }, leadingIcon = { Icon(Icons.Outlined.Star, null) }, onClick = { menu = false; tab.updateFavorite(!tab.favorite) })
-                DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, null) }, onClick = { menu = false; editedName = tab.title; rename = true })
+                DropdownMenuItem(
+                    text = { Text("Edit notebook") },
+                    leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                    onClick = { menu = false; editNotebook = true },
+                )
                 DropdownMenuItem(text = { Text(stringResource(R.string.duplicate)) }, leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) }, onClick = { menu = false; onDuplicate(tab) })
                 DropdownMenuItem(text = { Text(stringResource(R.string.export_mynote)) }, leadingIcon = { Icon(Icons.Outlined.FileOpen, null) }, onClick = { menu = false; onExportNotebook(tab) })
                 DropdownMenuItem(text = { Text(stringResource(R.string.move_out_folder)) }, enabled = tab.folderPath != null, leadingIcon = { Icon(Icons.Outlined.Folder, null) }, onClick = { menu = false; tab.moveToFolder(null) })
                 folders.forEach { folder ->
                     DropdownMenuItem(text = { Text("Move to $folder") }, onClick = { menu = false; tab.moveToFolder(folder) })
                 }
-                DropdownMenuItem(text = { Text(stringResource(R.string.change_cover)) }, leadingIcon = { Icon(Icons.Outlined.Brush, null) }, onClick = {
-                    val choices = listOf(0xFF303747.toInt(), 0xFF315C8C.toInt(), 0xFF6A3F72.toInt(), 0xFF386A55.toInt(), 0xFF8A4A3B.toInt())
-                    tab.setCoverColor(choices[(choices.indexOf(tab.coverArgb) + 1).mod(choices.size)])
-                    menu = false
-                })
                 DropdownMenuItem(text = { Text(stringResource(R.string.move_to_trash)) }, leadingIcon = { Icon(Icons.Outlined.Delete, null) }, onClick = { menu = false; tab.moveToTrash() })
             }
         }
     }
-    if (rename) AlertDialog(
-        onDismissRequest = { rename = false },
-        title = { Text("Rename notebook") },
-        text = { OutlinedTextField(editedName, { editedName = it }, singleLine = true) },
-        dismissButton = { TextButton(onClick = { rename = false }) { Text("Cancel") } },
-        confirmButton = { TextButton(enabled = editedName.isNotBlank(), onClick = { tab.rename(editedName); rename = false }) { Text("Rename") } },
-    )
+    if (editNotebook) {
+        val firstPage = tab.pages.first()
+        NewNotebookDialog(
+            initial = NotebookCreationSpec(
+                title = tab.title,
+                size = firstPage.size,
+                template = firstPage.template,
+                backgroundArgb = firstPage.backgroundArgb,
+                templateLineArgb = firstPage.templateLineArgb,
+                coverArgb = tab.coverArgb,
+            ),
+            onCreate = { spec -> tab.editNotebook(spec); editNotebook = false },
+            onDismiss = { editNotebook = false },
+        )
+    }
     if (confirmPermanentDelete) AlertDialog(
         onDismissRequest = { confirmPermanentDelete = false },
         title = { Text("Delete notebook permanently?") },
@@ -3076,11 +3352,12 @@ private fun EditorScreen(
     onMoveTab: (Int, Int) -> Unit, onCloseTab: (Int) -> Unit,
     tab: EditorTab, mode: EditorMode, onMode: (EditorMode) -> Unit,
     dockEdge: DockEdge, onDockEdge: (DockEdge) -> Unit,
-    onHome: () -> Unit, onImage: () -> Unit, onImportPdf: () -> Unit,
+    onHome: () -> Unit, onImage: (PageId, PagePoint) -> Unit, onImportPdf: () -> Unit,
     onExportPdf: () -> Unit, onExportImage: () -> Unit, onExportNotebook: () -> Unit,
     onSettings: () -> Unit,
     actionMappings: List<ActionMapping>, actionRecognizer: ActionMapRecognizer,
     showDiagnostics: Boolean,
+    radialMenuRequestGeneration: Int,
     appSettings: AppSettings,
     onAppSettingsChanged: (AppSettings) -> Unit,
     onStylusButtonPressed: (Int) -> Unit,
@@ -3090,8 +3367,8 @@ private fun EditorScreen(
     var showPdfNavigation by remember { mutableStateOf(false) }
     fun executeAction(action: MappedAction) {
         when (action) {
-            MappedAction.Undo -> tab.session.undo()
-            MappedAction.Redo -> tab.session.redo()
+            MappedAction.Undo -> tab.undo()
+            MappedAction.Redo -> tab.redo()
             MappedAction.Pen -> { tab.session.selectTool(InkTool.Pen); onMode(EditorMode.Ink) }
             MappedAction.Pencil -> { tab.session.selectTool(InkTool.Pencil); onMode(EditorMode.Ink) }
             MappedAction.Highlighter -> { tab.session.selectTool(InkTool.Highlighter); onMode(EditorMode.Ink) }
@@ -3102,7 +3379,7 @@ private fun EditorScreen(
             MappedAction.AddPage -> tab.addPage()
             MappedAction.PreviousPage -> tab.navigateToPage((tab.selectedPageIndex - 1).coerceAtLeast(0))
             MappedAction.NextPage -> tab.navigateToPage((tab.selectedPageIndex + 1).coerceAtMost(tab.pages.lastIndex))
-            MappedAction.Image -> onImage()
+            MappedAction.Image -> onMode(EditorMode.Image)
             MappedAction.Bookmark -> tab.toggleBookmark()
             MappedAction.PageOverview -> sidebarVisible = !sidebarVisible
             MappedAction.ResetZoom -> tab.resetViewport()
@@ -3119,7 +3396,7 @@ private fun EditorScreen(
             { showPdfNavigation = true }, onSettings,
         )
         if (dockEdge == DockEdge.Top) ToolPalette(
-            false, tab.session, mode, onMode, onImage, onSettings,
+            false, tab.session, mode, onMode, onSettings,
             onStrokeSizePreview = { strokeSizePreview = it },
             appSettings = appSettings,
             onAppSettingsChanged = onAppSettingsChanged,
@@ -3127,7 +3404,7 @@ private fun EditorScreen(
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .5f))
         Row(Modifier.weight(1f).fillMaxWidth()) {
             if (dockEdge == DockEdge.Left) ToolPalette(
-                true, tab.session, mode, onMode, onImage, onSettings,
+                true, tab.session, mode, onMode, onSettings,
                 onStrokeSizePreview = { strokeSizePreview = it },
                 appSettings = appSettings,
                 onAppSettingsChanged = onAppSettingsChanged,
@@ -3136,12 +3413,13 @@ private fun EditorScreen(
             ContinuousPageCanvas(
                 tab, mode, actionMappings, actionRecognizer, ::executeAction,
                 strokeSizePreview, appSettings.actionActivationMode, appSettings.drawAndHoldEnabled,
-                appSettings.customFonts, onStylusButtonPressed,
+                appSettings.customFonts, onStylusButtonPressed, onImage,
+                showDiagnostics, appSettings, radialMenuRequestGeneration,
                 Modifier.weight(1f),
             )
             if (showDiagnostics) DiagnosticsPanel(tab.session)
             if (dockEdge == DockEdge.Right) ToolPalette(
-                true, tab.session, mode, onMode, onImage, onSettings,
+                true, tab.session, mode, onMode, onSettings,
                 onStrokeSizePreview = { strokeSizePreview = it },
                 appSettings = appSettings,
                 onAppSettingsChanged = onAppSettingsChanged,
@@ -3250,8 +3528,8 @@ private fun EditorCommandBar(
         IconButton(onClick = onSidebar, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.ViewSidebar, "Toggle page thumbnails") }
         Text(tab.title, Modifier.padding(horizontal = 8.dp).weight(1f), style = MaterialTheme.typography.titleSmall)
         SaveStatusIcon(tab.session.saveStatus)
-        IconButton(onClick = tab.session::undo, enabled = tab.session.canUndo, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.Undo, "Undo") }
-        IconButton(onClick = tab.session::redo, enabled = tab.session.canRedo, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.Redo, "Redo") }
+        IconButton(onClick = tab::undo, enabled = tab.canUndo, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.Undo, "Undo") }
+        IconButton(onClick = tab::redo, enabled = tab.canRedo, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.Redo, "Redo") }
         Box {
             IconButton(onClick = { menu = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.MoreVert, "Document menu") }
             DropdownMenu(
@@ -3281,7 +3559,7 @@ private fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
 @Composable
 private fun ToolPalette(
     vertical: Boolean, session: EditorSession, mode: EditorMode,
-    onMode: (EditorMode) -> Unit, onImage: () -> Unit, onSettings: () -> Unit,
+    onMode: (EditorMode) -> Unit, onSettings: () -> Unit,
     onStrokeSizePreview: (StrokeSizePreview?) -> Unit,
     appSettings: AppSettings,
     onAppSettingsChanged: (AppSettings) -> Unit,
@@ -3317,7 +3595,7 @@ private fun ToolPalette(
                 onClick = { activate(InkTool.Eraser) },
             )
             ToolIcon(Icons.Outlined.Gesture, stringResource(R.string.lasso), mode == EditorMode.Lasso) { onMode(EditorMode.Lasso) }
-            ToolIcon(Icons.Outlined.Image, stringResource(R.string.insert_image), mode == EditorMode.Object) { onImage() }
+            ToolIcon(Icons.Outlined.Image, stringResource(R.string.insert_image), mode == EditorMode.Image) { onMode(EditorMode.Image) }
             ToolIcon(Icons.Outlined.TextFields, stringResource(R.string.text_tool), mode == EditorMode.Text) { onMode(EditorMode.Text) }
             ToolIcon(Icons.Outlined.ShapeLine, stringResource(R.string.shapes), mode == EditorMode.Shape) { onMode(EditorMode.Shape) }
             ToolIcon(Icons.Outlined.Mic, stringResource(R.string.audio_note), mode == EditorMode.Audio) { onMode(EditorMode.Audio) }
@@ -3680,13 +3958,13 @@ private fun PageThumbnailRail(
                     text = { Text("Undo page change") },
                     leadingIcon = { Icon(Icons.Outlined.Undo, null) },
                     enabled = tab.canUndoPageEdit,
-                    onClick = { menu = false; tab.undoPageEdit() },
+                    onClick = { menu = false; tab.undo() },
                 )
                 DropdownMenuItem(
                     text = { Text("Redo page change") },
                     leadingIcon = { Icon(Icons.Outlined.Redo, null) },
                     enabled = tab.canRedoPageEdit,
-                    onClick = { menu = false; tab.redoPageEdit() },
+                    onClick = { menu = false; tab.redo() },
                 )
                 DropdownMenuItem(text = { Text("Change paper color") }, leadingIcon = { Icon(Icons.Outlined.Palette, null) }, onClick = { menu = false; tab.cyclePageBackground() })
                 DropdownMenuItem(text = { Text("Change template line color") }, leadingIcon = { Icon(Icons.Outlined.Palette, null) }, onClick = { menu = false; tab.cycleTemplateLineColor() })
@@ -3968,9 +4246,12 @@ private fun createDocumentLayout(pages: List<PageEntry>): DocumentLayout {
 
 private fun PageEntry.ensureRuntimeStrokes() {
     session.page.strokes.forEach { stroke ->
-        if (stroke.id !in renderStrokes) {
+        if (stroke.id !in renderStrokes && stroke.id !in renderStrokeFailures) {
             runCatching { stroke.toAndroidXStroke() }
                 .onSuccess { renderStrokes[stroke.id] = RuntimeInkStroke(it, 0f, 0f) }
+                .onFailure { error ->
+                    renderStrokeFailures[stroke.id] = error.message ?: error::class.java.simpleName
+                }
         }
     }
 }
@@ -3978,6 +4259,7 @@ private fun PageEntry.ensureRuntimeStrokes() {
 private fun PageEntry.syncRuntimeStrokes() {
     val currentIds = session.page.strokes.mapTo(hashSetOf(), InkStroke::id)
     renderStrokes.keys.filterNot(currentIds::contains).forEach(renderStrokes::remove)
+    renderStrokeFailures.keys.filterNot(currentIds::contains).forEach(renderStrokeFailures::remove)
     ensureRuntimeStrokes()
 }
 
@@ -3993,6 +4275,10 @@ private fun ContinuousPageCanvas(
     drawAndHoldEnabled: Boolean,
     customFonts: List<String>,
     onStylusButtonPressed: (Int) -> Unit,
+    onImagePlacementRequested: (PageId, PagePoint) -> Unit,
+    showDiagnostics: Boolean,
+    appSettings: AppSettings,
+    radialMenuRequestGeneration: Int,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -4026,9 +4312,12 @@ private fun ContinuousPageCanvas(
     var stylusObjectIndex by remember(tab.id) { mutableIntStateOf(-1) }
     var stylusResizingObject by remember(tab.id) { mutableStateOf(false) }
     var stylusCanTransformObject by remember(tab.id) { mutableStateOf(false) }
+    var stylusObjectEditRecorded by remember(tab.id) { mutableStateOf(false) }
     var stylusShapeAnchor by remember(tab.id) { mutableStateOf<PagePoint?>(null) }
     var stylusShapeCurrent by remember(tab.id) { mutableStateOf<PagePoint?>(null) }
     var ocrText by remember(tab.id) { mutableStateOf<String?>(null) }
+    var ocrTitle by remember(tab.id) { mutableStateOf("Text from image") }
+    var ocrDetail by remember(tab.id) { mutableStateOf("The result stays on your device.") }
     var ocrBusy by remember(tab.id) { mutableStateOf(false) }
     var activeAudioRecording by remember(tab.id) { mutableStateOf<ActiveAudioRecording?>(null) }
     var pendingAudioPoint by remember(tab.id) { mutableStateOf<PagePoint?>(null) }
@@ -4036,6 +4325,11 @@ private fun ContinuousPageCanvas(
     var confirmSelectedDelete by remember(tab.id) { mutableStateOf(false) }
     var confirmMixedDelete by remember(tab.id) { mutableStateOf(false) }
     var shapeEraseUndoRecorded by remember(tab.id) { mutableStateOf(false) }
+    var eraserHistoryActive by remember(tab.id) { mutableStateOf(false) }
+    var fingerObjectEditRecorded by remember(tab.id) { mutableStateOf(false) }
+    var lastStylusHover by remember(tab.id) { mutableStateOf<StylusHoverSample?>(null) }
+    var radialMenuCenter by remember(tab.id) { mutableStateOf<Offset?>(null) }
+    var radialMenuHighlighted by remember(tab.id) { mutableIntStateOf(-1) }
     val textRecognizer = remember { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
     DisposableEffect(textRecognizer) { onDispose { textRecognizer.close() } }
 
@@ -4058,12 +4352,16 @@ private fun ContinuousPageCanvas(
     }
 
     BackHandler(
-        enabled = lassoScreenshot != null || lassoCaptureRegion != null || mixedSelection != null ||
+        enabled = radialMenuCenter != null || lassoScreenshot != null || lassoCaptureRegion != null || mixedSelection != null ||
             lassoPoints.isNotEmpty() || selectedObject >= 0 ||
             showCropEditor || showTextEditor || showShapeEditor || showAudioPlayer ||
             confirmSelectedDelete || confirmMixedDelete,
     ) {
         when {
+            radialMenuCenter != null -> {
+                radialMenuCenter = null
+                radialMenuHighlighted = -1
+            }
             lassoScreenshot != null -> {
                 lassoScreenshot?.bitmap?.takeUnless(Bitmap::isRecycled)?.recycle()
                 lassoScreenshot = null
@@ -4204,7 +4502,8 @@ private fun ContinuousPageCanvas(
             width = lineWidth ?: (corrected.bounds.right - corrected.bounds.left).coerceAtLeast(2_000f),
             height = lineHeight ?: (corrected.bounds.bottom - corrected.bounds.top).coerceAtLeast(2_000f),
             kind = corrected.kind,
-            strokeArgb = style.argb,
+            strokeArgb = (style.argb and 0x00FF_FFFF) or
+                ((style.opacity * 255f).roundToInt().coerceIn(0, 255) shl 24),
             strokeWidth = style.maximumWidth,
             rotation = lineRotation,
             zIndex = zIndex,
@@ -4214,6 +4513,7 @@ private fun ContinuousPageCanvas(
 
     DisposableEffect(tab.id) {
         onDispose {
+            if (eraserHistoryActive) tab.endHistoryTransaction()
             activeAudioRecording?.let { active ->
                 active.recording.set(false)
                 runCatching { active.recorder.stop() }
@@ -4227,6 +4527,8 @@ private fun ContinuousPageCanvas(
     fun recognizeImageText(image: SceneObject.Image) {
         if (ocrBusy) return
         ocrBusy = true
+        ocrTitle = "Text from image"
+        ocrDetail = "The result stays on your device."
         val cropped = runCatching {
             val left = (image.bitmap.width * image.crop.leftFraction).roundToInt()
             val top = (image.bitmap.height * image.crop.topFraction).roundToInt()
@@ -4246,6 +4548,69 @@ private fun ContinuousPageCanvas(
                 if (cropped !== image.bitmap && !cropped.isRecycled) cropped.recycle()
             }
     }
+
+    fun recognizePdfText(page: PageEntry, point: PagePoint) {
+        if (ocrBusy || page.pdfSource == null || page.objects.any { it.contains(point) }) return
+        ocrBusy = true
+        ocrTitle = "Text from PDF"
+        ocrDetail = "Hold near another line to read a different part of the page."
+        fun fail(message: String) {
+            ocrBusy = false
+            ocrText = message
+        }
+        fun recognizeRenderedPage() {
+            tab.renderPdfForText(page.id) { rendered ->
+                rendered.onFailure { error ->
+                    fail("Text could not be read: ${error.message ?: "Unknown error"}")
+                }.onSuccess { bitmap ->
+                    textRecognizer.process(InputImage.fromBitmap(bitmap, 0))
+                        .addOnSuccessListener { result ->
+                            val targetX = point.x / page.size.widthMicrons * bitmap.width
+                            val targetY = point.y / page.size.heightMicrons * bitmap.height
+                            fun distance(bounds: android.graphics.Rect): Float {
+                                val dx = when {
+                                    targetX < bounds.left -> bounds.left - targetX
+                                    targetX > bounds.right -> targetX - bounds.right
+                                    else -> 0f
+                                }
+                                val dy = when {
+                                    targetY < bounds.top -> bounds.top - targetY
+                                    targetY > bounds.bottom -> targetY - bounds.bottom
+                                    else -> 0f
+                                }
+                                return hypot(dx, dy)
+                            }
+                            val nearest = result.textBlocks.asSequence()
+                                .flatMap { it.lines.asSequence() }
+                                .mapNotNull { line -> line.boundingBox?.let { line to distance(it) } }
+                                .minByOrNull { it.second }
+                                ?.takeIf { it.second <= minOf(bitmap.width, bitmap.height) * .09f }
+                                ?.first
+                                ?.text
+                                ?.trim()
+                                .orEmpty()
+                            bitmap.takeUnless(Bitmap::isRecycled)?.recycle()
+                            ocrBusy = false
+                            ocrText = nearest.ifBlank { "No readable text was found near that point." }
+                        }
+                        .addOnFailureListener { error ->
+                            bitmap.takeUnless(Bitmap::isRecycled)?.recycle()
+                            fail("Text recognition failed: ${error.message ?: "Unknown error"}")
+                        }
+                }
+            }
+        }
+        tab.pdfTextNear(page.id, point) { extraction ->
+            extraction.onFailure { recognizeRenderedPage() }
+                .onSuccess { embedded ->
+                    if (embedded.isNullOrBlank()) recognizeRenderedPage()
+                    else {
+                        ocrBusy = false
+                        ocrText = embedded
+                    }
+                }
+        }
+    }
     var actionFeedback by remember { mutableStateOf<String?>(null) }
     var inkOverlay by remember { mutableStateOf<InkAuthoringOverlayView?>(null) }
     val pendingInk = remember(tab.id) { mutableStateListOf<PendingInkStroke>() }
@@ -4253,7 +4618,79 @@ private fun ContinuousPageCanvas(
     val actionScope = rememberCoroutineScope()
     val pageJumpPadding = with(LocalDensity.current) { 20.dp.toPx() }
     val objectHandleRadius = with(LocalDensity.current) { 30.dp.toPx() }
+    val radialMenuRadius = with(LocalDensity.current) { 132.dp.toPx() }
+    val hoverRecognizer = remember(tab.id) {
+        HoverDoubleTapRecognizer(
+            HoverShortcutConfig(
+                appSettings.hoverTapImpulseThresholdDp,
+                appSettings.hoverTapMaximumDriftDp,
+                appSettings.hoverTapMaximumIntervalMillis.toLong(),
+            ),
+            density = context.resources.displayMetrics.density,
+        )
+    }
+    val hapticFeedback = LocalHapticFeedback.current
     val selectionColor = MaterialTheme.colorScheme.primary
+
+    val radialTools = remember {
+        listOf(
+            RadialToolItem("Pen", Icons.Outlined.Create, MappedAction.Pen),
+            RadialToolItem("Pencil", Icons.Outlined.Edit, MappedAction.Pencil),
+            RadialToolItem("Highlighter", Icons.Outlined.Highlight, MappedAction.Highlighter),
+            RadialToolItem("Eraser", Icons.Outlined.AutoFixHigh, MappedAction.Eraser),
+            RadialToolItem("Lasso", Icons.Outlined.Gesture, MappedAction.Lasso),
+            RadialToolItem("Shapes", Icons.Outlined.ShapeLine, MappedAction.Shapes),
+            RadialToolItem("Text", Icons.Outlined.TextFields, MappedAction.Text),
+            RadialToolItem("Image", Icons.Outlined.Image, MappedAction.Image),
+        )
+    }
+
+    fun openRadialMenu(requested: Offset) {
+        val margin = radialMenuRadius + with(context.resources.displayMetrics) { 18f * density }
+        radialMenuCenter = Offset(
+            requested.x.coerceIn(margin, (viewportWidth - margin).coerceAtLeast(margin)),
+            requested.y.coerceIn(margin, (viewportHeight - margin).coerceAtLeast(margin)),
+        )
+        radialMenuHighlighted = -1
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    fun updateRadialHighlight(sample: StylusHoverSample) {
+        val center = radialMenuCenter ?: return
+        val dx = sample.x - center.x
+        val dy = sample.y - center.y
+        val distance = hypot(dx, dy)
+        val next = if (distance < radialMenuRadius * .28f) -1 else {
+            val normalized = ((atan2(dy, dx) + Math.PI / 2.0 + Math.PI * 2.0) % (Math.PI * 2.0))
+            ((normalized / (Math.PI * 2.0) * radialTools.size).roundToInt() % radialTools.size)
+        }
+        if (next != radialMenuHighlighted) {
+            radialMenuHighlighted = next
+            if (next >= 0) hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
+
+    LaunchedEffect(
+        appSettings.hoverTapImpulseThresholdDp,
+        appSettings.hoverTapMaximumDriftDp,
+        appSettings.hoverTapMaximumIntervalMillis,
+    ) {
+        hoverRecognizer.update(
+            HoverShortcutConfig(
+                appSettings.hoverTapImpulseThresholdDp,
+                appSettings.hoverTapMaximumDriftDp,
+                appSettings.hoverTapMaximumIntervalMillis.toLong(),
+            ),
+            context.resources.displayMetrics.density,
+        )
+    }
+
+    LaunchedEffect(radialMenuRequestGeneration) {
+        if (radialMenuRequestGeneration > 0) {
+            val hover = lastStylusHover
+            openRadialMenu(hover?.let { Offset(it.x, it.y) } ?: Offset(viewportWidth / 2f, viewportHeight / 2f))
+        }
+    }
 
     fun captureLassoScreenshot() {
         if (lassoScreenshotBusy) return
@@ -4420,15 +4857,17 @@ private fun ContinuousPageCanvas(
     fun deleteMixedSelection() {
         val selection = mixedSelection ?: return
         val page = tab.pages.getOrNull(selection.pageIndex) ?: return
-        if (selection.strokeIds.isNotEmpty()) {
-            page.session.deleteStrokes(selection.strokeIds)
-            page.syncRuntimeStrokes()
-        }
-        if (selection.objectIds.isNotEmpty()) {
-            tab.recordObjectEdit(page)
-            page.objects.removeAll { it.id in selection.objectIds }
-            page.reindexObjects()
-            tab.persistObjects()
+        tab.historyTransaction {
+            if (selection.strokeIds.isNotEmpty()) {
+                page.session.deleteStrokes(selection.strokeIds)
+                page.syncRuntimeStrokes()
+            }
+            if (selection.objectIds.isNotEmpty()) {
+                tab.recordObjectEdit(page)
+                page.objects.removeAll { it.id in selection.objectIds }
+                page.reindexObjects()
+                tab.persistObjects()
+            }
         }
         mixedSelection = null
         lassoCaptureRegion = null
@@ -4437,16 +4876,20 @@ private fun ContinuousPageCanvas(
     fun pasteMixedSelection(targetPageIndex: Int = tab.selectedPageIndex) {
         val clipboard = selectionClipboard ?: return
         val page = tab.pages.getOrNull(targetPageIndex) ?: return
-        val newStrokeIds = page.session.pasteStrokes(clipboard.strokes)
-        if (newStrokeIds.isNotEmpty()) page.syncRuntimeStrokes()
-        val newObjects = clipboard.objects.map { source ->
-            source.duplicate().move(5_000f, 5_000f).withZIndex((page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L)
-        }
-        if (newObjects.isNotEmpty()) {
-            tab.recordObjectEdit(page)
-            page.objects.addAll(newObjects)
-            page.reindexObjects()
-            tab.persistObjects()
+        lateinit var newStrokeIds: Set<StrokeId>
+        lateinit var newObjects: List<SceneObject>
+        tab.historyTransaction {
+            newStrokeIds = page.session.pasteStrokes(clipboard.strokes)
+            if (newStrokeIds.isNotEmpty()) page.syncRuntimeStrokes()
+            newObjects = clipboard.objects.map { source ->
+                source.duplicate().move(5_000f, 5_000f).withZIndex((page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L)
+            }
+            if (newObjects.isNotEmpty()) {
+                tab.recordObjectEdit(page)
+                page.objects.addAll(newObjects)
+                page.reindexObjects()
+                tab.persistObjects()
+            }
         }
         val pastedSelection = MixedSelection(
             targetPageIndex,
@@ -4466,38 +4909,41 @@ private fun ContinuousPageCanvas(
         val pivot = PagePoint((bounds.left + bounds.right) / 2f, (bounds.top + bounds.bottom) / 2f)
         val selectedStrokes = page.session.page.strokes.filter { it.id in selection.strokeIds }
         val previousRuntimes = selectedStrokes.associate { it.id to page.renderStrokes[it.id] }
-        val newStrokeIds = page.session.replaceStrokes(selection.strokeIds) { stroke ->
-            LassoSelection.transform(stroke, SelectionTransform(
-                translateX = translation.x,
-                translateY = translation.y,
-                rotationRadians = rotationRadians,
-                pivot = pivot,
-            ))
-        }
-        if (selection.strokeIds.isNotEmpty()) {
-            selection.strokeIds.forEach(page.renderStrokes::remove)
-            if (rotationRadians == 0f && selectedStrokes.size == newStrokeIds.size) {
-                selectedStrokes.zip(newStrokeIds).forEach { (before, newId) ->
-                    previousRuntimes[before.id]?.let { runtime ->
-                        page.renderStrokes[newId] = runtime.copy(
-                            inputOriginX = runtime.inputOriginX - translation.x,
-                            inputOriginY = runtime.inputOriginY - translation.y,
-                        )
+        lateinit var newStrokeIds: Set<StrokeId>
+        tab.historyTransaction {
+            newStrokeIds = page.session.replaceStrokes(selection.strokeIds) { stroke ->
+                LassoSelection.transform(stroke, SelectionTransform(
+                    translateX = translation.x,
+                    translateY = translation.y,
+                    rotationRadians = rotationRadians,
+                    pivot = pivot,
+                ))
+            }
+            if (selection.strokeIds.isNotEmpty()) {
+                selection.strokeIds.forEach(page.renderStrokes::remove)
+                if (rotationRadians == 0f && selectedStrokes.size == newStrokeIds.size) {
+                    selectedStrokes.zip(newStrokeIds).forEach { (before, newId) ->
+                        previousRuntimes[before.id]?.let { runtime ->
+                            page.renderStrokes[newId] = runtime.copy(
+                                inputOriginX = runtime.inputOriginX - translation.x,
+                                inputOriginY = runtime.inputOriginY - translation.y,
+                            )
+                        }
                     }
                 }
+                page.syncRuntimeStrokes()
             }
-            page.syncRuntimeStrokes()
-        }
-        if (selection.objectIds.isNotEmpty()) {
-            tab.recordObjectEdit(page)
-            page.objects.indices.forEach { index ->
-                val item = page.objects[index]
-                if (item.id in selection.objectIds) {
-                    val moved = item.move(translation.x, translation.y)
-                    page.objects[index] = if (rotationRadians == 0f) moved else moved.rotateBy(Math.toDegrees(rotationRadians.toDouble()).toFloat())
+            if (selection.objectIds.isNotEmpty()) {
+                tab.recordObjectEdit(page)
+                page.objects.indices.forEach { index ->
+                    val item = page.objects[index]
+                    if (item.id in selection.objectIds) {
+                        val moved = item.move(translation.x, translation.y)
+                        page.objects[index] = if (rotationRadians == 0f) moved else moved.rotateBy(Math.toDegrees(rotationRadians.toDouble()).toFloat())
+                    }
                 }
+                tab.persistObjects()
             }
-            tab.persistObjects()
         }
         val transformedSelection = selection.copy(strokeIds = newStrokeIds.ifEmpty { selection.strokeIds })
         mixedSelection = transformedSelection
@@ -4671,6 +5117,14 @@ private fun ContinuousPageCanvas(
                         selectedObjectPage == placement.index && selectedObject == objectIndex,
                     )
                 }
+                placement.page.session.page.strokes.asSequence()
+                    .filter { it.id !in placement.page.renderStrokes }
+                    .filterNot { stroke ->
+                        movingSelection && mixedSelection?.pageIndex == placement.index &&
+                            stroke.id in mixedSelection!!.strokeIds
+                    }
+                    .sortedBy(InkStroke::zIndex)
+                    .forEach { stroke -> drawSavedStroke(stroke, placement, viewport) }
             }
         }
         AndroidView(
@@ -4741,18 +5195,30 @@ private fun ContinuousPageCanvas(
                 view.stylusInputEnabled = mode == EditorMode.Ink
                 view.alwaysRecognizeActionGestures = actionMappings.isNotEmpty() && actionActivationMode != ActionActivationMode.Disabled
                 view.style = tab.session.currentStyle()
-                view.onObjectStylusDown = { point ->
+                view.showHoverDiagnostics = showDiagnostics
+                view.onObjectStylusDown = stylusDown@{ point ->
+                    if (radialMenuCenter != null) {
+                        radialTools.getOrNull(radialMenuHighlighted)?.let { onAction(it.action) }
+                        radialMenuCenter = null
+                        radialMenuHighlighted = -1
+                        return@stylusDown true
+                    }
+                    stylusObjectEditRecorded = false
                     val placement = layout.pageAt(point)
                     val local = placement?.toLocal(point)
                     val selectedImageForStylus = placement?.page?.objects?.getOrNull(selectedObject) as? SceneObject.Image
-                    val selectedImageHandleHit = placement != null && local != null &&
+                    val selectedImageHandleHit = mode != EditorMode.Image && placement != null && local != null &&
                         selectedObjectPage == placement.index && selectedImageForStylus != null && !selectedImageForStylus.locked &&
                         selectedImageForStylus.resizeHandleContains(local, objectHandleRadius / viewport.scale)
                     when {
                         placement == null -> false
                         mixedSelection != null && mode != EditorMode.Lasso -> false
+                        mode == EditorMode.Image -> {
+                            tab.selectedPageIndex = placement.index
+                            onImagePlacementRequested(placement.page.id, placement.toLocal(point))
+                            true
+                        }
                         selectedImageHandleHit -> {
-                            tab.recordObjectEdit(placement.page)
                             stylusObjectPage = placement.index
                             stylusObjectIndex = selectedObject
                             stylusCanTransformObject = true
@@ -4800,7 +5266,6 @@ private fun ContinuousPageCanvas(
                                     local,
                                     objectHandleRadius / viewport.scale,
                                 )
-                                if (stylusCanTransformObject) tab.recordObjectEdit(placement.page)
                                 true
                             }
                         }
@@ -4814,10 +5279,10 @@ private fun ContinuousPageCanvas(
                                 stylusObjectPage = placement.index
                                 stylusObjectIndex = index
                                 stylusCanTransformObject = alreadySelected
-                                if (alreadySelected) tab.recordObjectEdit(placement.page)
                             } else {
                                 val zIndex = (placement.page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
                                 tab.recordObjectEdit(placement.page)
+                                stylusObjectEditRecorded = true
                                 placement.page.objects += SceneObject.TextBox("Text", local.x, local.y, 8_000f, zIndex = zIndex)
                                 stylusObjectPage = placement.index
                                 stylusObjectIndex = placement.page.objects.lastIndex
@@ -4854,7 +5319,6 @@ private fun ContinuousPageCanvas(
                                 stylusCanTransformObject = alreadySelected
                                 stylusResizingObject = alreadySelected && selectedHandleHit
                                 if (stylusCanTransformObject) {
-                                    tab.recordObjectEdit(placement.page)
                                     if (stylusResizingObject) {
                                         stylusShapeAnchor = PagePoint(shape.x, shape.y)
                                         stylusShapeCurrent = PagePoint(shape.x + shape.width, shape.y + shape.height)
@@ -4863,6 +5327,7 @@ private fun ContinuousPageCanvas(
                             } else {
                                 val zIndex = (placement.page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
                                 tab.recordObjectEdit(placement.page)
+                                stylusObjectEditRecorded = true
                                 placement.page.objects += SceneObject.Rectangle(
                                     local.x,
                                     local.y,
@@ -4899,7 +5364,6 @@ private fun ContinuousPageCanvas(
                                 stylusObjectIndex = index
                                 stylusCanTransformObject = alreadySelected
                                 stylusResizingObject = false
-                                if (alreadySelected) tab.recordObjectEdit(placement.page)
                                 true
                             }
                         }
@@ -4918,6 +5382,10 @@ private fun ContinuousPageCanvas(
                         val page = tab.pages.getOrNull(stylusObjectPage)
                         val item = page?.objects?.getOrNull(stylusObjectIndex)
                         if (page != null && item != null && stylusCanTransformObject) {
+                            if (!stylusObjectEditRecorded && (dx != 0f || dy != 0f)) {
+                                tab.recordObjectEdit(page)
+                                stylusObjectEditRecorded = true
+                            }
                             page.objects[stylusObjectIndex] = if (
                                 stylusResizingObject && item is SceneObject.Rectangle && stylusShapeAnchor != null
                             ) {
@@ -4989,6 +5457,7 @@ private fun ContinuousPageCanvas(
                     stylusObjectIndex = -1
                     stylusResizingObject = false
                     stylusCanTransformObject = false
+                    stylusObjectEditRecorded = false
                     stylusShapeAnchor = null
                     stylusShapeCurrent = null
                 }
@@ -5000,6 +5469,7 @@ private fun ContinuousPageCanvas(
                     layout.pageAt(point)?.let { tab.selectedPageIndex = it.index }
                 }
                 view.onFingerObjectDown = { point ->
+                    fingerObjectEditRecorded = false
                     val placement = layout.pageAt(point)
                     if (placement == null) {
                         fingerResizingImage = false
@@ -5014,12 +5484,13 @@ private fun ContinuousPageCanvas(
                             movingSelection = inside
                             selectionDrag = PagePoint(0f, 0f)
                             if (inside) FingerObjectGesture.Move else FingerObjectGesture.Canvas
+                        } else if (mode == EditorMode.Image) {
+                            FingerObjectGesture.Canvas
                         } else if (mode == EditorMode.Text) {
                             val textIndex = placement.page.objects.indexOfLast { it is SceneObject.TextBox && it.contains(local) }
                             val alreadySelected = textIndex >= 0 &&
                                 selectedObjectPage == placement.index && selectedObject == textIndex
                             if (alreadySelected) {
-                                tab.recordObjectEdit(placement.page)
                                 FingerObjectGesture.Move
                             } else FingerObjectGesture.Canvas
                         } else {
@@ -5038,7 +5509,6 @@ private fun ContinuousPageCanvas(
                                     local, objectHandleRadius / viewport.scale,
                                 )
                                 if (image?.locked == true) FingerObjectGesture.SelectOnly else {
-                                    tab.recordObjectEdit(placement.page)
                                     FingerObjectGesture.Move
                                 }
                             }
@@ -5052,6 +5522,10 @@ private fun ContinuousPageCanvas(
                         val page = tab.pages.getOrNull(selectedObjectPage)
                         val item = page?.objects?.getOrNull(selectedObject)
                         if (page != null && item != null && (item !is SceneObject.Image || !item.locked)) {
+                            if (!fingerObjectEditRecorded && (dx != 0f || dy != 0f)) {
+                                tab.recordObjectEdit(page)
+                                fingerObjectEditRecorded = true
+                            }
                             page.objects[selectedObject] = if (fingerResizingImage && item is SceneObject.Image) {
                                 val delta = item.toUnrotatedDelta(dx, dy)
                                 item.resizeFromLeftBottom(delta.x, delta.y)
@@ -5066,12 +5540,22 @@ private fun ContinuousPageCanvas(
                         movingSelection = false
                     } else if (selectedSceneObject() != null) tab.persistObjects()
                     fingerResizingImage = false
+                    fingerObjectEditRecorded = false
                 }
                 view.onFingerTap = fingerTap@{ point ->
+                    if (radialMenuCenter != null) {
+                        radialMenuCenter = null
+                        radialMenuHighlighted = -1
+                        return@fingerTap
+                    }
                     val placement = layout.pageAt(point) ?: return@fingerTap
                     val local = placement.toLocal(point)
                     if (mixedSelection != null) return@fingerTap
                     when (mode) {
+                        EditorMode.Image -> {
+                            tab.selectedPageIndex = placement.index
+                            onImagePlacementRequested(placement.page.id, local)
+                        }
                         EditorMode.Text -> {
                             val textIndex = placement.page.objects.indexOfLast {
                                 it is SceneObject.TextBox && it.contains(local)
@@ -5129,6 +5613,19 @@ private fun ContinuousPageCanvas(
                         }
                     }
                 }
+                view.onFingerLongPress = longPress@{ point ->
+                    val placement = layout.pageAt(point) ?: return@longPress
+                    recognizePdfText(placement.page, placement.toLocal(point))
+                }
+                view.onStylusHover = { sample ->
+                    lastStylusHover = sample
+                    if (radialMenuCenter != null) {
+                        updateRadialHighlight(sample)
+                    } else if (appSettings.hoverShortcutEnabled && hoverRecognizer.add(sample)) {
+                        openRadialMenu(Offset(sample.x, sample.y))
+                    }
+                }
+                view.onStylusHoverExit = hoverRecognizer::onHoverExit
                 view.onStrokeFinished = { finished ->
                     layout.pageAt(finished.samples.first().position)?.let { placement ->
                         tab.selectedPageIndex = placement.index
@@ -5139,8 +5636,11 @@ private fun ContinuousPageCanvas(
                         )
                         val corrected = if (
                             drawAndHoldEnabled &&
-                            localized.style.tool in setOf(InkTool.Pen, InkTool.Pencil)
-                        ) DrawHoldShapeDetector.detect(localized.samples) else null
+                            localized.style.tool in setOf(InkTool.Pen, InkTool.Pencil, InkTool.Highlighter)
+                        ) DrawHoldShapeDetector.detect(
+                            localized.samples,
+                            linesOnly = localized.style.tool == InkTool.Highlighter,
+                        ) else null
                         if (corrected != null) {
                             addCorrectedShape(placement.page, corrected, localized.style)
                             view.removeFinishedStroke(localized.id)
@@ -5187,10 +5687,11 @@ private fun ContinuousPageCanvas(
                     val placement = samples.firstOrNull()?.position?.let(layout::pageAt)
                     val corrected = if (
                         placement != null && drawAndHoldEnabled &&
-                        style.tool in setOf(InkTool.Pen, InkTool.Pencil)
+                        style.tool in setOf(InkTool.Pen, InkTool.Pencil, InkTool.Highlighter)
                     ) {
                         DrawHoldShapeDetector.detect(
                             samples.map { it.copy(position = placement.toLocal(it.position)) },
+                            linesOnly = style.tool == InkTool.Highlighter,
                         )
                     } else null
                     if (placement != null && corrected != null) {
@@ -5199,6 +5700,10 @@ private fun ContinuousPageCanvas(
                     } else false
                 }
                 view.onErase = { point ->
+                    if (!eraserHistoryActive) {
+                        tab.beginHistoryTransaction()
+                        eraserHistoryActive = true
+                    }
                     layout.pageAt(point)?.let { placement ->
                         tab.selectedPageIndex = placement.index
                         val local = placement.toLocal(point)
@@ -5221,10 +5726,24 @@ private fun ContinuousPageCanvas(
                         }
                     }
                 }
-                view.onEraseFinished = { shapeEraseUndoRecorded = false }
+                view.onEraseFinished = {
+                    shapeEraseUndoRecorded = false
+                    if (eraserHistoryActive) {
+                        tab.endHistoryTransaction()
+                        eraserHistoryActive = false
+                    }
+                }
             },
             modifier = Modifier.fillMaxSize().graphicsLayer { clip = true },
         )
+        radialMenuCenter?.let { center ->
+            RadialToolWheel(
+                center = center,
+                items = radialTools,
+                highlightedIndex = radialMenuHighlighted,
+                modifier = Modifier.fillMaxSize().zIndex(90f),
+            )
+        }
         if (lassoPoints.isNotEmpty() || mixedSelection != null || lassoCaptureRegion != null) {
             Canvas(Modifier.fillMaxSize().zIndex(30f)) {
                 if (lassoPoints.size >= 2) {
@@ -5306,16 +5825,18 @@ private fun ContinuousPageCanvas(
                     mixedSelection = selection.copy(strokeIds = nextIds.ifEmpty { selection.strokeIds })
                 },
                 onRotate = { transformMixedSelection(rotationRadians = (Math.PI / 2.0).toFloat()) },
-                onUndo = { tab.undoObjectEdit(); mixedSelection = null },
-                onRedo = { tab.redoObjectEdit(); mixedSelection = null },
+                onUndo = { tab.undo(); mixedSelection = null },
+                onRedo = { tab.redo(); mixedSelection = null },
                 onMovePage = { direction ->
                     val source = tab.pages.getOrNull(selection.pageIndex) ?: return@MixedSelectionBar
                     val targetIndex = (selection.pageIndex + direction).coerceIn(0, tab.pages.lastIndex)
                     if (targetIndex != selection.pageIndex) {
-                        copyMixedSelection()
-                        deleteMixedSelection()
-                        tab.selectedPageIndex = targetIndex
-                        pasteMixedSelection(targetIndex)
+                        tab.historyTransaction {
+                            copyMixedSelection()
+                            deleteMixedSelection()
+                            tab.selectedPageIndex = targetIndex
+                            pasteMixedSelection(targetIndex)
+                        }
                     }
                 },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(46f),
@@ -5376,8 +5897,8 @@ private fun ContinuousPageCanvas(
                 onFront = { moveSelectedObjectToFront(true) },
                 onBack = { moveSelectedObjectToFront(false) },
                 onDelete = { confirmSelectedDelete = true },
-                onUndo = { tab.undoObjectEdit(); selectedObject = -1; selectedObjectPage = -1 },
-                onRedo = { tab.redoObjectEdit(); selectedObject = -1; selectedObjectPage = -1 },
+                onUndo = { tab.undo(); selectedObject = -1; selectedObjectPage = -1 },
+                onRedo = { tab.redo(); selectedObject = -1; selectedObjectPage = -1 },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(45f),
             )
         }
@@ -5491,7 +6012,12 @@ private fun ContinuousPageCanvas(
             }
         }
         ocrText?.let { result ->
-            OcrResultDialog(result, onDismiss = { ocrText = null })
+            OcrResultDialog(
+                text = result,
+                title = ocrTitle,
+                detail = ocrDetail,
+                onDismiss = { ocrText = null },
+            )
         }
         if (lassoScreenshotBusy) {
             Surface(
@@ -5620,6 +6146,119 @@ private fun LassoScreenshotDialog(
                     TextButton(onClick = onSave) { Text("Save") }
                     TextButton(onClick = onInsert) { Text("Insert") }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RadialToolWheel(
+    center: Offset,
+    items: List<RadialToolItem>,
+    highlightedIndex: Int,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val diameter = 300.dp
+    val diameterPx = with(density) { diameter.toPx() }
+    val radius = diameterPx / 2f
+    val ambientPrimary = MaterialTheme.colorScheme.primary
+    val reveal = remember(center) { Animatable(0f) }
+    LaunchedEffect(center) { reveal.animateTo(1f, tween(330, easing = BackOutEasing)) }
+    Box(modifier) {
+        Canvas(Modifier.fillMaxSize()) {
+            drawCircle(Color.Black.copy(alpha = .18f * reveal.value), radius * 1.22f, center)
+            drawCircle(ambientPrimary.copy(alpha = .10f * reveal.value), radius * 1.08f, center)
+        }
+        Box(
+            Modifier
+                .offset {
+                    IntOffset(
+                        (center.x - diameterPx / 2f).roundToInt(),
+                        (center.y - diameterPx / 2f).roundToInt(),
+                    )
+                }
+                .size(diameter)
+                .graphicsLayer {
+                    val scale = .62f + reveal.value * .38f
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = reveal.value
+                    rotationZ = (1f - reveal.value) * -10f
+                },
+        ) {
+            val primary = MaterialTheme.colorScheme.primary
+            val surface = MaterialTheme.colorScheme.surface
+            val outline = MaterialTheme.colorScheme.outline
+            Canvas(Modifier.fillMaxSize()) {
+                val wheelCenter = Offset(size.width / 2f, size.height / 2f)
+                val outerRadius = size.minDimension / 2f
+                val innerRadius = outerRadius * .31f
+                val bounds = Rect(
+                    wheelCenter.x - outerRadius,
+                    wheelCenter.y - outerRadius,
+                    wheelCenter.x + outerRadius,
+                    wheelCenter.y + outerRadius,
+                )
+                items.indices.forEach { index ->
+                    val centerDegrees = -90f + index * (360f / items.size)
+                    val startDegrees = centerDegrees - (180f / items.size)
+                    val path = Path().apply {
+                        moveTo(wheelCenter.x, wheelCenter.y)
+                        arcTo(bounds, startDegrees, 360f / items.size, false)
+                        close()
+                    }
+                    drawPath(
+                        path,
+                        if (index == highlightedIndex) primary.copy(alpha = .92f) else surface.copy(alpha = .94f),
+                    )
+                    drawPath(path, outline.copy(alpha = .62f), style = Stroke(1.2.dp.toPx()))
+                }
+                drawCircle(Color(0xE61A1F28), innerRadius, wheelCenter)
+                drawCircle(primary.copy(alpha = .72f), innerRadius, wheelCenter, style = Stroke(2.dp.toPx()))
+                drawCircle(primary.copy(alpha = .16f), outerRadius * 1.03f, wheelCenter, style = Stroke(7.dp.toPx()))
+            }
+            items.forEachIndexed { index, item ->
+                val angle = Math.toRadians((-90.0 + index * 360.0 / items.size))
+                val iconRadius = radius * .67f
+                val selected = index == highlightedIndex
+                val iconScale by animateFloatAsState(if (selected) 1.20f else 1f, tween(110), label = "radial-icon")
+                Box(
+                    Modifier
+                        .offset {
+                            IntOffset(
+                                (radius + kotlin.math.cos(angle).toFloat() * iconRadius - 23.dp.toPx()).roundToInt(),
+                                (radius + kotlin.math.sin(angle).toFloat() * iconRadius - 23.dp.toPx()).roundToInt(),
+                            )
+                        }
+                        .size(46.dp)
+                        .graphicsLayer { scaleX = iconScale; scaleY = iconScale },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        item.icon,
+                        item.label,
+                        tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            Column(
+                Modifier.align(Alignment.Center).width(88.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    items.getOrNull(highlightedIndex)?.label ?: "Tools",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White,
+                    maxLines = 1,
+                )
+                Text(
+                    if (highlightedIndex >= 0) "Tap to choose" else "Hover",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = .65f),
+                    maxLines = 1,
+                )
             }
         }
     }
@@ -5992,8 +6631,8 @@ private fun MixedSelectionBar(
         add(ImageActionSpec(Icons.Outlined.RotateRight, "Rotate 90 degrees", onRotate))
         if (canMovePrevious) add(ImageActionSpec(Icons.Outlined.NavigateBefore, "Move to previous page") { onMovePage(-1) })
         if (canMoveNext) add(ImageActionSpec(Icons.Outlined.NavigateNext, "Move to next page") { onMovePage(1) })
-        add(ImageActionSpec(Icons.Outlined.Undo, "Undo object edit", onUndo))
-        add(ImageActionSpec(Icons.Outlined.Redo, "Redo object edit", onRedo))
+        add(ImageActionSpec(Icons.Outlined.Undo, stringResource(R.string.undo), onUndo))
+        add(ImageActionSpec(Icons.Outlined.Redo, stringResource(R.string.redo), onRedo))
         add(ImageActionSpec(Icons.Outlined.Delete, stringResource(R.string.delete), onDelete))
     }
     SelectionActionStrip(actions, modifier)
@@ -6062,7 +6701,12 @@ private fun AudioSelectionBar(
 }
 
 @Composable
-private fun OcrResultDialog(text: String, onDismiss: () -> Unit) {
+private fun OcrResultDialog(
+    text: String,
+    title: String = "Text from image",
+    detail: String = "The result stays on your device.",
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
@@ -6071,8 +6715,8 @@ private fun OcrResultDialog(text: String, onDismiss: () -> Unit) {
             shadowElevation = 18.dp,
         ) {
             Column(Modifier.fillMaxSize().padding(22.dp)) {
-                Text("Text from image", style = MaterialTheme.typography.headlineSmall)
-                Text("The result stays on your device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(title, style = MaterialTheme.typography.headlineSmall)
+                Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Surface(
                     Modifier.fillMaxWidth().weight(1f).padding(vertical = 14.dp),
                     shape = RoundedCornerShape(12.dp),
@@ -6748,6 +7392,40 @@ private fun DrawScope.drawPlacedPage(placement: PagePlacement, viewport: Viewpor
     }
 }
 
+private fun DrawScope.drawSavedStroke(
+    stroke: InkStroke,
+    placement: PagePlacement,
+    viewport: ViewportTransform,
+) {
+    val samples = stroke.samples
+    if (samples.isEmpty()) return
+    val originX = viewport.offsetX + placement.left * viewport.scale
+    val originY = viewport.offsetY + placement.top * viewport.scale
+    fun screen(sample: StrokeSample) = Offset(
+        originX + sample.position.x * viewport.scale,
+        originY + sample.position.y * viewport.scale,
+    )
+    val reportedPressures = samples.mapNotNull(StrokeSample::pressure)
+    val representativePressure = reportedPressures.takeIf(List<Float>::isNotEmpty)
+        ?.average()?.toFloat()
+    val width = (PressureNormalizer.width(representativePressure, stroke.style) * viewport.scale)
+        .coerceAtLeast(.75f)
+    val color = Color(stroke.style.argb).copy(alpha = stroke.style.opacity)
+    if (samples.size == 1) {
+        drawCircle(color, width / 2f, screen(samples.first()))
+        return
+    }
+    val path = Path().apply {
+        val first = screen(samples.first())
+        moveTo(first.x, first.y)
+        samples.drop(1).forEach { sample ->
+            val point = screen(sample)
+            lineTo(point.x, point.y)
+        }
+    }
+    drawPath(path, color, style = Stroke(width = width, cap = StrokeCap.Round))
+}
+
 private fun DrawScope.drawPlacedObject(item: SceneObject, placement: PagePlacement, viewport: ViewportTransform, selected: Boolean) {
     val originX = viewport.offsetX + placement.left * viewport.scale
     val originY = viewport.offsetY + placement.top * viewport.scale
@@ -7264,16 +7942,32 @@ private fun AppSettingsDialog(
     var surface by remember { mutableStateOf("") }
     var themePendingDelete by remember { mutableStateOf<AppThemePreset?>(null) }
     var waitingForFloatingNotesKey by remember { mutableStateOf(false) }
+    var waitingForRadialMenuKey by remember { mutableStateOf(false) }
+    var showHoverCalibration by remember { mutableStateOf(false) }
     val shortcutFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(hardwareKeySequence) {
-        if (waitingForFloatingNotesKey && hardwareKeySequence > 0 && hardwareKeyCode != KeyEvent.KEYCODE_UNKNOWN) {
-            onSettingsChanged(settings.copy(floatingNotesKeyCode = hardwareKeyCode))
-            waitingForFloatingNotesKey = false
+    fun captureShortcut(keyCode: Int) {
+        when {
+            waitingForRadialMenuKey -> {
+                onSettingsChanged(settings.copy(radialMenuKeyCode = keyCode))
+                waitingForRadialMenuKey = false
+            }
+            waitingForFloatingNotesKey -> {
+                onSettingsChanged(settings.copy(floatingNotesKeyCode = keyCode))
+                waitingForFloatingNotesKey = false
+            }
         }
     }
-    LaunchedEffect(waitingForFloatingNotesKey) {
-        if (waitingForFloatingNotesKey) {
+
+    LaunchedEffect(hardwareKeySequence) {
+        if ((waitingForFloatingNotesKey || waitingForRadialMenuKey) &&
+            hardwareKeySequence > 0 && hardwareKeyCode != KeyEvent.KEYCODE_UNKNOWN
+        ) {
+            captureShortcut(hardwareKeyCode)
+        }
+    }
+    LaunchedEffect(waitingForFloatingNotesKey, waitingForRadialMenuKey) {
+        if (waitingForFloatingNotesKey || waitingForRadialMenuKey) {
             delay(40)
             shortcutFocusRequester.requestFocus()
         }
@@ -7314,9 +8008,10 @@ private fun AppSettingsDialog(
                 .focusable()
                 .onPreviewKeyEvent { event ->
                     val keyCode = event.nativeKeyEvent.keyCode
-                    if (waitingForFloatingNotesKey && event.type == KeyEventType.KeyDown && keyCode != KeyEvent.KEYCODE_UNKNOWN) {
-                        onSettingsChanged(settings.copy(floatingNotesKeyCode = keyCode))
-                        waitingForFloatingNotesKey = false
+                    if ((waitingForFloatingNotesKey || waitingForRadialMenuKey) &&
+                        event.type == KeyEventType.KeyDown && keyCode != KeyEvent.KEYCODE_UNKNOWN
+                    ) {
+                        captureShortcut(keyCode)
                         true
                     } else false
                 }
@@ -7330,13 +8025,8 @@ private fun AppSettingsDialog(
                             android.view.MotionEvent.BUTTON_SECONDARY or
                             android.view.MotionEvent.BUTTON_TERTIARY
                         )
-                    if (waitingForFloatingNotesKey && stylus && buttons != 0) {
-                        onSettingsChanged(
-                            settings.copy(
-                                floatingNotesKeyCode = floatingNotesShortcutCode(Integer.lowestOneBit(buttons)),
-                            ),
-                        )
-                        waitingForFloatingNotesKey = false
+                    if ((waitingForFloatingNotesKey || waitingForRadialMenuKey) && stylus && buttons != 0) {
+                        captureShortcut(floatingNotesShortcutCode(Integer.lowestOneBit(buttons)))
                     }
                     false
                 },
@@ -7486,7 +8176,16 @@ private fun AppSettingsDialog(
                         onImportFont = { fontPicker.launch(arrayOf("font/ttf", "font/otf", "application/x-font-ttf", "application/vnd.ms-opentype")) },
                         onRemoveFont = { path -> onSettingsChanged(settings.copy(customFonts = settings.customFonts - path)) },
                         waitingForFloatingNotesKey = waitingForFloatingNotesKey,
-                        onCaptureFloatingNotesKey = { waitingForFloatingNotesKey = true },
+                        onCaptureFloatingNotesKey = {
+                            waitingForRadialMenuKey = false
+                            waitingForFloatingNotesKey = true
+                        },
+                        waitingForRadialMenuKey = waitingForRadialMenuKey,
+                        onCaptureRadialMenuKey = {
+                            waitingForFloatingNotesKey = false
+                            waitingForRadialMenuKey = true
+                        },
+                        onCalibrateHoverShortcut = { showHoverCalibration = true },
                     )
                 }
             }
@@ -7509,6 +8208,114 @@ private fun AppSettingsDialog(
             },
         )
     }
+    if (showHoverCalibration) {
+        HoverShortcutCalibrationDialog(
+            settings = settings,
+            onSave = { calibration ->
+                onSettingsChanged(
+                    settings.copy(
+                        hoverShortcutEnabled = true,
+                        hoverTapImpulseThresholdDp = calibration.impulseThresholdDp,
+                        hoverTapMaximumDriftDp = calibration.maximumDriftDp,
+                        hoverTapMaximumIntervalMillis = calibration.maximumIntervalMillis.toInt(),
+                    ),
+                )
+                showHoverCalibration = false
+            },
+            onDismiss = { showHoverCalibration = false },
+        )
+    }
+}
+
+@Composable
+private fun HoverShortcutCalibrationDialog(
+    settings: AppSettings,
+    onSave: (HoverCalibrationResult) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val attempts = remember { mutableStateListOf<HoverCalibrationResult>() }
+    var calibrationView by remember { mutableStateOf<HoverCalibrationView?>(null) }
+    var hovering by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("Hover over the target, then record three double-taps.") }
+    val combined = HoverShortcutCalibrator.combine(attempts)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            Modifier.fillMaxWidth(.90f).fillMaxHeight(.82f),
+            shape = RoundedCornerShape(24.dp),
+            shadowElevation = 24.dp,
+        ) {
+            Column(
+                Modifier.fillMaxSize().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Calibrate hover double-tap", style = MaterialTheme.typography.headlineSmall)
+                        Text(
+                            "Keep the pen airborne and near the center. Tap the pen body twice when prompted.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "Close calibration") }
+                }
+                AndroidView(
+                    factory = { context ->
+                        HoverCalibrationView(context).also { view ->
+                            calibrationView = view
+                            view.onHoverChanged = { hovering = it }
+                            view.onAttemptFinished = { result ->
+                                if (result == null) {
+                                    status = "I couldn't separate two taps. Keep the pointer steadier and try again."
+                                } else {
+                                    attempts += result
+                                    status = if (attempts.size >= 3) {
+                                        "Calibration ready. Save it or record another sample."
+                                    } else {
+                                        "Captured ${attempts.size} of 3. Record another double-tap."
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(16.dp)),
+                )
+                Text(
+                    if (hovering) "Pen detected · $status" else "Waiting for pen hover · $status",
+                    color = if (hovering) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                combined?.let { result ->
+                    Text(
+                        "Detected ${result.detectedIntervalMillis} ms rhythm · " +
+                            "${"%.1f".format(result.impulseThresholdDp)} dp sensitivity",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } ?: Text(
+                    "Current fallback: ${"%.1f".format(settings.hoverTapImpulseThresholdDp)} dp · " +
+                        "${settings.hoverTapMaximumIntervalMillis} ms",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(
+                        onClick = {
+                            status = "Get ready…"
+                            calibrationView?.startAttempt()
+                        },
+                    ) { Text(if (attempts.isEmpty()) "Record attempt" else "Record again") }
+                    TextButton(
+                        enabled = combined != null,
+                        onClick = { combined?.let(onSave) },
+                    ) { Text("Save calibration") }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -7520,6 +8327,9 @@ private fun AppPreferencesSection(
     onRemoveFont: (String) -> Unit,
     waitingForFloatingNotesKey: Boolean,
     onCaptureFloatingNotesKey: () -> Unit,
+    waitingForRadialMenuKey: Boolean,
+    onCaptureRadialMenuKey: () -> Unit,
+    onCalibrateHoverShortcut: () -> Unit,
 ) {
     var editingColorPreset by remember { mutableStateOf<Pair<InkTool, Int>?>(null) }
     Column(
@@ -7595,6 +8405,55 @@ private fun AppPreferencesSection(
             }
             AppSettingsSection.Input -> {
                 Text(stringResource(R.string.input_gestures), style = MaterialTheme.typography.titleLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Hover double-tap radial menu")
+                        Text(
+                            "While the pen is hovering, tap its body twice. No screen contact is needed.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = settings.hoverShortcutEnabled,
+                        onCheckedChange = { onSettingsChanged(settings.copy(hoverShortcutEnabled = it)) },
+                    )
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Hover calibration", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Impulse ${"%.1f".format(settings.hoverTapImpulseThresholdDp)} dp · " +
+                                    "${settings.hoverTapMaximumIntervalMillis} ms window",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        TextButton(onClick = onCalibrateHoverShortcut) { Text("Calibrate") }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Radial menu button shortcut")
+                        Text(
+                            when {
+                                waitingForRadialMenuKey -> "Press a keyboard, remote, or stylus button…"
+                                settings.radialMenuKeyCode == KeyEvent.KEYCODE_UNKNOWN -> "Not assigned"
+                                else -> "Currently ${readableKeyName(settings.radialMenuKeyCode)}"
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = onCaptureRadialMenuKey) {
+                        Text(if (waitingForRadialMenuKey) "Listening…" else "Change key")
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Floating notes shortcut")

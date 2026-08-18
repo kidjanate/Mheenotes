@@ -55,4 +55,6 @@ dependencies {
     implementation(libs.androidx.ink.storage)
     implementation(libs.androidx.input.motionprediction)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    testImplementation(libs.junit)
 }

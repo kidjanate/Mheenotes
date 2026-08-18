@@ -2,7 +2,10 @@ package com.mheenotes.app.editor
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.RectF
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.InputDevice
@@ -76,8 +79,13 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
     private var fingerTapPointerId: Int? = null
     private var fingerTapStart: SingleFingerGesture? = null
     private var fingerTapMaximumDistance = 0f
+    private var fingerLongPressPointerId: Int? = null
+    private var fingerLongPressStart: SingleFingerGesture? = null
+    private var suppressFingerTapForLongPress = false
     private var activeFingerObjectGesture = FingerObjectGesture.Canvas
     private var observedStylusButtonState = 0
+    private var hoverSample: StylusHoverSample? = null
+    private var lastHoverEventSignature: Triple<Long, Float, Float>? = null
     private var fingerVelocityTracker: VelocityTracker? = null
     private val fingerScroller = OverScroller(context)
     private val minimumFlingVelocity = ViewConfiguration.get(context).scaledMinimumFlingVelocity
@@ -115,6 +123,7 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
     var minimumScale = 1f
     var stylusInputEnabled = true
     var alwaysRecognizeActionGestures = false
+    var showHoverDiagnostics = false
     var style = StrokeStyle()
     var onMotionEventObserved: (MotionEvent) -> Unit = {}
     var onStrokeFinished: (FinishedInkStroke) -> Unit = {}
@@ -126,6 +135,9 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
     var onCanvasTouched: () -> Unit = {}
     var onCanvasTouchAt: (PagePoint) -> Unit = {}
     var onFingerTap: (PagePoint) -> Unit = {}
+    var onFingerLongPress: (PagePoint) -> Unit = {}
+    var onStylusHover: (StylusHoverSample) -> Unit = {}
+    var onStylusHoverExit: () -> Unit = {}
     var onFingerObjectDown: (PagePoint) -> FingerObjectGesture = { FingerObjectGesture.Canvas }
     var onFingerObjectDrag: (Float, Float) -> Unit = { _, _ -> }
     var onFingerObjectUp: () -> Unit = {}
@@ -133,6 +145,15 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
     var onObjectStylusDrag: (Float, Float) -> Unit = { _, _ -> }
     var onObjectStylusUp: () -> Unit = {}
     var onStylusButtonPressed: (Int) -> Unit = {}
+    private val triggerFingerLongPress = Runnable {
+        val start = fingerLongPressStart ?: return@Runnable
+        if (fingerLongPressPointerId == null || activeFingerObjectGesture != FingerObjectGesture.Canvas) return@Runnable
+        suppressFingerTapForLongPress = true
+        activeFingerObjectGesture = FingerObjectGesture.SelectOnly
+        singleFingerGesture = null
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        onFingerLongPress(viewport.toPage(start.x, start.y))
+    }
 
     init {
         setWillNotDraw(false)
@@ -166,13 +187,13 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
         )
         inkView.setOnTouchListener { _, event -> handleTouch(event) }
         inkView.setOnGenericMotionListener { _, event ->
-            observeStylusButtons(event)
+            handleGenericMotion(event)
             false
         }
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
-        observeStylusButtons(event)
+        handleGenericMotion(event)
         return super.onGenericMotionEvent(event)
     }
 
@@ -186,6 +207,7 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
                 canvas.restoreToCount(saveCount)
             }
         }
+        if (showHoverDiagnostics) hoverSample?.let { drawHoverDiagnostics(canvas, it) }
     }
 
     fun removeFinishedStroke(id: InProgressStrokeId) {
@@ -198,8 +220,13 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
     private fun handleTouch(event: MotionEvent): Boolean {
         observeStylusButtons(event)
         onMotionEventObserved(event)
+        observeFingerLongPress(event)
         observeFingerTap(event)
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            if (event.isStylus(event.actionIndex)) {
+                hoverSample = null
+                invalidate()
+            }
             stopFingerFling()
             onCanvasTouched()
             val point = viewport.toPage(event.x, event.y)
@@ -287,6 +314,91 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
         val newlyPressed = supportedButtons and observedStylusButtonState.inv()
         observedStylusButtonState = supportedButtons
         if (newlyPressed != 0) onStylusButtonPressed(Integer.lowestOneBit(newlyPressed))
+    }
+
+    private fun handleGenericMotion(event: MotionEvent) {
+        observeStylusButtons(event)
+        onMotionEventObserved(event)
+        if (!event.isFromSource(InputDevice.SOURCE_STYLUS) &&
+            (0 until event.pointerCount).none { index ->
+                event.getToolType(index) == MotionEvent.TOOL_TYPE_STYLUS ||
+                    event.getToolType(index) == MotionEvent.TOOL_TYPE_ERASER
+            }
+        ) return
+        when (event.actionMasked) {
+            MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> {
+                val index = event.actionIndex.coerceIn(0, event.pointerCount - 1)
+                val signature = Triple(event.eventTime, event.getX(index), event.getY(index))
+                if (signature == lastHoverEventSignature) return
+                lastHoverEventSignature = signature
+                val sample = StylusHoverSample(
+                    eventTimeMillis = event.eventTime,
+                    x = event.getX(index),
+                    y = event.getY(index),
+                    distance = event.getAxisValue(MotionEvent.AXIS_DISTANCE, index).takeIf(Float::isFinite),
+                    tiltRadians = event.getAxisValue(MotionEvent.AXIS_TILT, index).takeIf(Float::isFinite),
+                    orientationRadians = event.getAxisValue(MotionEvent.AXIS_ORIENTATION, index).takeIf(Float::isFinite),
+                    deviceDescriptor = InputDevice.getDevice(event.deviceId)?.descriptor.orEmpty(),
+                )
+                hoverSample = sample
+                onStylusHover(sample)
+                if (showHoverDiagnostics) invalidate()
+            }
+            MotionEvent.ACTION_HOVER_EXIT -> {
+                hoverSample = null
+                lastHoverEventSignature = null
+                onStylusHoverExit()
+                invalidate()
+            }
+        }
+    }
+
+    private fun drawHoverDiagnostics(canvas: Canvas, sample: StylusHoverSample) {
+        val scale = resources.displayMetrics.density
+        val radius = 12f * scale
+        val accent = Color.rgb(77, 171, 247)
+        val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(45, 77, 171, 247) }
+        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = accent
+            style = Paint.Style.STROKE
+            strokeWidth = 1.8f * scale
+        }
+        canvas.drawCircle(sample.x, sample.y, radius * 1.65f, glow)
+        canvas.drawCircle(sample.x, sample.y, radius, ring)
+        canvas.drawLine(sample.x - radius * .55f, sample.y, sample.x + radius * .55f, sample.y, ring)
+        canvas.drawLine(sample.x, sample.y - radius * .55f, sample.x, sample.y + radius * .55f, ring)
+        sample.orientationRadians?.let { angle ->
+            canvas.drawLine(
+                sample.x,
+                sample.y,
+                sample.x + kotlin.math.cos(angle) * radius * 1.45f,
+                sample.y + kotlin.math.sin(angle) * radius * 1.45f,
+                ring,
+            )
+        }
+        val label = buildString {
+            append("x ")
+            append(sample.x.toInt())
+            append("  y ")
+            append(sample.y.toInt())
+            sample.distance?.let { append("  d "); append(String.format("%.2f", it)) }
+        }
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 11f * scale
+        }
+        val padding = 7f * scale
+        val labelWidth = textPaint.measureText(label) + padding * 2f
+        val labelHeight = 25f * scale
+        val left = (sample.x + radius * 1.35f).coerceAtMost(width - labelWidth - padding)
+        val top = (sample.y - labelHeight - radius * .35f).coerceAtLeast(padding)
+        canvas.drawRoundRect(
+            RectF(left, top, left + labelWidth, top + labelHeight),
+            8f * scale,
+            8f * scale,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(220, 22, 27, 34) },
+        )
+        canvas.drawText(label, left + padding, top + 17f * scale, textPaint)
     }
 
     private fun startObjectStylusIfHandled(event: MotionEvent): Boolean {
@@ -585,6 +697,9 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
         if (activeObjectStylusPointerId != null) onObjectStylusUp()
         activeObjectStylusPointerId = null
         objectStylusPosition = null
+        removeCallbacks(triggerFingerLongPress)
+        fingerLongPressPointerId = null
+        fingerLongPressStart = null
         removeCallbacks(deliverFingerScroll)
         stopFingerFling()
         recycleFingerVelocityTracker()
@@ -642,18 +757,56 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
             MotionEvent.ACTION_UP -> {
                 val pointerId = fingerTapPointerId
                 if (pointerId != null && event.getPointerId(event.actionIndex) == pointerId &&
-                    fingerTapMaximumDistance <= ViewConfiguration.get(context).scaledTouchSlop * 1.25f
+                    fingerTapMaximumDistance <= ViewConfiguration.get(context).scaledTouchSlop * 1.25f &&
+                    !suppressFingerTapForLongPress
                 ) {
                     onFingerTap(viewport.toPage(event.x, event.y))
                 }
                 fingerTapPointerId = null
                 fingerTapStart = null
                 fingerTapMaximumDistance = 0f
+                suppressFingerTapForLongPress = false
             }
             MotionEvent.ACTION_CANCEL -> {
                 fingerTapPointerId = null
                 fingerTapStart = null
                 fingerTapMaximumDistance = 0f
+                suppressFingerTapForLongPress = false
+            }
+        }
+    }
+
+    private fun observeFingerLongPress(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> if (event.getToolType(event.actionIndex) == MotionEvent.TOOL_TYPE_FINGER) {
+                removeCallbacks(triggerFingerLongPress)
+                fingerLongPressPointerId = event.getPointerId(event.actionIndex)
+                fingerLongPressStart = SingleFingerGesture(event.x, event.y)
+                suppressFingerTapForLongPress = false
+                postDelayed(triggerFingerLongPress, ViewConfiguration.getLongPressTimeout().toLong())
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                removeCallbacks(triggerFingerLongPress)
+                fingerLongPressPointerId = null
+                fingerLongPressStart = null
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val pointerId = fingerLongPressPointerId ?: return
+                val index = event.findPointerIndex(pointerId)
+                val start = fingerLongPressStart
+                if (index < 0 || start == null ||
+                    hypot(event.getX(index) - start.x, event.getY(index) - start.y) >
+                    ViewConfiguration.get(context).scaledTouchSlop * 1.25f
+                ) {
+                    removeCallbacks(triggerFingerLongPress)
+                    fingerLongPressPointerId = null
+                    fingerLongPressStart = null
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(triggerFingerLongPress)
+                fingerLongPressPointerId = null
+                fingerLongPressStart = null
             }
         }
     }

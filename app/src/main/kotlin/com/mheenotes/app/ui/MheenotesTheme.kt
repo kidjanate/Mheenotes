@@ -38,6 +38,11 @@ data class AppSettings(
     val actionActivationMode: ActionActivationMode = ActionActivationMode.Explicit,
     val drawAndHoldEnabled: Boolean = true,
     val floatingNotesKeyCode: Int = KeyEvent.KEYCODE_F8,
+    val radialMenuKeyCode: Int = KeyEvent.KEYCODE_UNKNOWN,
+    val hoverShortcutEnabled: Boolean = true,
+    val hoverTapImpulseThresholdDp: Float = 2.2f,
+    val hoverTapMaximumDriftDp: Float = 28f,
+    val hoverTapMaximumIntervalMillis: Int = 520,
     val toolbarDock: String = "Top",
     val uiScale: Float = 1f,
     val askBeforeInsertingPage: Boolean = true,
@@ -156,6 +161,11 @@ class AppSettingsStore(context: Context) {
                 ?: ActionActivationMode.Explicit,
             drawAndHoldEnabled = preferences.getBoolean("drawAndHoldEnabled", true),
             floatingNotesKeyCode = preferences.getInt("floatingNotesKeyCode", KeyEvent.KEYCODE_F8),
+            radialMenuKeyCode = preferences.getInt("radialMenuKeyCode", KeyEvent.KEYCODE_UNKNOWN),
+            hoverShortcutEnabled = preferences.getBoolean("hoverShortcutEnabled", true),
+            hoverTapImpulseThresholdDp = preferences.getFloat("hoverTapImpulseThresholdDp", 2.2f).coerceIn(.7f, 14f),
+            hoverTapMaximumDriftDp = preferences.getFloat("hoverTapMaximumDriftDp", 28f).coerceIn(12f, 56f),
+            hoverTapMaximumIntervalMillis = preferences.getInt("hoverTapMaximumIntervalMillis", 520).coerceIn(300, 800),
             toolbarDock = preferences.getString("toolbarDock", "Top") ?: "Top",
             uiScale = preferences.getFloat("uiScale", 1f).coerceIn(.75f, 1.35f),
             askBeforeInsertingPage = preferences.getBoolean("askBeforeInsertingPage", true),
@@ -191,6 +201,11 @@ class AppSettingsStore(context: Context) {
             .putString("actionActivationMode", settings.actionActivationMode.name)
             .putBoolean("drawAndHoldEnabled", settings.drawAndHoldEnabled)
             .putInt("floatingNotesKeyCode", settings.floatingNotesKeyCode)
+            .putInt("radialMenuKeyCode", settings.radialMenuKeyCode)
+            .putBoolean("hoverShortcutEnabled", settings.hoverShortcutEnabled)
+            .putFloat("hoverTapImpulseThresholdDp", settings.hoverTapImpulseThresholdDp)
+            .putFloat("hoverTapMaximumDriftDp", settings.hoverTapMaximumDriftDp)
+            .putInt("hoverTapMaximumIntervalMillis", settings.hoverTapMaximumIntervalMillis)
             .putString("toolbarDock", settings.toolbarDock)
             .putFloat("uiScale", settings.uiScale)
             .putBoolean("askBeforeInsertingPage", settings.askBeforeInsertingPage)

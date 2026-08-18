@@ -37,6 +37,7 @@ data class ImportedPdf(
 
 data class PdfSearchHit(val pageIndex: Int, val matchCount: Int)
 data class PdfOutlineLink(val sourcePageIndex: Int, val targetPageIndex: Int)
+data class PdfTextAtPoint(val text: String, val bounds: RectF)
 
 /** All PDF I/O is serialized off the UI thread because PdfRenderer opens one page at a time. */
 class PdfServices(
@@ -118,6 +119,50 @@ class PdfServices(
                 }
             })
         }
+    }
+
+    fun textNear(
+        file: File,
+        pageIndex: Int,
+        xFraction: Float,
+        yFraction: Float,
+        result: (Result<PdfTextAtPoint?>) -> Unit,
+    ) {
+        worker.execute {
+            result(runCatching {
+                if (Build.VERSION.SDK_INT < 35) return@runCatching null
+                openRenderer(file).use { renderer ->
+                    renderer.openPage(pageIndex).use { page ->
+                        val x = xFraction.coerceIn(0f, 1f) * page.width
+                        val y = yFraction.coerceIn(0f, 1f) * page.height
+                        val threshold = minOf(page.width, page.height) * .045f
+                        page.textContents.asSequence()
+                            .filter { it.text.isNotBlank() && it.bounds.isNotEmpty() }
+                            .mapNotNull { content ->
+                                content.bounds.minByOrNull { bounds -> distanceTo(bounds, x, y) }
+                                    ?.let { bounds -> Triple(content.text.trim(), bounds, distanceTo(bounds, x, y)) }
+                            }
+                            .minByOrNull { it.third }
+                            ?.takeIf { it.third <= threshold }
+                            ?.let { PdfTextAtPoint(it.first, it.second) }
+                    }
+                }
+            })
+        }
+    }
+
+    private fun distanceTo(bounds: RectF, x: Float, y: Float): Float {
+        val dx = when {
+            x < bounds.left -> bounds.left - x
+            x > bounds.right -> x - bounds.right
+            else -> 0f
+        }
+        val dy = when {
+            y < bounds.top -> bounds.top - y
+            y > bounds.bottom -> y - bounds.bottom
+            else -> 0f
+        }
+        return kotlin.math.hypot(dx, dy)
     }
 
     private fun openRenderer(file: File): PdfRenderer = PdfRenderer(
