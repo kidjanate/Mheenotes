@@ -109,6 +109,8 @@ import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.FlipToFront
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.CloseFullscreen
 import androidx.compose.material.icons.outlined.Gesture
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.History
@@ -243,14 +245,32 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.TransformOrigin
 import com.mheenotes.app.document.ImportedPdf
 import com.mheenotes.app.MainActivity
 import com.mheenotes.app.R
@@ -260,6 +280,8 @@ import com.mheenotes.app.ui.AppSettings
 import com.mheenotes.app.ui.AppThemePreset
 import com.mheenotes.app.ui.ActionActivationMode
 import com.mheenotes.app.ui.defaultThemePresets
+import com.mheenotes.app.ui.shimmer
+import com.mheenotes.app.ui.shimmerPlaceholder
 import com.mheenotes.app.widget.InkActivityTracker
 import com.mheenotes.app.widget.RecentNotesWidgetProvider
 import com.mheenotes.app.editor.CommittedInkStroke
@@ -2015,7 +2037,16 @@ fun MheenotesEditor(
     ) {
         AnimatedContent(
             targetState = screen,
-            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+            transitionSpec = {
+                (fadeIn(tween(320, easing = FastOutSlowInEasing)) +
+                    slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it / 14 } +
+                    scaleIn(initialScale = 0.96f, animationSpec = tween(320, easing = FastOutSlowInEasing))
+                ).togetherWith(
+                    fadeOut(tween(200)) +
+                    slideOutVertically(tween(200)) { -it / 18 } +
+                    scaleOut(targetScale = 1.02f, animationSpec = tween(200))
+                )
+            },
             label = "library-editor-transition",
         ) { activeScreen -> if (activeScreen == AppScreen.Library) {
             LibraryScreen(
@@ -2400,7 +2431,7 @@ private fun LibraryScreen(
     }
     BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val compact = maxWidth < 720.dp
-        val sidebarWidth = if (compact) 72.dp else 220.dp
+        val sidebarWidth by animateDpAsState(if (compact) 72.dp else 220.dp, tween(300, easing = FastOutSlowInEasing), label = "sidebar-width")
         Row(Modifier.fillMaxSize()) {
             Column(
                 Modifier.width(sidebarWidth).fillMaxHeight().background(MaterialTheme.colorScheme.surface)
@@ -2457,8 +2488,23 @@ private fun LibraryScreen(
                             LibrarySortAndLayout(sortMenu, { sortMenu = it }, sort, { sort = it }, layout, { layout = it })
                         }
                         OutlinedTextField(
-                            query, { query = it }, singleLine = true,
-                            leadingIcon = { Icon(Icons.Outlined.Search, null) }, placeholder = { Text(stringResource(R.string.search_notes)) },
+                            value = query,
+                            onValueChange = { query = it },
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Outlined.Search, null, tint = MaterialTheme.colorScheme.primary) },
+                            trailingIcon = {
+                                AnimatedVisibility(
+                                    visible = query.isNotEmpty(),
+                                    enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.7f),
+                                    exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.7f),
+                                ) {
+                                    IconButton(onClick = { query = "" }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Outlined.Close, "Clear search", modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            },
+                            placeholder = { Text(stringResource(R.string.search_notes)) },
+                            shape = RoundedCornerShape(100),
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -2469,8 +2515,24 @@ private fun LibraryScreen(
                             Text("${visibleTabs.size} notebook${if (visibleTabs.size == 1) "" else "s"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         OutlinedTextField(
-                            query, { query = it }, singleLine = true, leadingIcon = { Icon(Icons.Outlined.Search, null) },
-                            placeholder = { Text(stringResource(R.string.search_notes)) }, modifier = Modifier.width(280.dp),
+                            value = query,
+                            onValueChange = { query = it },
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Outlined.Search, null, tint = MaterialTheme.colorScheme.primary) },
+                            trailingIcon = {
+                                AnimatedVisibility(
+                                    visible = query.isNotEmpty(),
+                                    enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.7f),
+                                    exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.7f),
+                                ) {
+                                    IconButton(onClick = { query = "" }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Outlined.Close, "Clear search", modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            },
+                            placeholder = { Text(stringResource(R.string.search_notes)) },
+                            shape = RoundedCornerShape(100),
+                            modifier = Modifier.width(300.dp),
                         )
                         IconButton(onClick = onOpenNote) { Icon(Icons.Outlined.FileOpen, stringResource(R.string.open_notebook)) }
                         IconButton(onClick = onImportPdf) { Icon(Icons.Outlined.PictureAsPdf, stringResource(R.string.import_pdf)) }
@@ -2487,8 +2549,44 @@ private fun LibraryScreen(
                 }
                 if (visibleTabs.isEmpty() && folderCards.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        val pulseTransition = rememberInfiniteTransition(label = "empty-pulse")
+                        val pulseAlpha by pulseTransition.animateFloat(
+                            initialValue = 0.5f, targetValue = 1f,
+                            animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                            label = "empty-pulse-alpha",
+                        )
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(stringResource(if (section == LibrarySection.Trash) R.string.trash_empty else R.string.no_notebooks), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(
+                                if (section == LibrarySection.Trash) Icons.Outlined.Delete else Icons.Outlined.Edit,
+                                null,
+                                Modifier.size(72.dp).graphicsLayer { alpha = 0.18f },
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                stringResource(if (section == LibrarySection.Trash) R.string.trash_empty else R.string.no_notebooks),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (section != LibrarySection.Trash) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "Tap + to create your first notebook",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                )
+                                Spacer(Modifier.height(24.dp))
+                                Surface(
+                                    onClick = { showCreate = true },
+                                    shape = RoundedCornerShape(50),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = pulseAlpha),
+                                    modifier = Modifier.size(56.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Outlined.Add, "Create notebook", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            }
                         }
                     }
                 } else if (layout == LibraryLayout.Grid || folderCards.isNotEmpty()) {
@@ -2661,15 +2759,55 @@ private fun LibraryScreen(
                 }
             }
         }
-        Row(
+        var fabExpanded by remember { mutableStateOf(false) }
+        val fabRotation by animateFloatAsState(
+            if (fabExpanded) 45f else 0f, tween(250, easing = FastOutSlowInEasing), label = "fab-rotation",
+        )
+        if (fabExpanded) {
+            Box(
+                Modifier.fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.24f))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { fabExpanded = false },
+            )
+        }
+        Column(
             modifier = Modifier.align(Alignment.BottomEnd).padding(if (compact) 16.dp else 28.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            FloatingActionButton(onClick = { showNewFolder = true }) {
-                Icon(Icons.Outlined.CreateNewFolder, stringResource(R.string.create_folder))
+            AnimatedVisibility(
+                visible = fabExpanded,
+                enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.6f, animationSpec = tween(260, easing = BackOutEasing)),
+                exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.6f, animationSpec = tween(120)),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
+                        Text("New folder", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
+                    }
+                    FloatingActionButton(onClick = { fabExpanded = false; showNewFolder = true }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Outlined.CreateNewFolder, stringResource(R.string.create_folder))
+                    }
+                }
             }
-            FloatingActionButton(onClick = { showCreate = true }) {
-                Icon(Icons.Outlined.NoteAdd, stringResource(R.string.create_notebook))
+            AnimatedVisibility(
+                visible = fabExpanded,
+                enter = fadeIn(tween(180, delayMillis = 40)) + scaleIn(initialScale = 0.6f, animationSpec = tween(260, delayMillis = 40, easing = BackOutEasing)),
+                exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.6f, animationSpec = tween(120)),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
+                        Text("New notebook", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
+                    }
+                    FloatingActionButton(onClick = { fabExpanded = false; showCreate = true }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Outlined.NoteAdd, stringResource(R.string.create_notebook))
+                    }
+                }
+            }
+            FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
+                Icon(
+                    Icons.Outlined.Add, "Create",
+                    modifier = Modifier.graphicsLayer { rotationZ = fabRotation },
+                )
             }
         }
     }
@@ -3099,9 +3237,13 @@ private fun NavigationItem(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) .965f else 1f, tween(120), label = "nav-press")
+    val navBg by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        tween(220), label = "nav-bg",
+    )
     Surface(
         onClick = onClick,
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        color = navBg,
         shape = RoundedCornerShape(12.dp),
         modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale },
         interactionSource = interaction,
@@ -3412,7 +3554,15 @@ private fun NotebookCard(
     ) {
         Column {
             Surface(
-                modifier = Modifier.fillMaxWidth().aspectRatio(.76f),
+                modifier = Modifier.fillMaxWidth().aspectRatio(.76f)
+                    .drawBehind {
+                        if (hovered) drawRoundRect(
+                            brush = Brush.linearGradient(
+                                listOf(Color.White.copy(alpha = 0.10f), Color.White.copy(alpha = 0.02f)),
+                            ),
+                            cornerRadius = CornerRadius(0f),
+                        )
+                    },
                 color = Color(tab.coverArgb),
             ) {
                 Box(
@@ -3446,7 +3596,11 @@ private fun NotebookCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        if (tab.favorite) Icon(Icons.Outlined.Star, null, Modifier.padding(start = 4.dp).size(15.dp), tint = MaterialTheme.colorScheme.primary)
+                        if (tab.favorite) {
+                            val starScale = remember(tab.id) { Animatable(1f) }
+                            LaunchedEffect(tab.favorite) { starScale.animateTo(1.35f, tween(120)); starScale.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = 600f)) }
+                            Icon(Icons.Outlined.Star, null, Modifier.padding(start = 4.dp).size(15.dp).graphicsLayer { scaleX = starScale.value; scaleY = starScale.value }, tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                     Text("${tab.pages.size} pages${tab.folderPath?.let { " · $it" }.orEmpty()}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 }
@@ -3590,6 +3744,7 @@ private fun EditorScreen(
     onStylusButtonPressed: (Int) -> Unit,
 ) {
     var sidebarVisible by remember { mutableStateOf(true) }
+    var zenMode by rememberSaveable { mutableStateOf(false) }
     var strokeSizePreview by remember { mutableStateOf<StrokeSizePreview?>(null) }
     var showPdfNavigation by remember { mutableStateOf(false) }
     fun executeAction(action: MappedAction) {
@@ -3615,43 +3770,63 @@ private fun EditorScreen(
             MappedAction.WidthPreset3 -> appSettings.widthPresets(tab.session.selectedTool).getOrNull(2)?.let { tab.session.updateToolWidth(tab.session.selectedTool, it) }
         }
     }
-    Column(Modifier.fillMaxSize()) {
-        DocumentTabs(tabs, selectedTabId, onSelectTab, onMoveTab, onCloseTab)
-        EditorCommandBar(
-            tab, onHome, { sidebarVisible = !sidebarVisible }, onImportPdf, onExportPdf,
-            onExportImage, onExportNotebook,
-            { showPdfNavigation = true }, onSettings,
-        )
-        if (dockEdge == DockEdge.Top) ToolPalette(
-            false, tab.session, mode, onMode, onSettings,
-            onStrokeSizePreview = { strokeSizePreview = it },
-            appSettings = appSettings,
-            onAppSettingsChanged = onAppSettingsChanged,
-        )
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .5f))
-        Row(Modifier.weight(1f).fillMaxWidth()) {
-            if (dockEdge == DockEdge.Left) ToolPalette(
-                true, tab.session, mode, onMode, onSettings,
-                onStrokeSizePreview = { strokeSizePreview = it },
-                appSettings = appSettings,
-                onAppSettingsChanged = onAppSettingsChanged,
-            )
-            if (sidebarVisible) PageThumbnailRail(tab, allNotebooks, appSettings, onAppSettingsChanged)
-            ContinuousPageCanvas(
-                tab, mode, actionMappings, actionRecognizer, ::executeAction,
-                strokeSizePreview, appSettings.actionActivationMode, appSettings.drawAndHoldEnabled,
-                appSettings.customFonts, onStylusButtonPressed, onImage,
-                showDiagnostics, appSettings, radialMenuRequestGeneration,
-                Modifier.weight(1f),
-            )
-            if (showDiagnostics) DiagnosticsPanel(tab.session)
-            if (dockEdge == DockEdge.Right) ToolPalette(
-                true, tab.session, mode, onMode, onSettings,
-                onStrokeSizePreview = { strokeSizePreview = it },
-                appSettings = appSettings,
-                onAppSettingsChanged = onAppSettingsChanged,
-            )
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            AnimatedVisibility(
+                visible = !zenMode,
+                enter = expandVertically(tween(260, easing = FastOutSlowInEasing)) + fadeIn(tween(260)),
+                exit = shrinkVertically(tween(200)) + fadeOut(tween(200)),
+            ) {
+                Column {
+                    DocumentTabs(tabs, selectedTabId, onSelectTab, onMoveTab, onCloseTab)
+                    EditorCommandBar(
+                        tab, onHome, { sidebarVisible = !sidebarVisible }, onImportPdf, onExportPdf,
+                        onExportImage, onExportNotebook,
+                        { showPdfNavigation = true }, onSettings,
+                        zenMode = zenMode, onToggleZenMode = { zenMode = !zenMode },
+                    )
+                    if (dockEdge == DockEdge.Top) ToolPalette(
+                        false, tab.session, mode, onMode, onSettings,
+                        onStrokeSizePreview = { strokeSizePreview = it },
+                        appSettings = appSettings,
+                        onAppSettingsChanged = onAppSettingsChanged,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .5f))
+                }
+            }
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                if (dockEdge == DockEdge.Left) ToolPalette(
+                    true, tab.session, mode, onMode, onSettings,
+                    onStrokeSizePreview = { strokeSizePreview = it },
+                    appSettings = appSettings,
+                    onAppSettingsChanged = onAppSettingsChanged,
+                )
+                AnimatedVisibility(
+                    visible = sidebarVisible && !zenMode,
+                    enter = slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(280)),
+                    exit = slideOutHorizontally(tween(200)) { -it } + fadeOut(tween(200)),
+                ) { PageThumbnailRail(tab, allNotebooks, appSettings, onAppSettingsChanged) }
+                ContinuousPageCanvas(
+                    tab, mode, actionMappings, actionRecognizer, ::executeAction,
+                    strokeSizePreview, appSettings.actionActivationMode, appSettings.drawAndHoldEnabled,
+                    appSettings.customFonts, onStylusButtonPressed, onImage,
+                    showDiagnostics, appSettings, radialMenuRequestGeneration,
+                    Modifier.weight(1f),
+                )
+                if (showDiagnostics) DiagnosticsPanel(tab.session)
+                if (dockEdge == DockEdge.Right) ToolPalette(
+                    true, tab.session, mode, onMode, onSettings,
+                    onStrokeSizePreview = { strokeSizePreview = it },
+                    appSettings = appSettings,
+                    onAppSettingsChanged = onAppSettingsChanged,
+                )
+            }
         }
+        ZenModeFloatingToggle(
+            zenMode = zenMode,
+            onToggle = { zenMode = false },
+            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+        )
     }
     if (showPdfNavigation) PdfNavigationDialog(tab, onDismiss = { showPdfNavigation = false })
 }
@@ -3745,6 +3920,7 @@ private fun EditorCommandBar(
     tab: EditorTab, onHome: () -> Unit, onSidebar: () -> Unit,
     onImportPdf: () -> Unit, onExportPdf: () -> Unit, onExportImage: () -> Unit,
     onExportNotebook: () -> Unit, onPdfNavigation: () -> Unit, onSettings: () -> Unit,
+    zenMode: Boolean = false, onToggleZenMode: () -> Unit = {},
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
@@ -3755,8 +3931,11 @@ private fun EditorCommandBar(
         IconButton(onClick = onSidebar, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.ViewSidebar, "Toggle page thumbnails") }
         Text(tab.title, Modifier.padding(horizontal = 8.dp).weight(1f), style = MaterialTheme.typography.titleSmall)
         SaveStatusIcon(tab.session.saveStatus)
-        IconButton(onClick = tab::undo, enabled = tab.canUndo, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.Undo, "Undo") }
-        IconButton(onClick = tab::redo, enabled = tab.canRedo, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.Redo, "Redo") }
+        val undoAlpha by animateFloatAsState(if (tab.canUndo) 1f else 0.3f, tween(200), label = "undo-alpha")
+        val redoAlpha by animateFloatAsState(if (tab.canRedo) 1f else 0.3f, tween(200), label = "redo-alpha")
+        IconButton(onClick = tab::undo, enabled = tab.canUndo, modifier = Modifier.size(40.dp).graphicsLayer { alpha = undoAlpha }) { Icon(Icons.Outlined.Undo, "Undo") }
+        IconButton(onClick = tab::redo, enabled = tab.canRedo, modifier = Modifier.size(40.dp).graphicsLayer { alpha = redoAlpha }) { Icon(Icons.Outlined.Redo, "Redo") }
+        IconButton(onClick = onToggleZenMode, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.Fullscreen, "Zen full-screen mode") }
         Box {
             IconButton(onClick = { menu = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.MoreVert, "Document menu") }
             DropdownMenu(
@@ -3766,6 +3945,7 @@ private fun EditorCommandBar(
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surface),
             ) {
+                MenuItem(Icons.Outlined.Fullscreen, "Zen full-screen mode") { menu = false; onToggleZenMode() }
                 MenuItem(Icons.Outlined.PictureAsPdf, "Import PDF") { menu = false; onImportPdf() }
                 MenuItem(Icons.Outlined.PictureAsPdf, "Export PDF") { menu = false; onExportPdf() }
                 MenuItem(Icons.Outlined.Image, "Export current page image") { menu = false; onExportImage() }
@@ -3951,11 +4131,19 @@ private fun ToolIcon(
         tooltip = { PlainTooltip { Text(description) } },
         state = tooltipState,
     ) {
+        val backgroundColor by animateColorAsState(
+            if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            tween(200),
+            label = "tool-bg",
+        )
+        val toolScale by animateFloatAsState(
+            if (selected) 1f else 0.95f, tween(160), label = "tool-scale",
+        )
         Surface(
             onClick = onClick,
-            color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            color = backgroundColor,
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.size(46.dp).then(hoverModifier),
+            modifier = Modifier.size(46.dp).graphicsLayer { scaleX = toolScale; scaleY = toolScale }.then(hoverModifier),
         ) { Box(contentAlignment = Alignment.Center) { Icon(icon, description, Modifier.size(23.dp)) } }
     }
 }
@@ -3972,26 +4160,39 @@ private fun StrokeWidthPreset(
     onDragEnd: () -> Unit,
 ) {
     val diameter = (8f + 16f * widthMicrons / maximumWidthMicrons).dp
-    val outlineColor = MaterialTheme.colorScheme.onSurface
+    val outlineColor = MaterialTheme.colorScheme.primary
+    val presetBg by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        tween(200),
+        label = "preset-bg",
+    )
+    val scale by animateFloatAsState(
+        if (selected) 1.08f else 1f,
+        spring(dampingRatio = 0.65f, stiffness = 500f),
+        label = "preset-scale",
+    )
     Surface(
         onClick = onClick,
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        color = presetBg,
         shape = RoundedCornerShape(50),
-        modifier = Modifier.size(34.dp).pointerInput(maximumWidthMicrons) {
-            detectVerticalDragGestures(
-                onDragStart = { onDragStart() },
-                onDragCancel = onDragEnd,
-                onDragEnd = onDragEnd,
-            ) { change, amount ->
-                change.consume()
-                onDrag(amount)
-            }
-        },
+        modifier = Modifier
+            .size(34.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .pointerInput(maximumWidthMicrons) {
+                detectVerticalDragGestures(
+                    onDragStart = { onDragStart() },
+                    onDragCancel = onDragEnd,
+                    onDragEnd = onDragEnd,
+                ) { change, amount ->
+                    change.consume()
+                    onDrag(amount)
+                }
+            },
     ) {
         Box(contentAlignment = Alignment.Center) {
             Canvas(Modifier.size(diameter)) {
                 drawCircle(color)
-                if (selected) drawCircle(outlineColor, style = Stroke(1.5.dp.toPx()))
+                if (selected) drawCircle(outlineColor, style = Stroke(2.dp.toPx()))
             }
         }
     }
@@ -4004,13 +4205,32 @@ private fun ColorSwatch(
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
+    val size by animateDpAsState(
+        if (selected) 32.dp else 26.dp,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 500f),
+        label = "color-swatch-size",
+    )
+    val borderWidth by animateDpAsState(
+        if (selected) 3.dp else 1.dp,
+        animationSpec = tween(150),
+        label = "color-swatch-border",
+    )
+    val scale by animateFloatAsState(
+        if (selected) 1.08f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 600f),
+        label = "color-swatch-scale",
+    )
     Surface(
         shape = RoundedCornerShape(50),
         color = color,
         modifier = Modifier
-            .size(if (selected) 30.dp else 26.dp)
+            .size(size)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        border = androidx.compose.foundation.BorderStroke(if (selected) 3.dp else 1.dp, MaterialTheme.colorScheme.onSurface),
+        border = androidx.compose.foundation.BorderStroke(
+            borderWidth,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+        ),
     ) {}
 }
 
@@ -4409,7 +4629,11 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
     val thumbnailBitmap = page.thumbnail
     val pdfBackground = page.pdfBackground
 
-    Canvas(modifier.background(Color(page.backgroundArgb))) {
+    Canvas(
+        modifier
+            .shimmerPlaceholder(thumbnailBitmap == null && pdfBackground == null)
+            .background(Color(page.backgroundArgb)),
+    ) {
         val normalizedRotation = ((page.rotation % 360) + 360) % 360
         val quarterTurn = normalizedRotation == 90 || normalizedRotation == 270
         val contentWidth = if (quarterTurn) size.height else size.width
@@ -6897,6 +7121,58 @@ private fun ContinuousPageCanvas(
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp).zIndex(40f),
             ) { Text(message, Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
         }
+        PageScrollBadge(
+            currentPage = tab.selectedPageIndex,
+            totalPages = tab.pages.size,
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp),
+        )
+        ViewportInfoPill(
+            zoomScale = viewport.scale,
+            currentPageIndex = tab.selectedPageIndex,
+            totalPages = tab.pages.size,
+            onZoomIn = {
+                val nextScale = (viewport.scale * 1.25f).coerceIn(minimumScale, minimumScale * 8f)
+                val cx = viewportWidth / 2f
+                val cy = viewportHeight / 2f
+                updateViewport(
+                    viewport.copy(
+                        scale = nextScale,
+                        offsetX = cx - (cx - viewport.offsetX) * (nextScale / viewport.scale),
+                        offsetY = cy - (cy - viewport.offsetY) * (nextScale / viewport.scale),
+                    ),
+                )
+            },
+            onZoomOut = {
+                val nextScale = (viewport.scale / 1.25f).coerceIn(minimumScale, minimumScale * 8f)
+                val cx = viewportWidth / 2f
+                val cy = viewportHeight / 2f
+                updateViewport(
+                    viewport.copy(
+                        scale = nextScale,
+                        offsetX = cx - (cx - viewport.offsetX) * (nextScale / viewport.scale),
+                        offsetY = cy - (cy - viewport.offsetY) * (nextScale / viewport.scale),
+                    ),
+                )
+            },
+            onFitWidth = {
+                val page = tab.pages.getOrNull(tab.selectedPageIndex)
+                if (page != null && viewportWidth > 10) {
+                    val targetScale = (viewportWidth * 0.94f / page.size.widthMicrons).coerceIn(minimumScale, minimumScale * 8f)
+                    updateViewport(
+                        viewport.copy(
+                            scale = targetScale,
+                            offsetX = (viewportWidth - page.size.widthMicrons * targetScale) / 2f,
+                        ),
+                    )
+                }
+            },
+            onFitPage = { tab.resetViewport() },
+            onResetZoom = {
+                val targetScale = minimumScale
+                updateViewport(viewport.copy(scale = targetScale, offsetX = 0f, offsetY = 0f))
+            },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+        )
     }
 }
 
@@ -6967,9 +7243,9 @@ private fun RadialToolWheel(
     val reveal = remember(center) { Animatable(0f) }
     LaunchedEffect(center) { reveal.animateTo(1f, tween(330, easing = BackOutEasing)) }
     Box(modifier) {
-        Canvas(Modifier.fillMaxSize()) {
-            drawCircle(Color.Black.copy(alpha = .18f * reveal.value), radius * 1.22f, center)
-            drawCircle(ambientPrimary.copy(alpha = .10f * reveal.value), radius * 1.08f, center)
+        Canvas(Modifier.fillMaxSize().blur((8.dp * reveal.value).coerceAtLeast(0.dp))) {
+            drawCircle(Color.Black.copy(alpha = .28f * reveal.value), radius * 1.35f, center)
+            drawCircle(ambientPrimary.copy(alpha = .14f * reveal.value), radius * 1.15f, center)
         }
         Box(
             Modifier
@@ -7011,13 +7287,17 @@ private fun RadialToolWheel(
                     }
                     drawPath(
                         path,
-                        if (index == highlightedIndex) primary.copy(alpha = .92f) else surface.copy(alpha = .94f),
+                        if (index == highlightedIndex) primary.copy(alpha = .94f) else surface.copy(alpha = .92f),
                     )
-                    drawPath(path, outline.copy(alpha = .62f), style = Stroke(1.2.dp.toPx()))
+                    drawPath(
+                        path,
+                        if (index == highlightedIndex) Color.White.copy(alpha = 0.8f) else outline.copy(alpha = .5f),
+                        style = Stroke(if (index == highlightedIndex) 2.dp.toPx() else 1.2.dp.toPx()),
+                    )
                 }
                 drawCircle(Color(0xE61A1F28), innerRadius, wheelCenter)
                 drawCircle(primary.copy(alpha = .72f), innerRadius, wheelCenter, style = Stroke(2.dp.toPx()))
-                drawCircle(primary.copy(alpha = .16f), outerRadius * 1.03f, wheelCenter, style = Stroke(7.dp.toPx()))
+                drawCircle(primary.copy(alpha = .22f), outerRadius * 1.04f, wheelCenter, style = Stroke(8.dp.toPx()))
             }
             items.forEachIndexed { index, item ->
                 val angle = Math.toRadians((-90.0 + index * 360.0 / items.size))
@@ -10180,10 +10460,51 @@ private fun DiagnosticsPanel(session: EditorSession) {
 
 @Composable
 private fun SaveStatusIcon(status: SaveStatus) {
-    Text(
-        when (status) { SaveStatus.Saving -> "Saving…"; is SaveStatus.Saved -> "Saved"; is SaveStatus.Failed -> "Save failed" },
-        color = if (status is SaveStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-        style = MaterialTheme.typography.labelSmall,
-        modifier = Modifier.padding(horizontal = 8.dp),
+    val spinTransition = rememberInfiniteTransition(label = "save-spin")
+    val spinAngle by spinTransition.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1000, easing = LinearEasing)),
+        label = "save-spin-angle",
     )
+    val shake = remember { Animatable(0f) }
+    LaunchedEffect(status) {
+        if (status is SaveStatus.Failed) {
+            repeat(3) { shake.animateTo(6f, tween(50)); shake.animateTo(-6f, tween(50)) }
+            shake.animateTo(0f, tween(50))
+        }
+    }
+    Row(
+        Modifier.padding(horizontal = 8.dp).graphicsLayer { translationX = shake.value },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        AnimatedContent(
+            targetState = status,
+            transitionSpec = { fadeIn(tween(200)) + scaleIn(initialScale = 0.8f) togetherWith fadeOut(tween(150)) },
+            label = "save-status",
+        ) { current ->
+            when (current) {
+                SaveStatus.Saving -> Icon(
+                    Icons.Outlined.History, null,
+                    Modifier.size(14.dp).graphicsLayer { rotationZ = spinAngle },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                is SaveStatus.Saved -> Icon(
+                    Icons.Outlined.Bookmark, null,
+                    Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                )
+                is SaveStatus.Failed -> Icon(
+                    Icons.Outlined.Close, null,
+                    Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        Text(
+            when (status) { SaveStatus.Saving -> "Saving…"; is SaveStatus.Saved -> "Saved"; is SaveStatus.Failed -> "Save failed" },
+            color = if (status is SaveStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
 }

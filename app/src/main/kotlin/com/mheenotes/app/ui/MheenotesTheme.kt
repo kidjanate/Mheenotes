@@ -2,6 +2,8 @@ package com.mheenotes.app.ui
 
 import android.view.KeyEvent
 import android.content.Context
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -259,7 +261,7 @@ fun MheenotesTheme(preset: AppThemePreset, content: @Composable () -> Unit) {
     val secondary = Color(preset.secondaryArgb)
     val background = Color(preset.backgroundArgb)
     val surface = Color(preset.surfaceArgb)
-    val scheme = if (preset.dark) darkColorScheme(
+    val targetScheme = if (preset.dark) darkColorScheme(
         primary = primary,
         onPrimary = readableOn(primary),
         primaryContainer = primary.copy(alpha = .26f).compositeOver(surface),
@@ -290,5 +292,22 @@ fun MheenotesTheme(preset: AppThemePreset, content: @Composable () -> Unit) {
         onSurfaceVariant = Color(0xFF535A64),
         outline = Color.Black.copy(alpha = .22f).compositeOver(surface),
     )
-    MaterialTheme(colorScheme = scheme, content = content)
+    val animSpec = tween<Color>(400)
+    val animatedScheme = targetScheme.copy(
+        primary = animateColorAsState(targetScheme.primary, animSpec, label = "primary").value,
+        onPrimary = animateColorAsState(targetScheme.onPrimary, animSpec, label = "onPrimary").value,
+        primaryContainer = animateColorAsState(targetScheme.primaryContainer, animSpec, label = "primaryContainer").value,
+        onPrimaryContainer = animateColorAsState(targetScheme.onPrimaryContainer, animSpec, label = "onPrimaryContainer").value,
+        secondary = animateColorAsState(targetScheme.secondary, animSpec, label = "secondary").value,
+        onSecondary = animateColorAsState(targetScheme.onSecondary, animSpec, label = "onSecondary").value,
+        secondaryContainer = animateColorAsState(targetScheme.secondaryContainer, animSpec, label = "secondaryContainer").value,
+        background = animateColorAsState(targetScheme.background, animSpec, label = "background").value,
+        onBackground = animateColorAsState(targetScheme.onBackground, animSpec, label = "onBackground").value,
+        surface = animateColorAsState(targetScheme.surface, animSpec, label = "surface").value,
+        surfaceVariant = animateColorAsState(targetScheme.surfaceVariant, animSpec, label = "surfaceVariant").value,
+        onSurface = animateColorAsState(targetScheme.onSurface, animSpec, label = "onSurface").value,
+        onSurfaceVariant = animateColorAsState(targetScheme.onSurfaceVariant, animSpec, label = "onSurfaceVariant").value,
+        outline = animateColorAsState(targetScheme.outline, animSpec, label = "outline").value,
+    )
+    MaterialTheme(colorScheme = animatedScheme, typography = MheeTypography, content = content)
 }
