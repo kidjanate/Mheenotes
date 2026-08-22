@@ -125,6 +125,7 @@ private fun needsWordSeparator(left: RecognizedTextToken, right: RecognizedTextT
     val leftCodePoint = left.text.codePointBefore(left.text.length)
     val rightCodePoint = right.text.codePointAt(0)
     if (leftCodePoint.isThai() && rightCodePoint.isThai()) {
+        if (rightCodePoint.isThaiCombiningOrTone()) return false
         val gap = (right.bounds.left - left.bounds.right).coerceAtLeast(0f)
         val averageHeight = (
             (left.bounds.bottom - left.bounds.top) + (right.bounds.bottom - right.bounds.top)
@@ -136,6 +137,9 @@ private fun needsWordSeparator(left: RecognizedTextToken, right: RecognizedTextT
 
 private fun Int.isThai(): Boolean = this in 0x0E00..0x0E7F
 
+private fun Int.isThaiCombiningOrTone(): Boolean = this in 0x0E30..0x0E3A ||
+    this in 0x0E45..0x0E4E
+
 private fun Int.usesContinuousWordSpacing(): Boolean = this in 0x3040..0x30FF ||
     this in 0x31F0..0x31FF ||
     this in 0x3400..0x4DBF ||
@@ -145,3 +149,4 @@ private fun Int.usesContinuousWordSpacing(): Boolean = this in 0x3040..0x30FF ||
     this in 0x1B000..0x1B16F ||
     this in 0x20000..0x2EBEF ||
     this in 0x30000..0x3134F
+

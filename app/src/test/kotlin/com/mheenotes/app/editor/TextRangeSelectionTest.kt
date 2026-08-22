@@ -68,6 +68,27 @@ class TextRangeSelectionTest {
     }
 
     @Test
+    fun thaiCombiningMarksDoNotGainSpaces() {
+        val thaiWithCombining = listOf(
+            token("สวัสดี", 0f, 0f, 25f, 10f, line = 0),
+            token("ครับ", 25.5f, 0f, 45f, 10f, line = 0),
+        )
+
+        assertEquals("สวัสดีครับ", selection(tokens = thaiWithCombining, start = 0, end = 1).selectedText())
+    }
+
+    @Test
+    fun thaiWithLatinPreservesSpace() {
+        val mixed = listOf(
+            token("ภาษาไทย", 0f, 0f, 30f, 10f, line = 0),
+            token("OCR", 35f, 0f, 50f, 10f, line = 0),
+        )
+
+        assertEquals("ภาษาไทย OCR", selection(tokens = mixed, start = 0, end = 1).selectedText())
+    }
+
+
+    @Test
     fun nearestTokenHonorsActivationDistance() {
         assertEquals(1, nearestRecognizedTokenIndex(tokens, PagePoint(16f, 4f), maxDistance = 2f))
         assertNull(nearestRecognizedTokenIndex(tokens, PagePoint(100f, 100f), maxDistance = 5f))

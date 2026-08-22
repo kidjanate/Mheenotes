@@ -95,18 +95,18 @@ internal class ThaiTextRecognizer(context: Context) : AutoCloseable {
     private fun TessBaseAPI.readWordTokens(): List<OcrTextToken> {
         val iterator = resultIterator ?: return emptyList()
         return try {
-            buildList {
-                var lineIndex = -1
-                iterator.begin()
-                do {
-                    if (lineIndex < 0 || iterator.isAtBeginningOf(RIL_TEXTLINE)) lineIndex++
-                    val word = iterator.getUTF8Text(RIL_WORD)?.trim().orEmpty()
-                    val bounds = iterator.getBoundingRect(RIL_WORD)
-                    if (word.isNotBlank() && bounds != null && !bounds.isEmpty) {
-                        add(OcrTextToken(word, Rect(bounds), lineIndex))
-                    }
-                } while (iterator.next(RIL_WORD))
-            }
+            val rawTokens = mutableListOf<OcrTextToken>()
+            var lineIndex = -1
+            iterator.begin()
+            do {
+                if (lineIndex < 0 || iterator.isAtBeginningOf(RIL_TEXTLINE)) lineIndex++
+                val word = iterator.getUTF8Text(RIL_WORD)?.trim().orEmpty()
+                val bounds = iterator.getBoundingRect(RIL_WORD)
+                if (word.isNotBlank() && bounds != null && !bounds.isEmpty) {
+                    rawTokens.add(OcrTextToken(word, Rect(bounds), lineIndex))
+                }
+            } while (iterator.next(RIL_WORD))
+            mergeAdjacentThaiTokens(rawTokens)
         } finally {
             iterator.delete()
         }
@@ -144,14 +144,118 @@ internal class ThaiTextRecognizer(context: Context) : AutoCloseable {
 }
 
 internal fun normalizeThaiOcrText(rawText: String): String {
-    val text = rawText.trim()
-    val thaiCharacterCount = text.count { it in '\u0E00'..'\u0E7F' }
-    if (thaiCharacterCount < 3) return text
-    val interCharacterSpaces = THAI_INTER_CHARACTER_SPACE.findAll(text).count()
-    val suspiciousSpacingRatio = interCharacterSpaces.toFloat() / (thaiCharacterCount - 1).coerceAtLeast(1)
-    return if (interCharacterSpaces >= 2 && suspiciousSpacingRatio >= .3f) {
-        text.replace(THAI_INTER_CHARACTER_SPACE, "")
-    } else text
+    if (rawText.isBlank()) return ""
+    return rawText.lines().joinToString("\n") { line ->
+        normalizeThaiLine(line)
+    }.trim()
 }
 
+private fun normalizeThaiLine(line: String): String {
+    var text = line.trim()
+    val thaiCharCount = text.count { it in '\u0E00'..'\u0E7F' }
+    if (thaiCharCount < 2) return text
+
+    // 1. Remove spaces before combining marks, vowels (upper/lower/following), tone marks, diacritics, and symbols
+    text = text.replace(THAI_COMBINING_BEFORE_SPACE, "")
+    // 2. Remove spaces immediately after leading vowels before a Thai consonant
+    text = text.replace(THAI_LEADING_VOWEL_AFTER_SPACE, "")
+
+    // 3. Check for inter-Thai character spaces
+    val thaiGaps = THAI_INTER_CHARACTER_SPACE.findAll(text).toList()
+    if (thaiGaps.isEmpty()) return text
+
+    // Check if the spacing is systematic character-spacing (e.g. "ภ า ษ า ไ ท ย" or "ส วั ส ดี")
+    val thaiWords = text.split(Regex("[ \\t]+")).filter { token ->
+        token.any { it in '\u0E00'..'\u0E7F' }
+    }
+    val shortThaiWords = thaiWords.count { token ->
+        token.count { it in '\u0E00'..'\u0E7F' } <= 2
+    }
+    val hasSystematicSpacing = (thaiGaps.size >= 2 && thaiGaps.size.toFloat() / (thaiCharCount - 1).coerceAtLeast(1) >= 0.25f) ||
+        (thaiWords.isNotEmpty() && shortThaiWords.toFloat() / thaiWords.size >= 0.5f)
+
+    if (hasSystematicSpacing) {
+        text = text.replace(THAI_INTER_CHARACTER_SPACE, "")
+    } else {
+        text = mergeShortThaiGaps(text)
+    }
+
+    return text.replace(Regex("[ \\t]{2,}"), " ").trim()
+}
+
+private fun mergeShortThaiGaps(text: String): String {
+    val words = text.split(Regex("[ \\t]+"))
+    if (words.size <= 1) return text
+    val result = StringBuilder()
+    for (i in words.indices) {
+        val word = words[i]
+        if (i == 0) {
+            result.append(word)
+            continue
+        }
+        val prevWord = words[i - 1]
+        val prevIsThai = prevWord.isNotEmpty() && prevWord.last() in '\u0E00'..'\u0E7F'
+        val currIsThai = word.isNotEmpty() && word.first() in '\u0E00'..'\u0E7F'
+        val prevThaiLen = prevWord.count { it in '\u0E00'..'\u0E7F' }
+        val currThaiLen = word.count { it in '\u0E00'..'\u0E7F' }
+
+        if (prevIsThai && currIsThai && (prevThaiLen <= 2 || currThaiLen <= 2)) {
+            result.append(word)
+        } else {
+            result.append(' ').append(word)
+        }
+    }
+    return result.toString()
+}
+
+private fun mergeAdjacentThaiTokens(rawTokens: List<OcrTextToken>): List<OcrTextToken> {
+    if (rawTokens.isEmpty()) return emptyList()
+    val result = mutableListOf<OcrTextToken>()
+    var current: OcrTextToken? = null
+
+    for (token in rawTokens) {
+        val prev = current
+        if (prev == null) {
+            current = token
+            continue
+        }
+
+        val prevEndsThai = prev.text.isNotEmpty() && prev.text.last() in '\u0E00'..'\u0E7F'
+        val currStartsThai = token.text.isNotEmpty() && token.text.first() in '\u0E00'..'\u0E7F'
+        val sameLine = prev.lineIndex == token.lineIndex
+        val horizontalGap = (token.bounds.left - prev.bounds.right).coerceAtLeast(0)
+        val prevHeight = prev.bounds.bottom - prev.bounds.top
+        val tokenHeight = token.bounds.bottom - token.bounds.top
+        val avgHeight = ((prevHeight + tokenHeight) / 2).coerceAtLeast(1)
+        val isCloseGap = horizontalGap <= avgHeight * 0.45f
+        val isShortFragment = prev.text.length <= 2 || token.text.length <= 2
+
+
+        if (sameLine && prevEndsThai && currStartsThai && (isCloseGap || isShortFragment)) {
+            val mergedText = normalizeThaiOcrText("${prev.text}${token.text}")
+            val mergedBounds = Rect(
+                minOf(prev.bounds.left, token.bounds.left),
+                minOf(prev.bounds.top, token.bounds.top),
+                maxOf(prev.bounds.right, token.bounds.right),
+                maxOf(prev.bounds.bottom, token.bounds.bottom),
+            )
+            current = OcrTextToken(mergedText, mergedBounds, prev.lineIndex)
+        } else {
+            val normalizedPrevText = normalizeThaiOcrText(prev.text)
+            result.add(if (normalizedPrevText == prev.text) prev else prev.copy(text = normalizedPrevText))
+            current = token
+        }
+    }
+
+    current?.let { last ->
+        val normalized = normalizeThaiOcrText(last.text)
+        result.add(if (normalized == last.text) last else last.copy(text = normalized))
+    }
+
+    return result
+}
+
+private val THAI_COMBINING_BEFORE_SPACE = Regex("[ \\t]+(?=[\\u0E30-\\u0E3A\\u0E45\\u0E47-\\u0E4E\\u0E46\\u0E2F])")
+private val THAI_LEADING_VOWEL_AFTER_SPACE = Regex("(?<=[\\u0E40-\\u0E44])[ \\t]+(?=[\\u0E01-\\u0E2E])")
 private val THAI_INTER_CHARACTER_SPACE = Regex("(?<=[\\u0E00-\\u0E7F])[ \\t]+(?=[\\u0E00-\\u0E7F])")
+

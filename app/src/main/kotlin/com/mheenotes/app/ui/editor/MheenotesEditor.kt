@@ -12,8 +12,17 @@ import android.media.MediaPlayer
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.PlaybackParams
+import android.os.Build
+import android.os.Bundle
 import android.os.SystemClock
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.view.KeyEvent
+import android.widget.Toast
+import java.util.Locale
+
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -21,6 +30,20 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.sp
+import com.mheenotes.app.audio.AudioFileTranscriber
+import com.mheenotes.app.audio.AudioSpeechTranscriber
+import com.mheenotes.app.audio.AudioWaveformBar
+import com.mheenotes.app.audio.AudioWaveformExtractor
+
+import com.mheenotes.app.audio.TranscriptData
+import com.mheenotes.app.audio.TranscriptWord
+
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
@@ -122,8 +145,11 @@ import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Undo
 import androidx.compose.material.icons.outlined.ViewSidebar
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -332,11 +358,12 @@ private val BackOutEasing = Easing { progress ->
 
 @Composable
 private fun Modifier.staggeredEntrance(key: Any, index: Int): Modifier {
+    if (index > 12) return this
     val reveal = remember(key) { Animatable(0f) }
     val rise = with(LocalDensity.current) { 18.dp.toPx() }
     LaunchedEffect(key) {
-        delay((index.coerceIn(0, 12) * 34L))
-        reveal.animateTo(1f, tween(360, easing = FastOutSlowInEasing))
+        delay(index * 28L)
+        reveal.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
     }
     return graphicsLayer {
         alpha = reveal.value
@@ -346,6 +373,7 @@ private fun Modifier.staggeredEntrance(key: Any, index: Int): Modifier {
         scaleY = scale
     }
 }
+
 private enum class LibrarySection { Main, Recent, Favorites, Trash }
 private enum class LibraryLayout { Grid, List }
 private enum class LibrarySort { Name, Recent, PageCount }
@@ -597,6 +625,9 @@ private data class ActiveAudioRecording(
     val recording: AtomicBoolean,
     val startedAtMillis: Long,
 )
+
+
+
 
 private data class PageEntry(
     val id: PageId,
@@ -961,11 +992,24 @@ private class EditorTab(
         return try { operation() } finally { endHistoryTransaction() }
     }
 
+    fun invalidateThumbnail(pageId: PageId? = null) {
+        val targetId = pageId ?: pages.firstOrNull()?.id ?: return
+        val index = pages.indexOfFirst { it.id == targetId }
+        if (index >= 0) {
+            val old = pages[index].thumbnail
+            pages[index] = pages[index].copy(thumbnail = null)
+            old?.recycle()
+            thumbnailCacheOrder.remove(targetId)
+        }
+    }
+
     private fun recordInkEdit(pageId: PageId) {
+        invalidateThumbnail(pageId)
         recordHistory(EditorHistoryEntry.Ink(pageId))
     }
 
     fun recordObjectEdit(page: PageEntry) {
+        invalidateThumbnail(page.id)
         objectUndo.addLast(ObjectListSnapshot(page.id, page.objects.toList()))
         while (objectUndo.size > 100) objectUndo.removeFirst()
         objectRedo.clear()
@@ -974,6 +1018,7 @@ private class EditorTab(
 
     private fun restoreObjects(snapshot: ObjectListSnapshot): ObjectListSnapshot? {
         val page = pages.firstOrNull { it.id == snapshot.pageId } ?: return null
+        invalidateThumbnail(page.id)
         val current = ObjectListSnapshot(page.id, page.objects.toList())
         page.objects.clear()
         page.objects.addAll(snapshot.objects)
@@ -994,6 +1039,7 @@ private class EditorTab(
     private fun pageSnapshot() = PageListSnapshot(pages.toList(), pages[selectedPageIndex].id)
 
     private fun recordPageEdit() {
+        invalidateThumbnail()
         pageUndo.addLast(pageSnapshot())
         while (pageUndo.size > 100) pageUndo.removeFirst()
         pageRedo.clear()
@@ -1005,6 +1051,7 @@ private class EditorTab(
         if (selectedIndex < pages.size) selectedPageIndexState = selectedIndex
         pages.replaceContentsWithoutEmptying(snapshot.entries)
         navigateToPage(pages.indexOfFirst { it.id == snapshot.selectedPageId }.coerceAtLeast(0))
+        invalidateThumbnail()
         persistManifest()
     }
 
@@ -1022,21 +1069,34 @@ private class EditorTab(
 
     private fun applyUndo(entry: EditorHistoryEntry) {
         when (entry) {
-            is EditorHistoryEntry.Ink -> pages.firstOrNull { it.id == entry.pageId }?.session?.undo()
+            is EditorHistoryEntry.Ink -> {
+                invalidateThumbnail(entry.pageId)
+                pages.firstOrNull { it.id == entry.pageId }?.session?.undo()
+            }
             EditorHistoryEntry.Objects -> applyObjectUndo()
-            EditorHistoryEntry.Pages -> applyPageUndo()
+            EditorHistoryEntry.Pages -> {
+                invalidateThumbnail()
+                applyPageUndo()
+            }
             is EditorHistoryEntry.Composite -> entry.entries.asReversed().forEach(::applyUndo)
         }
     }
 
     private fun applyRedo(entry: EditorHistoryEntry) {
         when (entry) {
-            is EditorHistoryEntry.Ink -> pages.firstOrNull { it.id == entry.pageId }?.session?.redo()
+            is EditorHistoryEntry.Ink -> {
+                invalidateThumbnail(entry.pageId)
+                pages.firstOrNull { it.id == entry.pageId }?.session?.redo()
+            }
             EditorHistoryEntry.Objects -> applyObjectRedo()
-            EditorHistoryEntry.Pages -> applyPageRedo()
+            EditorHistoryEntry.Pages -> {
+                invalidateThumbnail()
+                applyPageRedo()
+            }
             is EditorHistoryEntry.Composite -> entry.entries.forEach(::applyRedo)
         }
     }
+
 
     fun undo() {
         flushPendingInk()
@@ -1273,35 +1333,56 @@ private class EditorTab(
 
     fun requestThumbnail(pageId: PageId) {
         val entry = pages.firstOrNull { it.id == pageId } ?: return
-        val (file, pageIndex) = entry.pdfSource ?: return
-        val pdf = pdfServices ?: return
+        if (entry.thumbnail != null || pageId in pendingThumbnailRenders) return
         val handler = mainHandler ?: return
-        if (entry.thumbnail != null || pageId in pendingThumbnailRenders || !file.isFile) return
-        pendingThumbnailRenders += pageId
-        pdf.renderPage(file, pageIndex, 240) { result ->
-            handler.post {
-                pendingThumbnailRenders -= pageId
-                result.onSuccess { bitmap ->
-                    val currentIndex = pages.indexOfFirst { it.id == pageId }
-                    if (currentIndex >= 0) {
-                        pages[currentIndex] = pages[currentIndex].copy(thumbnail = bitmap)
-                        thumbnailCacheOrder.remove(pageId)
-                        thumbnailCacheOrder.addLast(pageId)
-                        while (thumbnailCacheOrder.size > 64) {
-                            val evictedId = thumbnailCacheOrder.removeFirst()
-                            val evictedIndex = pages.indexOfFirst { it.id == evictedId }
-                            if (evictedIndex >= 0) {
-                                pages[evictedIndex].thumbnail?.recycle()
-                                pages[evictedIndex] = pages[evictedIndex].copy(thumbnail = null)
-                            }
-                        }
-                    } else {
-                        bitmap.recycle()
+
+        val pdfSource = entry.pdfSource
+        if (pdfSource != null) {
+            val (file, pageIndex) = pdfSource
+            val pdf = pdfServices ?: return
+            if (!file.isFile) return
+            pendingThumbnailRenders += pageId
+            pdf.renderPage(file, pageIndex, 240) { result ->
+                handler.post {
+                    pendingThumbnailRenders -= pageId
+                    result.onSuccess { bitmap ->
+                        applyThumbnailBitmap(pageId, bitmap)
                     }
                 }
             }
+        } else {
+            pendingThumbnailRenders += pageId
+            Thread({
+                val bitmap = renderInkPageThumbnail(entry, targetWidth = 240)
+                handler.post {
+                    pendingThumbnailRenders -= pageId
+                    if (bitmap != null) {
+                        applyThumbnailBitmap(pageId, bitmap)
+                    }
+                }
+            }, "Mheenotes-thumb-$pageId").start()
         }
     }
+
+    private fun applyThumbnailBitmap(pageId: PageId, bitmap: Bitmap) {
+        val currentIndex = pages.indexOfFirst { it.id == pageId }
+        if (currentIndex >= 0) {
+            pages[currentIndex] = pages[currentIndex].copy(thumbnail = bitmap)
+            thumbnailCacheOrder.remove(pageId)
+            thumbnailCacheOrder.addLast(pageId)
+            while (thumbnailCacheOrder.size > 64) {
+                val evictedId = thumbnailCacheOrder.removeFirst()
+                val evictedIndex = pages.indexOfFirst { it.id == evictedId }
+                if (evictedIndex >= 0) {
+                    pages[evictedIndex].thumbnail?.recycle()
+                    pages[evictedIndex] = pages[evictedIndex].copy(thumbnail = null)
+                }
+            }
+        } else {
+            bitmap.recycle()
+        }
+    }
+
 
     fun searchPdf(query: String, result: (List<PdfNotebookHit>) -> Unit) {
         val service = pdfServices ?: return result(emptyList())
@@ -1692,9 +1773,12 @@ fun MheenotesEditor(
     }
 
     BackHandler(enabled = screen == AppScreen.Editor) {
-        currentTab().flushPendingInk()
+        val tab = currentTab()
+        tab.flushPendingInk()
+        tab.pages.firstOrNull()?.let { tab.invalidateThumbnail(it.id) }
         screen = AppScreen.Library
     }
+
 
     fun shareGeneratedFile(fileName: String, mediaType: String, writer: (java.io.OutputStream) -> Unit) {
         sharingScope.launch {
@@ -2020,7 +2104,13 @@ fun MheenotesEditor(
                 onMode = { editorMode = it },
                 dockEdge = dockEdge,
                 onDockEdge = { edge -> dockEdge = edge; onAppSettingsChanged(appSettings.copy(toolbarDock = edge.name)) },
-                onHome = { screen = AppScreen.Library },
+                onHome = {
+                    val tab = currentTab()
+                    tab.flushPendingInk()
+                    tab.pages.firstOrNull()?.let { tab.invalidateThumbnail(it.id) }
+                    screen = AppScreen.Library
+                },
+
                 onImage = { pageId, position ->
                     pendingImagePlacement = PendingImagePlacement(currentTab().id, pageId, position)
                     pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -2467,13 +2557,16 @@ private fun LibraryScreen(
                                 )
                             }
                         }
-                        items(visibleTabs, key = EditorTab::id) { tab ->
+                        items(visibleTabs.size, key = { index -> visibleTabs[index].id }) { index ->
+                            val tab = visibleTabs[index]
                             Box(
                                 Modifier.fillMaxWidth().staggeredEntrance(
                                     "notebook:${tab.id}",
-                                    folderCards.size + visibleTabs.indexOf(tab),
+                                    folderCards.size + index,
                                 ),
                             ) {
+
+
                                 NotebookCard(
                                     tab, activeFolders, onClick = { onOpen(tab.id) }, onDuplicate, onPermanentDelete, onExportNotebook,
                                 onDragPosition = { point ->
@@ -3256,9 +3349,12 @@ private fun NotebookCard(
     var stationaryMenuJob by remember(tab.id) { mutableStateOf<Job?>(null) }
     var suppressNextOpen by remember(tab.id) { mutableStateOf(false) }
     DisposableEffect(tab.id) { onDispose { stationaryMenuJob?.cancel() } }
-    LaunchedEffect(tab.id, previewPage?.id) {
-        previewPage?.let { tab.requestThumbnail(it.id) }
+    LaunchedEffect(tab.id, previewPage?.id, previewPage?.thumbnail) {
+        if (previewPage != null && previewPage.thumbnail == null) {
+            tab.requestThumbnail(previewPage.id)
+        }
     }
+
     Card(
         onClick = {
             if (suppressNextOpen) suppressNextOpen = false else onClick()
@@ -4139,10 +4235,180 @@ private fun PageThumbnailRail(
     )
 }
 
+private fun renderInkPageThumbnail(entry: PageEntry, targetWidth: Int = 240): Bitmap? = runCatching {
+    val aspectRatio = entry.size.heightMicrons / entry.size.widthMicrons
+    val targetHeight = (targetWidth * aspectRatio).toInt().coerceIn(120, 600)
+    val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+
+    // 1. Draw page background
+    canvas.drawColor(entry.backgroundArgb)
+
+    val scaleX = targetWidth.toFloat() / entry.size.widthMicrons
+    val scaleY = targetHeight.toFloat() / entry.size.heightMicrons
+    val strokeScale = (scaleX + scaleY) / 2f
+
+    // 2. Draw template lines if any
+    val templateColor = entry.templateLineArgb
+    val linePaint = android.graphics.Paint().apply {
+        color = templateColor
+        strokeWidth = 1f
+        style = android.graphics.Paint.Style.STROKE
+        isAntiAlias = true
+    }
+    val spacing = if (entry.template == PageTemplate.Ruled) 9_000f else 8_000f
+    when (entry.template) {
+        PageTemplate.Blank -> Unit
+        PageTemplate.Ruled -> {
+            var y = spacing
+            while (y < entry.size.heightMicrons) {
+                canvas.drawLine(0f, y * scaleY, targetWidth.toFloat(), y * scaleY, linePaint)
+                y += spacing
+            }
+        }
+        PageTemplate.Grid -> {
+            var y = spacing
+            while (y < entry.size.heightMicrons) {
+                canvas.drawLine(0f, y * scaleY, targetWidth.toFloat(), y * scaleY, linePaint)
+                y += spacing
+            }
+            var x = spacing
+            while (x < entry.size.widthMicrons) {
+                canvas.drawLine(x * scaleX, 0f, x * scaleX, targetHeight.toFloat(), linePaint)
+                x += spacing
+            }
+        }
+        PageTemplate.Dotted -> {
+            val dotPaint = android.graphics.Paint().apply {
+                color = templateColor
+                style = android.graphics.Paint.Style.FILL
+                isAntiAlias = true
+            }
+            var y = spacing
+            while (y < entry.size.heightMicrons) {
+                var x = spacing
+                while (x < entry.size.widthMicrons) {
+                    canvas.drawCircle(x * scaleX, y * scaleY, 0.7f, dotPaint)
+                    x += spacing
+                }
+                y += spacing
+            }
+        }
+        PageTemplate.Cornell -> {
+            var y = 36_000f
+            while (y < entry.size.heightMicrons) {
+                canvas.drawLine(0f, y * scaleY, targetWidth.toFloat(), y * scaleY, linePaint)
+                y += 9_000f
+            }
+            canvas.drawLine(45_000f * scaleX, 0f, 45_000f * scaleX, targetHeight.toFloat(), linePaint)
+            canvas.drawLine(0f, 27_000f * scaleY, targetWidth.toFloat(), 27_000f * scaleY, linePaint)
+        }
+        PageTemplate.MusicStaff -> {
+            var top = 18_000f
+            while (top < entry.size.heightMicrons) {
+                repeat(5) { line ->
+                    val y = (top + line * 2_500f) * scaleY
+                    canvas.drawLine(0f, y, targetWidth.toFloat(), y, linePaint)
+                }
+                top += 24_000f
+            }
+        }
+    }
+
+    // 3. Draw SceneObjects (Images, Rectangles, TextBoxes)
+    entry.objects.sortedBy(SceneObject::zIndex).forEach { item ->
+        when (item) {
+            is SceneObject.Image -> {
+                val left = item.x * scaleX
+                val top = item.y * scaleY
+                val right = (item.x + item.width) * scaleX
+                val bottom = (item.y + item.height) * scaleY
+                canvas.drawBitmap(item.bitmap, null, android.graphics.RectF(left, top, right, bottom), null)
+            }
+            is SceneObject.Rectangle -> {
+                val rectPaint = android.graphics.Paint().apply {
+                    color = item.strokeArgb
+                    strokeWidth = (item.strokeWidth * strokeScale).coerceAtLeast(1f)
+                    style = android.graphics.Paint.Style.STROKE
+                    isAntiAlias = true
+                }
+                val left = item.x * scaleX
+                val top = item.y * scaleY
+                val right = (item.x + item.width) * scaleX
+                val bottom = (item.y + item.height) * scaleY
+                canvas.drawRect(left, top, right, bottom, rectPaint)
+            }
+            is SceneObject.TextBox -> {
+                val textPaint = android.graphics.Paint().apply {
+                    color = item.argb
+                    textSize = (item.size * scaleY).coerceAtLeast(8f)
+                    isAntiAlias = true
+                }
+                canvas.drawText(item.text.take(40), item.x * scaleX, (item.y + item.size) * scaleY, textPaint)
+            }
+            is SceneObject.Audio -> Unit
+        }
+    }
+
+    // 4. Draw ink strokes
+    val strokePaint = android.graphics.Paint().apply {
+        style = android.graphics.Paint.Style.STROKE
+        strokeCap = android.graphics.Paint.Cap.ROUND
+        strokeJoin = android.graphics.Paint.Join.ROUND
+        isAntiAlias = true
+    }
+    val fillPaint = android.graphics.Paint().apply {
+        style = android.graphics.Paint.Style.FILL
+        isAntiAlias = true
+    }
+
+    val pageState = entry.session.page
+    val strokes = pageState.strokes.inInkRenderOrder()
+    for (stroke in strokes) {
+        val samples = stroke.samples
+        if (samples.isEmpty()) continue
+        val colorArgb = stroke.style.argb
+        val opacity = stroke.style.opacity
+        val a = ((colorArgb ushr 24) * opacity).toInt().coerceIn(0, 255)
+        val r = (colorArgb shr 16) and 0xFF
+        val g = (colorArgb shr 8) and 0xFF
+        val b = colorArgb and 0xFF
+        val finalColor = (a shl 24) or (r shl 16) or (g shl 8) or b
+
+        val representativePressure = samples.mapNotNull(StrokeSample::pressure)
+            .takeIf { it.isNotEmpty() }?.average()?.toFloat()
+        val strokeWidth = (PressureNormalizer.width(representativePressure, stroke.style) * strokeScale)
+            .coerceAtLeast(0.6f)
+
+        if (samples.size == 1) {
+            fillPaint.color = finalColor
+            canvas.drawCircle(
+                samples[0].position.x * scaleX,
+                samples[0].position.y * scaleY,
+                strokeWidth / 2f,
+                fillPaint,
+            )
+        } else {
+            strokePaint.color = finalColor
+            strokePaint.strokeWidth = strokeWidth
+            val path = android.graphics.Path()
+            path.moveTo(samples[0].position.x * scaleX, samples[0].position.y * scaleY)
+            for (i in 1 until samples.size) {
+                path.lineTo(samples[i].position.x * scaleX, samples[i].position.y * scaleY)
+            }
+            canvas.drawPath(path, strokePaint)
+        }
+    }
+
+    bitmap
+}.getOrNull()
+
+
 @Composable
 private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier) {
-    val pageState = page.session.page
-    val background = page.thumbnail ?: page.pdfBackground
+    val thumbnailBitmap = page.thumbnail
+    val pdfBackground = page.pdfBackground
+
     Canvas(modifier.background(Color(page.backgroundArgb))) {
         val normalizedRotation = ((page.rotation % 360) + 360) % 360
         val quarterTurn = normalizedRotation == 90 || normalizedRotation == 270
@@ -4151,7 +4417,6 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
         val scaleX = contentWidth / page.size.widthMicrons
         val scaleY = contentHeight / page.size.heightMicrons
         val strokeScale = (scaleX + scaleY) / 2f
-        val templateColor = Color(page.templateLineArgb)
         val canvas = drawContext.canvas.nativeCanvas
         val pageCheckpoint = canvas.save()
         if (normalizedRotation != 0) {
@@ -4159,14 +4424,28 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
             canvas.rotate(normalizedRotation.toFloat())
             canvas.translate(-contentWidth / 2f, -contentHeight / 2f)
         }
-        drawRect(Color(page.backgroundArgb), size = Size(contentWidth, contentHeight))
-        background?.let {
+
+        // Fast path: Cached thumbnail bitmap contains everything pre-rendered!
+        if (thumbnailBitmap != null && !thumbnailBitmap.isRecycled) {
             drawImage(
-                it.asImageBitmap(),
+                thumbnailBitmap.asImageBitmap(),
                 dstSize = IntSize(contentWidth.roundToInt(), contentHeight.roundToInt()),
             )
+            canvas.restoreToCount(pageCheckpoint)
+            return@Canvas
         }
-        if (background == null) {
+
+        drawRect(Color(page.backgroundArgb), size = Size(contentWidth, contentHeight))
+        pdfBackground?.let {
+            if (!it.isRecycled) {
+                drawImage(
+                    it.asImageBitmap(),
+                    dstSize = IntSize(contentWidth.roundToInt(), contentHeight.roundToInt()),
+                )
+            }
+        }
+        if (pdfBackground == null) {
+            val templateColor = Color(page.templateLineArgb)
             val spacing = if (page.template == PageTemplate.Ruled) 9_000f else 8_000f
             when (page.template) {
                 PageTemplate.Blank -> Unit
@@ -4224,6 +4503,7 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
         page.objects.sortedBy(SceneObject::zIndex).forEach { item ->
             drawThumbnailObject(item, scaleX, scaleY)
         }
+        val pageState = page.session.page
         pageState.strokes.inInkRenderOrder().forEach { stroke ->
             val samples = stroke.samples
             val color = Color(stroke.style.argb).copy(alpha = stroke.style.opacity)
@@ -4257,6 +4537,7 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
         canvas.restoreToCount(pageCheckpoint)
     }
 }
+
 
 private fun DrawScope.drawThumbnailObject(item: SceneObject, scaleX: Float, scaleY: Float) {
     val rotation = when (item) {
@@ -4721,6 +5002,7 @@ private fun ContinuousPageCanvas(
             AudioFormat.ENCODING_PCM_16BIT,
             bufferSize * 2,
         )
+
         val recording = AtomicBoolean(true)
         val worker = Thread({
             FileOutputStream(file).buffered().use { output ->
@@ -4732,6 +5014,7 @@ private fun ContinuousPageCanvas(
                 }
             }
         }, "Mheenotes-audio-record")
+
         runCatching {
             check(recorder.state == AudioRecord.STATE_INITIALIZED) { "The microphone could not be initialized." }
             recorder.startRecording()
@@ -4764,6 +5047,7 @@ private fun ContinuousPageCanvas(
         val stopped = runCatching { active.recorder.stop() }.isSuccess
         runCatching { active.worker.join(1_500) }
         runCatching { active.recorder.release() }
+        val duration = (SystemClock.elapsedRealtime() - active.startedAtMillis).coerceAtLeast(500L)
         if (stopped && active.file.length() > 44L) runCatching { writeWavHeader(active.file, 16_000, 1, 16) }
         if (!stopped || !active.file.isFile || active.file.length() <= 44L) {
             active.file.delete()
@@ -4780,12 +5064,14 @@ private fun ContinuousPageCanvas(
             y = (active.position.y - diameter / 2f).coerceIn(0f, (page.size.heightMicrons - diameter).coerceAtLeast(0f)),
             width = diameter,
             height = diameter,
-            durationMillis = SystemClock.elapsedRealtime() - active.startedAtMillis,
+            durationMillis = duration,
+            transcript = "",
             assetId = active.assetId,
             zIndex = zIndex,
         )
         selectedObjectPage = active.pageIndex
         selectedObject = page.objects.lastIndex
+        showAudioPlayer = true
         tab.persistObjects()
     }
 
@@ -4835,6 +5121,9 @@ private fun ContinuousPageCanvas(
             }
         }
     }
+
+
+
 
     fun recognizeImageText(image: SceneObject.Image) {
         if (ocrBusy) return
@@ -5706,8 +5995,10 @@ private fun ContinuousPageCanvas(
                                 stylusObjectIndex = index
                                 stylusCanTransformObject = alreadySelected
                                 stylusResizingObject = false
+                                showAudioPlayer = true
                                 true
                             }
+
                         }
                         else -> false
                     }
@@ -6007,7 +6298,7 @@ private fun ContinuousPageCanvas(
                                 selectedObjectPage = placement.index
                                 selectedObject = audioIndex
                                 tab.selectedPageIndex = placement.index
-                                showAudioPlayer = false
+                                showAudioPlayer = true
                             } else if (selectedObject >= 0) {
                                 selectedObject = -1
                                 selectedObjectPage = -1
@@ -6020,16 +6311,18 @@ private fun ContinuousPageCanvas(
                                     item is SceneObject.TextBox || item is SceneObject.Rectangle) && item.contains(local)
                             }
                             if (candidateIndex >= 0) {
+                                val item = placement.page.objects[candidateIndex]
                                 selectedObjectPage = placement.index
                                 selectedObject = candidateIndex
                                 tab.selectedPageIndex = placement.index
-                                showAudioPlayer = false
+                                showAudioPlayer = (item is SceneObject.Audio)
                             } else {
                                 selectedObject = -1
                                 selectedObjectPage = -1
                                 showAudioPlayer = false
                             }
                         }
+
                     }
                 }
                 view.onFingerDoubleTap = doubleTap@{ point ->
@@ -6423,9 +6716,16 @@ private fun ContinuousPageCanvas(
                         )
                     }
                 },
+                onUpdateTranscript = { newTranscript ->
+                    replaceSelectedObject {
+                        val current = it as SceneObject.Audio
+                        current.copy(transcript = newTranscript)
+                    }
+                },
                 onDelete = ::removeSelectedObject,
                 onDismiss = { showAudioPlayer = false },
             )
+
         }
         if (confirmSelectedDelete) AlertDialog(
             onDismissRequest = { confirmSelectedDelete = false },
@@ -7277,17 +7577,39 @@ private fun AudioNotePanel(
     audio: SceneObject.Audio,
     referenceShortSide: Float,
     onScale: (Float) -> Unit,
+    onUpdateTranscript: (String) -> Unit = {},
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     var player by remember(audio.id) { mutableStateOf<MediaPlayer?>(null) }
     var playing by remember(audio.id) { mutableStateOf(false) }
     var position by remember(audio.id) { mutableStateOf(0f) }
-    val transcript = audio.transcript
+    var playbackSpeed by remember(audio.id) { mutableStateOf(1.0f) }
     var playbackError by remember(audio.id) { mutableStateOf<String?>(null) }
     var confirmDelete by remember(audio.id) { mutableStateOf(false) }
+    var isTranscribing by remember(audio.id) { mutableStateOf(false) }
+    var liveDictationText by remember(audio.id) { mutableStateOf("") }
+    var speechRecognizerInstance by remember(audio.id) { mutableStateOf<SpeechRecognizer?>(null) }
     var iconFraction by remember(audio.id) {
         mutableStateOf((audio.width / referenceShortSide.coerceAtLeast(1f)).coerceIn(.08f, .40f))
+    }
+
+    val transcriptData = remember(audio.transcript, audio.durationMillis) {
+        TranscriptData.fromRaw(audio.transcript, audio.durationMillis)
+    }
+    val amplitudes = remember(audio.asset) {
+        AudioWaveformExtractor.extractAmplitudes(audio.asset, 80)
+    }
+
+    fun applySpeed(speed: Float) {
+        playbackSpeed = speed
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            runCatching {
+                player?.playbackParams = PlaybackParams().apply { this.speed = speed }
+            }
+        }
     }
 
     fun preparedPlayer(): MediaPlayer? {
@@ -7297,15 +7619,59 @@ private fun AudioNotePanel(
             MediaPlayer().apply {
                 setDataSource(audio.asset.absolutePath)
                 prepare()
-                setOnCompletionListener { playing = false; position = 0f }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && playbackSpeed != 1.0f) {
+                    playbackParams = PlaybackParams().apply { speed = playbackSpeed }
+                }
+                setOnCompletionListener {
+                    playing = false
+                    position = 0f
+                }
             }.also { player = it; playbackError = null }
         }.onFailure { playbackError = "Playback unavailable: ${it.message ?: "invalid recording"}" }.getOrNull()
     }
+
+    var isExtracting by remember { mutableStateOf(false) }
+    var extractionProgress by remember { mutableStateOf("") }
+
+    fun extractFromAudioFile() {
+        if (isExtracting) return
+        isExtracting = true
+        extractionProgress = "Extracting text from recorded audio..."
+        AudioFileTranscriber.transcribe(
+            context = context,
+            wavFile = audio.asset,
+            durationMillis = audio.durationMillis,
+            onProgress = { partial ->
+                extractionProgress = partial
+            },
+            onComplete = { result ->
+                isExtracting = false
+                if (result.fullText.isNotBlank()) {
+                    onUpdateTranscript(result.toJson())
+                    Toast.makeText(context, "Audio transcript extracted!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "No speech detected in recorded audio", Toast.LENGTH_SHORT).show()
+                }
+            },
+        )
+    }
+
+    LaunchedEffect(audio.id) {
+        if (transcriptData.fullText.isBlank() && audio.asset.isFile && audio.asset.length() > 44L) {
+            extractFromAudioFile()
+        }
+    }
+
 
     DisposableEffect(audio.id) {
         onDispose {
             runCatching { player?.release() }
             player = null
+            runCatching {
+                speechRecognizerInstance?.stopListening()
+                speechRecognizerInstance?.destroy()
+            }
+            speechRecognizerInstance = null
         }
     }
     LaunchedEffect(audio.id) {
@@ -7315,35 +7681,122 @@ private fun AudioNotePanel(
         while (playing && isActive) {
             val active = player
             if (active != null) position = active.currentPosition.toFloat()
-            delay(100)
+            delay(50)
         }
     }
+
     val duration = (player?.duration?.toFloat() ?: audio.durationMillis.toFloat()).coerceAtLeast(1f)
-    val highlightedTranscript = remember(transcript, position, duration) {
-        synchronizedTranscript(transcript, position / duration)
+    val activeWordIndex = remember(transcriptData, position) {
+        transcriptData.wordIndexAt(position.toLong())
     }
+
+    val annotatedTranscript = remember(transcriptData, activeWordIndex) {
+        buildAnnotatedString {
+            if (transcriptData.words.isNotEmpty()) {
+                transcriptData.words.forEachIndexed { index, word ->
+                    val isCurrent = (index == activeWordIndex)
+                    pushStringAnnotation(tag = "SEEK", annotation = word.startMillis.toString())
+                    if (isCurrent) {
+                        withStyle(
+                            SpanStyle(
+                                color = Color(0xFF111827),
+                                background = Color(0xFFFACC15),
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        ) {
+                            append(word.text)
+                        }
+                    } else {
+                        withStyle(
+                            SpanStyle(
+                                color = Color.Unspecified,
+                                fontWeight = FontWeight.Normal,
+                            ),
+                        ) {
+                            append(word.text)
+                        }
+                    }
+                    pop()
+                    append(" ")
+                }
+            } else if (transcriptData.fullText.isNotBlank()) {
+                append(transcriptData.fullText)
+            }
+        }
+    }
+
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
-            Modifier.fillMaxWidth(.90f).fillMaxHeight(.86f),
+            Modifier.fillMaxWidth(.92f).fillMaxHeight(.88f),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 20.dp,
         ) {
             Column(Modifier.fillMaxSize().padding(22.dp)) {
+                // Header
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(shape = RoundedCornerShape(50), color = Color(0x22EF4444), modifier = Modifier.size(44.dp)) {
-                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Mic, null, tint = Color(0xFFEF4444)) }
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color(0x22EF4444),
+                        modifier = Modifier.size(44.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.Mic, null, tint = Color(0xFFEF4444))
+                        }
                     }
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text("Audio note", style = MaterialTheme.typography.headlineSmall)
-                        Text("The transcript follows playback; use the timeline to seek", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Audio note", style = MaterialTheme.typography.titleLarge)
+                            transcriptData.languageTag?.let { lang ->
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.padding(start = 8.dp),
+                                ) {
+                                    Text(
+                                        text = Locale.forLanguageTag(lang).displayLanguage.ifBlank { lang.uppercase(Locale.ROOT) },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            if (transcriptData.fullText.isNotBlank()) "Tap any word to jump to that moment" else "Audio recording ready",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                    IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Outlined.Delete, "Delete audio note") }
-                    IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "Close audio note") }
+
+                    // Copy Text button
+                    IconButton(
+                        onClick = {
+                            val textToCopy = transcriptData.fullText
+                            if (textToCopy.isNotBlank()) {
+                                clipboard.setText(AnnotatedString(textToCopy))
+                                Toast.makeText(context, "Transcript copied to clipboard", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "No transcript available to copy", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    ) {
+                        Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy transcript")
+                    }
+
+                    IconButton(onClick = { confirmDelete = true }) {
+                        Icon(Icons.Outlined.Delete, "Delete audio note")
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Outlined.Close, "Close audio note")
+                    }
                 }
-                HorizontalDivider(Modifier.padding(vertical = 16.dp))
+
+                HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+                // Scale slider
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Icon size ${(iconFraction * 100f).roundToInt()}%", Modifier.width(112.dp))
+                    Text("Icon size ${(iconFraction * 100f).roundToInt()}%", Modifier.width(112.dp), style = MaterialTheme.typography.labelMedium)
                     Slider(
                         value = iconFraction,
                         onValueChange = { iconFraction = it },
@@ -7352,58 +7805,196 @@ private fun AudioNotePanel(
                         modifier = Modifier.weight(1f),
                     )
                 }
+
+                // Top section: Transcript
                 Surface(
-                    Modifier.fillMaxWidth().weight(1f),
+                    Modifier.fillMaxWidth().weight(1f).padding(vertical = 8.dp),
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 ) {
-                    Box(Modifier.fillMaxSize().padding(22.dp)) {
+                    Box(Modifier.fillMaxSize().padding(18.dp)) {
                         when {
-                            transcript.isNotBlank() -> Text(
-                                highlightedTranscript,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                            )
-                            else -> Text(
-                                playbackError ?: "No transcript is embedded in this audio note.",
-                                modifier = Modifier.align(Alignment.Center),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            transcriptData.fullText.isNotBlank() -> {
+                                ClickableText(
+                                    text = annotatedTranscript,
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        lineHeight = 28.sp,
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(rememberScrollState()),
+                                    onClick = { offset ->
+                                        annotatedTranscript.getStringAnnotations(tag = "SEEK", start = offset, end = offset)
+                                            .firstOrNull()?.let { annotation ->
+                                                val targetMillis = annotation.item.toLongOrNull() ?: 0L
+                                                preparedPlayer()?.let { p ->
+                                                    p.seekTo(targetMillis.toInt())
+                                                    position = targetMillis.toFloat()
+                                                    if (!playing) {
+                                                        p.start()
+                                                        playing = true
+                                                    }
+                                                }
+                                            }
+                                    },
+                                )
+                            }
+                            else -> {
+                                Column(
+                                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = if (isExtracting) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant,
+                                        modifier = Modifier.size(56.dp),
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            if (isExtracting) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(28.dp),
+                                                    strokeWidth = 3.dp,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            } else {
+                                                Icon(
+                                                    Icons.Outlined.Mic,
+                                                    null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(28.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        if (isExtracting) "Extracting text from audio..." else "No transcript available",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        if (isExtracting) extractionProgress.ifBlank { "Extracting speech from recorded audio..." } else "Extract speech directly from your recorded audio file",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    )
+                                    Spacer(Modifier.height(16.dp))
+                                    if (!isExtracting) {
+                                        Button(
+                                            onClick = ::extractFromAudioFile,
+                                        ) {
+                                            Icon(Icons.Outlined.Mic, null, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Extract from Audio")
+                                        }
+                                    }
+                                }
+
+                            }
                         }
                     }
                 }
-                Slider(
-                    value = position.coerceIn(0f, duration),
-                    onValueChange = { position = it },
-                    onValueChangeFinished = { preparedPlayer()?.seekTo(position.roundToInt()) },
-                    valueRange = 0f..duration,
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                )
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(formatAudioTime(position.toLong()), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+
+                // Middle section: Amplitude Waveform Progress Bar
+                Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    AudioWaveformBar(
+                        amplitudes = amplitudes,
+                        currentPositionMillis = position,
+                        totalDurationMillis = duration,
+                        onSeek = { targetPos ->
+                            position = targetPos
+                            preparedPlayer()?.seekTo(targetPos.roundToInt())
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    )
+                }
+
+                // Bottom section: Playback controls
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${formatAudioTime(position.toLong())} / ${formatAudioTime(duration.toLong())}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(100.dp),
+                    )
+
+                    Spacer(Modifier.weight(1f))
+
+                    // -10s button
                     IconButton(onClick = {
                         preparedPlayer()?.let { active ->
                             active.seekTo((active.currentPosition - 10_000).coerceAtLeast(0))
                             position = active.currentPosition.toFloat()
                         }
-                    }) { Icon(Icons.Outlined.NavigateBefore, "Back 10 seconds") }
-                    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primaryContainer) {
-                        IconButton(onClick = {
-                            preparedPlayer()?.let { active ->
-                                if (active.isPlaying) { active.pause(); playing = false }
-                                else { active.start(); playing = true }
-                            }
-                        }, modifier = Modifier.size(56.dp)) {
-                            Icon(if (playing) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, if (playing) "Pause" else "Play")
+                    }) {
+                        Icon(Icons.Outlined.NavigateBefore, "Back 10 seconds")
+                    }
+
+                    // Play/Pause button
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(56.dp).padding(horizontal = 4.dp),
+                    ) {
+                        IconButton(
+                            onClick = {
+                                preparedPlayer()?.let { active ->
+                                    if (active.isPlaying) {
+                                        active.pause()
+                                        playing = false
+                                    } else {
+                                        active.start()
+                                        playing = true
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            Icon(
+                                if (playing) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                                if (playing) "Pause" else "Play",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(32.dp),
+                            )
                         }
                     }
+
+                    // +10s button
                     IconButton(onClick = {
                         preparedPlayer()?.let { active ->
                             active.seekTo((active.currentPosition + 10_000).coerceAtMost(active.duration))
                             position = active.currentPosition.toFloat()
                         }
-                    }) { Icon(Icons.Outlined.NavigateNext, "Forward 10 seconds") }
-                    Text(formatAudioTime(duration.toLong()), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                    }) {
+                        Icon(Icons.Outlined.NavigateNext, "Forward 10 seconds")
+                    }
+
+                    Spacer(Modifier.weight(1f))
+
+                    // Speed toggle button
+                    val speeds = listOf(1.0f, 1.25f, 1.5f, 2.0f)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.clickable {
+                            val nextIndex = (speeds.indexOf(playbackSpeed) + 1) % speeds.size
+                            applySpeed(speeds[nextIndex])
+                        },
+                    ) {
+                        Text(
+                            text = "${playbackSpeed}x",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        )
+                    }
                 }
             }
         }
@@ -7423,27 +8014,7 @@ private fun AudioNotePanel(
     }
 }
 
-private fun synchronizedTranscript(text: String, progress: Float): AnnotatedString {
-    if (text.isBlank()) return AnnotatedString("")
-    val tokens = Regex("\\S+|\\s+").findAll(text).map { it.value }.toList()
-    val wordCount = tokens.count { it.any(Char::isLetterOrDigit) }.coerceAtLeast(1)
-    val activeWord = (progress.coerceIn(0f, .9999f) * wordCount).toInt()
-    var wordIndex = 0
-    return buildAnnotatedString {
-        tokens.forEach { token ->
-            if (token.any(Char::isLetterOrDigit)) {
-                if (wordIndex == activeWord) withStyle(
-                    SpanStyle(
-                        color = Color(0xFF111827),
-                        background = Color(0xFFFACC15),
-                        fontWeight = FontWeight.Bold,
-                    ),
-                ) { append(token) } else append(token)
-                wordIndex++
-            } else append(token)
-        }
-    }
-}
+
 
 private fun formatAudioTime(milliseconds: Long): String {
     val totalSeconds = (milliseconds / 1_000L).coerceAtLeast(0L)
