@@ -13,6 +13,7 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.os.Build
 import android.provider.OpenableColumns
+import com.mheenotes.app.editor.inInkRenderOrder
 import com.mheenotes.core.model.InkStroke
 import com.mheenotes.core.model.PageState
 import com.mheenotes.core.model.ObjectCrop
@@ -242,8 +243,8 @@ object PageExporter {
                 drawPaper(exportPage, page.canvas, width, height)
                 exportPage.background?.let { page.canvas.drawBitmap(it, null, Rect(0, 0, width, height), null) }
                 val scale = width / exportPage.widthMicrons
-                drawStrokes(exportPage.page.strokes, page.canvas, scale)
                 drawObjects(exportPage.objects, page.canvas, scale)
+                drawStrokes(exportPage.page.strokes, page.canvas, scale)
                 document.finishPage(page)
             }
             document.writeTo(output)
@@ -259,8 +260,8 @@ object PageExporter {
             drawPaper(page, canvas, width, height)
             page.background?.let { canvas.drawBitmap(it, null, Rect(0, 0, width, height), null) }
             val scale = width / page.widthMicrons
-            drawStrokes(page.page.strokes, canvas, scale)
             drawObjects(page.objects, canvas, scale)
+            drawStrokes(page.page.strokes, canvas, scale)
         }
     }
 
@@ -466,30 +467,58 @@ object PageExporter {
     }
 
     private fun drawStrokes(strokes: List<InkStroke>, canvas: android.graphics.Canvas, scale: Float) {
-        strokes.sortedBy(InkStroke::zIndex).forEach { stroke ->
+        strokes.inInkRenderOrder().forEach { stroke ->
+            val layerAlpha = (stroke.style.opacity * 255).roundToInt().coerceIn(0, 255)
+            if (layerAlpha == 0) return@forEach
+            val layerCheckpoint = if (stroke.style.pressureEnabled && layerAlpha < 255) {
+                val margin = stroke.style.maximumWidth * scale
+                canvas.saveLayerAlpha(
+                    RectF(
+                        stroke.bounds.left * scale - margin,
+                        stroke.bounds.top * scale - margin,
+                        stroke.bounds.right * scale + margin,
+                        stroke.bounds.bottom * scale + margin,
+                    ),
+                    layerAlpha,
+                )
+            } else null
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = stroke.style.argb
-                alpha = (stroke.style.opacity * 255).roundToInt()
+                color = (stroke.style.argb and 0x00FF_FFFF) or 0xFF00_0000.toInt()
+                alpha = if (layerCheckpoint == null) layerAlpha else 255
                 style = Paint.Style.STROKE
                 strokeCap = Paint.Cap.ROUND
                 strokeJoin = Paint.Join.ROUND
             }
-            if (stroke.samples.size == 1) {
-                val sample = stroke.samples.single()
-                paint.style = Paint.Style.FILL
-                val radius = PressureNormalizer.width(sample.pressure, stroke.style) * scale / 2f
-                canvas.drawCircle(sample.position.x * scale, sample.position.y * scale, radius, paint)
-            } else {
-                stroke.samples.zipWithNext().forEach { (start, end) ->
-                    paint.strokeWidth = PressureNormalizer.width(end.pressure, stroke.style) * scale
-                    canvas.drawLine(
-                        start.position.x * scale,
-                        start.position.y * scale,
-                        end.position.x * scale,
-                        end.position.y * scale,
-                        paint,
-                    )
+            try {
+                if (stroke.samples.size == 1) {
+                    val sample = stroke.samples.single()
+                    paint.style = Paint.Style.FILL
+                    val radius = PressureNormalizer.width(sample.pressure, stroke.style) * scale / 2f
+                    canvas.drawCircle(sample.position.x * scale, sample.position.y * scale, radius, paint)
+                } else if (!stroke.style.pressureEnabled) {
+                    paint.strokeWidth = stroke.style.maximumWidth * scale
+                    val first = stroke.samples.first().position
+                    val path = android.graphics.Path().apply {
+                        moveTo(first.x * scale, first.y * scale)
+                        stroke.samples.drop(1).forEach { sample ->
+                            lineTo(sample.position.x * scale, sample.position.y * scale)
+                        }
+                    }
+                    canvas.drawPath(path, paint)
+                } else {
+                    stroke.samples.zipWithNext().forEach { (start, end) ->
+                        paint.strokeWidth = PressureNormalizer.width(end.pressure, stroke.style) * scale
+                        canvas.drawLine(
+                            start.position.x * scale,
+                            start.position.y * scale,
+                            end.position.x * scale,
+                            end.position.y * scale,
+                            paint,
+                        )
+                    }
                 }
+            } finally {
+                layerCheckpoint?.let(canvas::restoreToCount)
             }
         }
     }

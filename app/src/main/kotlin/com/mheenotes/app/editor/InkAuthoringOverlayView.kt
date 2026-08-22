@@ -39,7 +39,9 @@ data class FinishedInkStroke(
 
 data class CommittedInkStroke(
     val stroke: Stroke,
-    val strokeToViewTransform: Matrix,
+    val documentOffsetX: Float,
+    val documentOffsetY: Float,
+    val isHighlighter: Boolean = false,
 )
 
 enum class FingerObjectGesture { Canvas, SelectOnly, Move }
@@ -47,6 +49,12 @@ enum class FingerObjectGesture { Canvas, SelectOnly, Move }
 class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
     private val inkView = InProgressStrokesView(context)
     private val committedStrokeRenderer = ViewStrokeRenderer(CanvasStrokeRenderer.create(), this)
+    private val committedStrokeTransform = Matrix()
+    private val committedStrokeTransformValues = floatArrayOf(
+        1f, 0f, 0f,
+        0f, 1f, 0f,
+        0f, 0f, 1f,
+    )
     private val predictor = MotionEventPredictor.newInstance(inkView)
     private val stylesByStrokeId = mutableMapOf<InProgressStrokeId, StrokeStyle>()
     private val capturedSamplesByStrokeId = mutableMapOf<InProgressStrokeId, MutableList<StrokeSample>>()
@@ -79,6 +87,8 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
     private var fingerTapPointerId: Int? = null
     private var fingerTapStart: SingleFingerGesture? = null
     private var fingerTapMaximumDistance = 0f
+    private var lastFingerTapAtMillis = 0L
+    private var lastFingerTapPosition: SingleFingerGesture? = null
     private var fingerLongPressPointerId: Int? = null
     private var fingerLongPressStart: SingleFingerGesture? = null
     private var suppressFingerTapForLongPress = false
@@ -115,9 +125,14 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
             field = value
             invalidate()
         }
+    private var committedHighlighters: List<CommittedInkStroke> = emptyList()
+    private var committedWriting: List<CommittedInkStroke> = emptyList()
     var committedStrokes: List<CommittedInkStroke> = emptyList()
         set(value) {
+            if (field === value) return
             field = value
+            committedHighlighters = value.filter(CommittedInkStroke::isHighlighter)
+            committedWriting = value.filterNot(CommittedInkStroke::isHighlighter)
             invalidate()
         }
     var minimumScale = 1f
@@ -125,9 +140,16 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
     var alwaysRecognizeActionGestures = false
     var showHoverDiagnostics = false
     var style = StrokeStyle()
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidate()
+            }
+        }
     var onMotionEventObserved: (MotionEvent) -> Unit = {}
     var onStrokeFinished: (FinishedInkStroke) -> Unit = {}
     var onStrokeProgress: (InProgressStrokeId, List<StrokeSample>, StrokeStyle, Boolean) -> Boolean = { _, _, _, _ -> false }
+    var onUncommittedInkChanged: (Boolean) -> Unit = {}
     var onErase: (PagePoint) -> Unit = {}
     var onEraseFinished: () -> Unit = {}
     var onViewportChanged: (ViewportTransform) -> Unit = {}
@@ -135,6 +157,7 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
     var onCanvasTouched: () -> Unit = {}
     var onCanvasTouchAt: (PagePoint) -> Unit = {}
     var onFingerTap: (PagePoint) -> Unit = {}
+    var onFingerDoubleTap: (PagePoint) -> Unit = {}
     var onFingerLongPress: (PagePoint) -> Unit = {}
     var onStylusHover: (StylusHoverSample) -> Unit = {}
     var onStylusHoverExit: () -> Unit = {}
@@ -181,6 +204,7 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
                             inkView.removeFinishedStrokes(setOf(strokeId))
                         }
                     }
+                    onUncommittedInkChanged(hasUncommittedInk)
                     invalidate()
                 }
             },
@@ -199,16 +223,45 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        val strokes = if (style.tool == InkTool.Highlighter) {
+            committedHighlighters
+        } else {
+            committedStrokes
+        }
+        drawCommittedStrokes(canvas, strokes)
+        if (style.tool != InkTool.Highlighter && showHoverDiagnostics) {
+            hoverSample?.let { drawHoverDiagnostics(canvas, it) }
+        }
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        if (style.tool == InkTool.Highlighter) {
+            drawCommittedStrokes(canvas, committedWriting)
+            if (showHoverDiagnostics) hoverSample?.let { drawHoverDiagnostics(canvas, it) }
+        }
+    }
+
+    private fun drawCommittedStrokes(canvas: Canvas, strokes: List<CommittedInkStroke>) {
         committedStrokeRenderer.drawWithStrokes(canvas) { scope ->
-            committedStrokes.forEach { placedStroke ->
+            strokes.forEach { placedStroke ->
                 val saveCount = canvas.save()
-                canvas.concat(placedStroke.strokeToViewTransform)
+                committedStrokeTransformValues[Matrix.MSCALE_X] = viewport.scale
+                committedStrokeTransformValues[Matrix.MSCALE_Y] = viewport.scale
+                committedStrokeTransformValues[Matrix.MTRANS_X] = viewport.offsetX +
+                    placedStroke.documentOffsetX * viewport.scale
+                committedStrokeTransformValues[Matrix.MTRANS_Y] = viewport.offsetY +
+                    placedStroke.documentOffsetY * viewport.scale
+                committedStrokeTransform.setValues(committedStrokeTransformValues)
+                canvas.concat(committedStrokeTransform)
                 scope.drawStroke(placedStroke.stroke)
                 canvas.restoreToCount(saveCount)
             }
         }
-        if (showHoverDiagnostics) hoverSample?.let { drawHoverDiagnostics(canvas, it) }
     }
+
+    val hasUncommittedInk: Boolean
+        get() = activeStrokeId != null || stylesByStrokeId.isNotEmpty()
 
     fun removeFinishedStroke(id: InProgressStrokeId) {
         inkView.postOnAnimation {
@@ -464,6 +517,7 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
         actionCandidateByStrokeId[strokeId] = alwaysRecognizeActionGestures || event.buttonState != 0 ||
             (0 until event.pointerCount).any { event.getToolType(it) == MotionEvent.TOOL_TYPE_FINGER }
         activePointerId = pointerId
+        onUncommittedInkChanged(true)
         scheduleHeldStrokeProgress()
         return true
     }
@@ -565,11 +619,11 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
     }
 
     private fun cancelActive(event: MotionEvent?) {
-        val pointerId = activePointerId ?: return
+        val pointerId = activePointerId
         removeCallbacks(deliverHeldStrokeProgress)
-        if (event != null) {
+        if (event != null && pointerId != null) {
             inkView.cancelStroke(event, pointerId)
-        } else {
+        } else if (pointerId != null || stylesByStrokeId.isNotEmpty()) {
             inkView.cancelUnfinishedStrokes()
         }
         activePointerId = null
@@ -578,6 +632,7 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
         strokeStartedAtMillis.clear()
         capturedSamplesByStrokeId.clear()
         actionCandidateByStrokeId.clear()
+        onUncommittedInkChanged(false)
     }
 
     private fun updateFingerGesture(event: MotionEvent, pointerLifted: Boolean): Boolean {
@@ -729,6 +784,7 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
         actionCandidateByStrokeId.remove(strokeId)
         activeStrokeId = null
         activePointerId = null
+        onUncommittedInkChanged(hasUncommittedInk)
         invalidate()
     }
 
@@ -760,7 +816,22 @@ class InkAuthoringOverlayView(context: Context) : FrameLayout(context) {
                     fingerTapMaximumDistance <= ViewConfiguration.get(context).scaledTouchSlop * 1.25f &&
                     !suppressFingerTapForLongPress
                 ) {
-                    onFingerTap(viewport.toPage(event.x, event.y))
+                    val current = SingleFingerGesture(event.x, event.y)
+                    val previous = lastFingerTapPosition
+                    val doubleTap = previous != null &&
+                        event.eventTime - lastFingerTapAtMillis <= ViewConfiguration.getDoubleTapTimeout() &&
+                        hypot(current.x - previous.x, current.y - previous.y) <=
+                        ViewConfiguration.get(context).scaledDoubleTapSlop
+                    val point = viewport.toPage(event.x, event.y)
+                    if (doubleTap) {
+                        lastFingerTapAtMillis = 0L
+                        lastFingerTapPosition = null
+                        onFingerDoubleTap(point)
+                    } else {
+                        lastFingerTapAtMillis = event.eventTime
+                        lastFingerTapPosition = current
+                        onFingerTap(point)
+                    }
                 }
                 fingerTapPointerId = null
                 fingerTapStart = null

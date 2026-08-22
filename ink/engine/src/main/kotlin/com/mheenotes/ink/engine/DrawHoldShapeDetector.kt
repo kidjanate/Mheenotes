@@ -39,16 +39,69 @@ object DrawHoldShapeDetector {
         if (
             meanDeviation < maxOf(1_400f, diagonal * .055f) &&
             maximumDeviation < maxOf(3_200f, diagonal * .12f)
-        ) return CorrectedShape(ShapeKind.Line, bounds, first, end)
+        ) return CorrectedShape(ShapeKind.Line, bounds, first, snapToAxis(first, end))
         if (linesOnly) return null
         val closed = distance(first, end) < diagonal * .24f
         if (!closed) return null
+
+        val contour = moving.map(StrokeSample::position) + end
+        val vertices = simplifiedClosedVertices(contour, maxOf(900f, diagonal * .055f))
+        if (vertices.size == 3) return CorrectedShape(ShapeKind.Triangle, bounds)
+        if (vertices.size == 4) return CorrectedShape(ShapeKind.Rectangle, bounds)
+
         val center = PagePoint((bounds.left + bounds.right) / 2f, (bounds.top + bounds.bottom) / 2f)
-        val radii = moving.map { distance(it.position, center) }
-        val average = radii.average().toFloat().coerceAtLeast(1f)
-        val radialError = radii.sumOf { abs(it - average).toDouble() }.toFloat() / radii.size / average
-        val kind = if (radialError < .18f) ShapeKind.Ellipse else ShapeKind.Rectangle
-        return CorrectedShape(kind, bounds)
+        val radiusX = ((bounds.right - bounds.left) / 2f).coerceAtLeast(1f)
+        val radiusY = ((bounds.bottom - bounds.top) / 2f).coerceAtLeast(1f)
+        val ellipseError = moving.sumOf { sample ->
+            abs(
+                hypot(
+                    (sample.position.x - center.x) / radiusX,
+                    (sample.position.y - center.y) / radiusY,
+                ) - 1f,
+            ).toDouble()
+        }.toFloat() / moving.size
+        return CorrectedShape(ShapeKind.Ellipse, bounds).takeIf { ellipseError < .18f }
+    }
+
+    private fun snapToAxis(start: PagePoint, end: PagePoint): PagePoint {
+        val dx = abs(end.x - start.x)
+        val dy = abs(end.y - start.y)
+        val axisTolerance = .14f // About eight degrees from horizontal or vertical.
+        return when {
+            dy <= dx * axisTolerance -> PagePoint(end.x, start.y)
+            dx <= dy * axisTolerance -> PagePoint(start.x, end.y)
+            else -> end
+        }
+    }
+
+    private fun simplifiedClosedVertices(points: List<PagePoint>, tolerance: Float): List<PagePoint> {
+        if (points.size < 4) return emptyList()
+        val first = points.first()
+        val splitIndex = (1 until points.lastIndex).maxByOrNull { distance(first, points[it]) }
+            ?: return emptyList()
+        if (splitIndex <= 0 || splitIndex >= points.lastIndex) return emptyList()
+        val firstHalf = simplify(points.subList(0, splitIndex + 1), tolerance)
+        val secondHalf = simplify(points.subList(splitIndex, points.size), tolerance)
+        return firstHalf.dropLast(1) + secondHalf.dropLast(1)
+    }
+
+    private fun simplify(points: List<PagePoint>, tolerance: Float): List<PagePoint> {
+        if (points.size <= 2) return points
+        val first = points.first()
+        val last = points.last()
+        var farthestIndex = -1
+        var farthestDistance = 0f
+        for (index in 1 until points.lastIndex) {
+            val deviation = pointLineDistance(points[index], first, last)
+            if (deviation > farthestDistance) {
+                farthestDistance = deviation
+                farthestIndex = index
+            }
+        }
+        if (farthestIndex < 0 || farthestDistance <= tolerance) return listOf(first, last)
+        val left = simplify(points.subList(0, farthestIndex + 1), tolerance)
+        val right = simplify(points.subList(farthestIndex, points.size), tolerance)
+        return left.dropLast(1) + right
     }
 
     private fun distance(a: PagePoint, b: PagePoint) = hypot(a.x - b.x, a.y - b.y)

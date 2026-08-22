@@ -2,7 +2,6 @@ package com.mheenotes.app.ui.editor
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.content.Intent
 import android.os.Handler
@@ -115,6 +114,7 @@ import androidx.compose.material.icons.outlined.RotateRight
 import androidx.compose.material.icons.outlined.FormatColorFill
 import androidx.compose.material.icons.outlined.LineWeight
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ShapeLine
 import androidx.compose.material.icons.outlined.Star
@@ -166,6 +166,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
@@ -249,6 +250,7 @@ import com.mheenotes.app.editor.InkAuthoringOverlayView
 import com.mheenotes.app.editor.SaveStatus
 import com.mheenotes.app.editor.ViewportTransform
 import com.mheenotes.app.editor.StylusHoverSample
+import com.mheenotes.app.editor.inInkRenderOrder
 import com.mheenotes.app.editor.toAndroidXStroke
 import com.mheenotes.core.model.InkTool
 import com.mheenotes.core.model.InkStroke
@@ -268,6 +270,7 @@ import com.mheenotes.core.model.PageId
 import com.mheenotes.core.model.PagePoint
 import com.mheenotes.core.model.PageRect
 import com.mheenotes.core.model.PageSize
+import com.mheenotes.core.model.PageState
 import com.mheenotes.core.model.PageTemplate
 import com.mheenotes.core.model.PdfPageSource
 import com.mheenotes.core.model.SourceDocument
@@ -283,6 +286,13 @@ import com.mheenotes.core.model.TextObject as ModelTextObject
 import com.mheenotes.core.model.AudioObject as ModelAudioObject
 import com.mheenotes.core.storage.NativeNotebookContainer
 import com.mheenotes.core.storage.ActionMapStore
+import com.mheenotes.app.editor.AutomaticOcrResult
+import com.mheenotes.app.editor.AutomaticTextRecognizer
+import com.mheenotes.app.editor.RecognizedPageText
+import com.mheenotes.app.editor.RecognizedTextToken
+import com.mheenotes.app.editor.TextRangeSelection
+import com.mheenotes.app.editor.TextSelectionHandle
+import com.mheenotes.app.editor.nearestRecognizedTokenIndex
 import com.mheenotes.gesture.engine.ActionMapRecognizer
 import com.mheenotes.ink.engine.ScribbleSensitivity
 import com.mheenotes.ink.engine.LassoSelection
@@ -290,9 +300,6 @@ import com.mheenotes.ink.engine.SelectionTransform
 import com.mheenotes.ink.engine.DrawHoldShapeDetector
 import com.mheenotes.ink.engine.PressureNormalizer
 import com.mheenotes.ink.engine.CorrectedShape
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import androidx.ink.strokes.Stroke as AndroidXStroke
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -610,7 +617,42 @@ private data class PageEntry(
     // Native AndroidX Ink reconstruction is intentionally optional. A failed stroke remains in
     // the domain model and is drawn by the direct Canvas fallback instead of disappearing.
     val renderStrokeFailures: MutableMap<StrokeId, String> = mutableStateMapOf(),
-)
+) {
+    private var runtimeSourcePage: PageState? = null
+    var renderRevision by mutableIntStateOf(0)
+        private set
+
+    fun runtimeStrokesMatch(source: PageState): Boolean = runtimeSourcePage === source
+
+    fun markRuntimeStrokesChanged() {
+        renderRevision++
+    }
+
+    fun markRuntimeStrokesSynchronized() {
+        runtimeSourcePage = session.page
+    }
+
+    fun invalidateRuntimeStrokeSource() {
+        runtimeSourcePage = null
+    }
+}
+
+internal fun pagePreviewAspectRatio(size: PageSize, rotationDegrees: Int): Float =
+    if (((rotationDegrees % 360) + 360) % 360 in setOf(90, 270)) {
+        size.heightMicrons / size.widthMicrons
+    } else {
+        size.widthMicrons / size.heightMicrons
+    }
+
+private fun PageEntry.previewAspectRatio(): Float = pagePreviewAspectRatio(size, rotation)
+
+internal fun <T> MutableList<T>.replaceContentsWithoutEmptying(values: List<T>) {
+    require(values.isNotEmpty()) { "A notebook must keep at least one page" }
+    val sharedCount = minOf(size, values.size)
+    repeat(sharedCount) { index -> this[index] = values[index] }
+    while (size > values.size) removeAt(lastIndex)
+    if (size < values.size) addAll(values.subList(size, values.size))
+}
 
 private data class PageListSnapshot(
     val entries: List<PageEntry>,
@@ -633,6 +675,17 @@ private sealed interface EditorHistoryEntry {
     data object Objects : EditorHistoryEntry
     data object Pages : EditorHistoryEntry
     data class Composite(val entries: List<EditorHistoryEntry>) : EditorHistoryEntry
+}
+
+internal enum class SelectionUndoAction { None, CancelSelection, UndoEditAndCancelSelection }
+
+internal fun selectionUndoAction(
+    baselineRevision: Long?,
+    currentRevision: Long,
+): SelectionUndoAction = when {
+    baselineRevision == null -> SelectionUndoAction.None
+    currentRevision > baselineRevision -> SelectionUndoAction.UndoEditAndCancelSelection
+    else -> SelectionUndoAction.CancelSelection
 }
 
 private data class PendingImagePlacement(
@@ -663,6 +716,8 @@ private class EditorTab(
     private val objectRedo = ArrayDeque<ObjectListSnapshot>()
     private val editorUndo = ArrayDeque<EditorHistoryEntry>()
     private val editorRedo = ArrayDeque<EditorHistoryEntry>()
+    private var historyRevision = 0L
+    private var historyStateVersion by mutableIntStateOf(0)
     private var historyTransactionDepth = 0
     private val transactionEntries = mutableListOf<EditorHistoryEntry>()
     private var historyRecordingSuspended = false
@@ -670,6 +725,10 @@ private class EditorTab(
     private val viewportSaveRunnable = Runnable { persistViewportNow() }
     private var toolDefaults: AppSettings? = null
     var flushPendingInk: () -> Unit = {}
+    var deferUndoForWetInk: () -> Boolean = { false }
+    var clearSelectionForHistory: () -> Unit = {}
+    private var selectionUndoBaselineRevision by mutableStateOf<Long?>(null)
+    private var wetInkUndoAvailable by mutableStateOf(false)
     private val startingDocument = initialDocument ?: runCatching {
         NativeNotebookContainer.loadManifest(root)
     }.getOrNull()
@@ -840,12 +899,34 @@ private class EditorTab(
         restorePdfBackgrounds()
     }
 
-    val canUndo get() = editorUndo.isNotEmpty()
-    val canRedo get() = editorRedo.isNotEmpty()
+    val canUndo: Boolean
+        get() {
+            historyStateVersion
+            return wetInkUndoAvailable || selectionUndoBaselineRevision != null || editorUndo.isNotEmpty()
+        }
+    val canRedo: Boolean
+        get() {
+            historyStateVersion
+            return editorRedo.isNotEmpty()
+        }
     val canUndoPageEdit get() = canUndo
     val canRedoPageEdit get() = canRedo
     val canUndoObjectEdit get() = canUndo
     val canRedoObjectEdit get() = canRedo
+
+    fun updateWetInkUndoAvailable(available: Boolean) {
+        wetInkUndoAvailable = available
+    }
+
+    fun beginSelectionUndo() {
+        if (selectionUndoBaselineRevision == null) {
+            selectionUndoBaselineRevision = historyRevision
+        }
+    }
+
+    fun endSelectionUndo() {
+        selectionUndoBaselineRevision = null
+    }
 
     private fun recordHistory(entry: EditorHistoryEntry) {
         if (historyRecordingSuspended) return
@@ -856,6 +937,8 @@ private class EditorTab(
         editorUndo.addLast(entry)
         while (editorUndo.size > 100) editorUndo.removeFirst()
         editorRedo.clear()
+        historyRevision++
+        historyStateVersion++
     }
 
     fun beginHistoryTransaction() {
@@ -918,8 +1001,9 @@ private class EditorTab(
     }
 
     private fun restorePageSnapshot(snapshot: PageListSnapshot) {
-        pages.clear()
-        pages.addAll(snapshot.entries)
+        val selectedIndex = snapshot.entries.indexOfFirst { it.id == snapshot.selectedPageId }.coerceAtLeast(0)
+        if (selectedIndex < pages.size) selectedPageIndexState = selectedIndex
+        pages.replaceContentsWithoutEmptying(snapshot.entries)
         navigateToPage(pages.indexOfFirst { it.id == snapshot.selectedPageId }.coerceAtLeast(0))
         persistManifest()
     }
@@ -955,22 +1039,43 @@ private class EditorTab(
     }
 
     fun undo() {
+        flushPendingInk()
+        if (deferUndoForWetInk()) return
+        when (selectionUndoAction(selectionUndoBaselineRevision, historyRevision)) {
+            SelectionUndoAction.None -> Unit
+            SelectionUndoAction.CancelSelection -> {
+                clearSelectionForHistory()
+                selectionUndoBaselineRevision = null
+                return
+            }
+            SelectionUndoAction.UndoEditAndCancelSelection -> {
+                clearSelectionForHistory()
+                selectionUndoBaselineRevision = null
+            }
+        }
         if (editorUndo.isEmpty()) return
         val entry = editorUndo.removeLast()
         historyRecordingSuspended = true
         try { applyUndo(entry) } finally { historyRecordingSuspended = false }
         editorRedo.addLast(entry)
+        historyStateVersion++
     }
 
     fun redo() {
+        if (selectionUndoBaselineRevision != null) {
+            clearSelectionForHistory()
+            selectionUndoBaselineRevision = null
+        }
         if (editorRedo.isEmpty()) return
         val entry = editorRedo.removeLast()
         historyRecordingSuspended = true
         try { applyRedo(entry) } finally { historyRecordingSuspended = false }
         editorUndo.addLast(entry)
+        historyStateVersion++
     }
 
     fun addPage(after: Boolean = true, spec: PageInsertSpec? = null) {
+        flushPendingInk()
         recordPageEdit()
         val insertionIndex = if (after) selectedPageIndex + 1 else selectedPageIndex
         val source = pages[selectedPageIndex]
@@ -2434,7 +2539,7 @@ private fun LibraryScreen(
                                 page,
                                 Modifier
                                     .fillMaxHeight()
-                                    .aspectRatio(page.size.widthMicrons / page.size.heightMicrons)
+                                    .aspectRatio(page.previewAspectRatio())
                                     .clip(RoundedCornerShape(5.dp)),
                             )
                         }
@@ -3223,7 +3328,7 @@ private fun NotebookCard(
                             previewPage,
                             Modifier
                                 .fillMaxHeight()
-                                .aspectRatio(previewPage.size.widthMicrons / previewPage.size.heightMicrons)
+                                .aspectRatio(previewPage.previewAspectRatio())
                                 .clip(RoundedCornerShape(5.dp))
                                 .shadow(5.dp, RoundedCornerShape(5.dp)),
                         )
@@ -3890,7 +3995,7 @@ private fun PageThumbnailRail(
                 val isDragged = draggedPageId == page.id
                 Box(
                     Modifier.fillMaxWidth()
-                        .aspectRatio(page.size.widthMicrons / page.size.heightMicrons)
+                        .aspectRatio(page.previewAspectRatio())
                         .animateItem()
                         .zIndex(if (isDragged) 20f else 0f)
                         .onGloballyPositioned { thumbnailBounds[page.id] = it.boundsInRoot() },
@@ -4039,13 +4144,26 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
     val pageState = page.session.page
     val background = page.thumbnail ?: page.pdfBackground
     Canvas(modifier.background(Color(page.backgroundArgb))) {
-        val scaleX = size.width / page.size.widthMicrons
-        val scaleY = size.height / page.size.heightMicrons
+        val normalizedRotation = ((page.rotation % 360) + 360) % 360
+        val quarterTurn = normalizedRotation == 90 || normalizedRotation == 270
+        val contentWidth = if (quarterTurn) size.height else size.width
+        val contentHeight = if (quarterTurn) size.width else size.height
+        val scaleX = contentWidth / page.size.widthMicrons
+        val scaleY = contentHeight / page.size.heightMicrons
+        val strokeScale = (scaleX + scaleY) / 2f
         val templateColor = Color(page.templateLineArgb)
+        val canvas = drawContext.canvas.nativeCanvas
+        val pageCheckpoint = canvas.save()
+        if (normalizedRotation != 0) {
+            canvas.translate(size.width / 2f, size.height / 2f)
+            canvas.rotate(normalizedRotation.toFloat())
+            canvas.translate(-contentWidth / 2f, -contentHeight / 2f)
+        }
+        drawRect(Color(page.backgroundArgb), size = Size(contentWidth, contentHeight))
         background?.let {
             drawImage(
                 it.asImageBitmap(),
-                dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
+                dstSize = IntSize(contentWidth.roundToInt(), contentHeight.roundToInt()),
             )
         }
         if (background == null) {
@@ -4055,19 +4173,19 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
                 PageTemplate.Ruled -> {
                     var y = spacing
                     while (y < page.size.heightMicrons) {
-                        drawLine(templateColor, Offset(0f, y * scaleY), Offset(size.width, y * scaleY), 1f)
+                        drawLine(templateColor, Offset(0f, y * scaleY), Offset(contentWidth, y * scaleY), 1f)
                         y += spacing
                     }
                 }
                 PageTemplate.Grid -> {
                     var y = spacing
                     while (y < page.size.heightMicrons) {
-                        drawLine(templateColor, Offset(0f, y * scaleY), Offset(size.width, y * scaleY), 1f)
+                        drawLine(templateColor, Offset(0f, y * scaleY), Offset(contentWidth, y * scaleY), 1f)
                         y += spacing
                     }
                     var x = spacing
                     while (x < page.size.widthMicrons) {
-                        drawLine(templateColor, Offset(x * scaleX, 0f), Offset(x * scaleX, size.height), 1f)
+                        drawLine(templateColor, Offset(x * scaleX, 0f), Offset(x * scaleX, contentHeight), 1f)
                         x += spacing
                     }
                 }
@@ -4085,11 +4203,11 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
                 PageTemplate.Cornell -> {
                     var y = 36_000f
                     while (y < page.size.heightMicrons) {
-                        drawLine(templateColor, Offset(0f, y * scaleY), Offset(size.width, y * scaleY), 1f)
+                        drawLine(templateColor, Offset(0f, y * scaleY), Offset(contentWidth, y * scaleY), 1f)
                         y += 9_000f
                     }
-                    drawLine(templateColor, Offset(45_000f * scaleX, 0f), Offset(45_000f * scaleX, size.height), 1f)
-                    drawLine(templateColor, Offset(0f, 27_000f * scaleY), Offset(size.width, 27_000f * scaleY), 1f)
+                    drawLine(templateColor, Offset(45_000f * scaleX, 0f), Offset(45_000f * scaleX, contentHeight), 1f)
+                    drawLine(templateColor, Offset(0f, 27_000f * scaleY), Offset(contentWidth, 27_000f * scaleY), 1f)
                 }
                 PageTemplate.MusicStaff -> {
                     var top = 18_000f
@@ -4103,13 +4221,20 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
                 }
             }
         }
-        pageState.strokes.sortedBy { it.zIndex }.forEach { stroke ->
+        page.objects.sortedBy(SceneObject::zIndex).forEach { item ->
+            drawThumbnailObject(item, scaleX, scaleY)
+        }
+        pageState.strokes.inInkRenderOrder().forEach { stroke ->
             val samples = stroke.samples
             val color = Color(stroke.style.argb).copy(alpha = stroke.style.opacity)
+            val representativePressure = samples.mapNotNull(StrokeSample::pressure)
+                .takeIf(List<Float>::isNotEmpty)?.average()?.toFloat()
+            val strokeWidth = (PressureNormalizer.width(representativePressure, stroke.style) * strokeScale)
+                .coerceAtLeast(.6f)
             if (samples.size == 1) {
                 drawCircle(
                     color,
-                    (stroke.style.maximumWidth * scaleX / 2f).coerceAtLeast(.6f),
+                    strokeWidth / 2f,
                     Offset(samples[0].position.x * scaleX, samples[0].position.y * scaleY),
                 )
             } else {
@@ -4123,78 +4248,136 @@ private fun PageThumbnailPreview(page: PageEntry, modifier: Modifier = Modifier)
                     path,
                     color,
                     style = Stroke(
-                        width = ((stroke.style.minimumWidth + stroke.style.maximumWidth) / 2f * scaleX)
-                            .coerceAtLeast(.6f),
+                        width = strokeWidth,
                         cap = StrokeCap.Round,
                     ),
                 )
             }
         }
-        page.objects.forEach { item ->
-            when (item) {
-                is SceneObject.Image -> drawImage(
-                    item.bitmap.asImageBitmap(),
-                    srcOffset = IntOffset(
-                        (item.bitmap.width * item.crop.leftFraction).roundToInt(),
-                        (item.bitmap.height * item.crop.topFraction).roundToInt(),
-                    ),
-                    srcSize = IntSize(
-                        (item.bitmap.width * (1f - item.crop.leftFraction - item.crop.rightFraction)).roundToInt(),
-                        (item.bitmap.height * (1f - item.crop.topFraction - item.crop.bottomFraction)).roundToInt(),
-                    ),
-                    dstOffset = IntOffset((item.x * scaleX).roundToInt(), (item.y * scaleY).roundToInt()),
-                    dstSize = IntSize((item.width * scaleX).roundToInt(), (item.height * scaleY).roundToInt()),
-                    alpha = item.opacity,
+        canvas.restoreToCount(pageCheckpoint)
+    }
+}
+
+private fun DrawScope.drawThumbnailObject(item: SceneObject, scaleX: Float, scaleY: Float) {
+    val rotation = when (item) {
+        is SceneObject.Image -> item.rotation
+        is SceneObject.Rectangle -> item.rotation
+        is SceneObject.TextBox -> item.rotation
+        is SceneObject.Audio -> 0f
+    }
+    val pivot = when (item) {
+        is SceneObject.Image -> Offset((item.x + item.width / 2f) * scaleX, (item.y + item.height / 2f) * scaleY)
+        is SceneObject.Rectangle -> Offset((item.x + item.width / 2f) * scaleX, (item.y + item.height / 2f) * scaleY)
+        is SceneObject.TextBox -> item.visualBounds().let {
+            Offset((it.left + it.right) / 2f * scaleX, (it.top + it.bottom) / 2f * scaleY)
+        }
+        is SceneObject.Audio -> Offset((item.x + item.width / 2f) * scaleX, (item.y + item.height / 2f) * scaleY)
+    }
+    val canvas = drawContext.canvas.nativeCanvas
+    val checkpoint = canvas.save()
+    if (rotation != 0f) canvas.rotate(rotation, pivot.x, pivot.y)
+    when (item) {
+        is SceneObject.Image -> drawImage(
+            item.bitmap.asImageBitmap(),
+            srcOffset = IntOffset(
+                (item.bitmap.width * item.crop.leftFraction).roundToInt(),
+                (item.bitmap.height * item.crop.topFraction).roundToInt(),
+            ),
+            srcSize = IntSize(
+                (item.bitmap.width * (1f - item.crop.leftFraction - item.crop.rightFraction)).roundToInt()
+                    .coerceAtLeast(1),
+                (item.bitmap.height * (1f - item.crop.topFraction - item.crop.bottomFraction)).roundToInt()
+                    .coerceAtLeast(1),
+            ),
+            dstOffset = IntOffset((item.x * scaleX).roundToInt(), (item.y * scaleY).roundToInt()),
+            dstSize = IntSize(
+                (item.width * scaleX).roundToInt().coerceAtLeast(1),
+                (item.height * scaleY).roundToInt().coerceAtLeast(1),
+            ),
+            alpha = item.opacity,
+        )
+        is SceneObject.Rectangle -> {
+            val topLeft = Offset(item.x * scaleX, item.y * scaleY)
+            val objectSize = Size(item.width * scaleX, item.height * scaleY)
+            val stroke = Stroke((item.strokeWidth * (scaleX + scaleY) / 2f).coerceAtLeast(.6f))
+            when (item.kind) {
+                ShapeKind.Line, ShapeKind.Arrow -> drawLine(
+                    Color(item.strokeArgb), topLeft, topLeft + Offset(objectSize.width, objectSize.height), stroke.width,
                 )
-                is SceneObject.Rectangle -> when (item.kind) {
-                    ShapeKind.Line, ShapeKind.Arrow -> drawLine(
-                        Color(item.strokeArgb),
-                        Offset(item.x * scaleX, item.y * scaleY),
-                        Offset((item.x + item.width) * scaleX, (item.y + item.height) * scaleY),
-                        1f,
-                    )
-                    ShapeKind.Rectangle -> drawRect(
-                        Color(item.strokeArgb),
-                        Offset(item.x * scaleX, item.y * scaleY),
-                        Size(item.width * scaleX, item.height * scaleY),
-                        style = Stroke(1f),
-                    )
-                    ShapeKind.RoundedRectangle -> drawRoundRect(
-                        Color(item.strokeArgb),
-                        Offset(item.x * scaleX, item.y * scaleY),
-                        Size(item.width * scaleX, item.height * scaleY),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(5f, 5f),
-                        style = Stroke(1f),
-                    )
-                    ShapeKind.Ellipse -> drawOval(
-                        Color(item.strokeArgb),
-                        Offset(item.x * scaleX, item.y * scaleY),
-                        Size(item.width * scaleX, item.height * scaleY),
-                        style = Stroke(1f),
-                    )
-                    ShapeKind.Triangle -> {
-                        val path = Path().apply {
-                            moveTo((item.x + item.width / 2f) * scaleX, item.y * scaleY)
-                            lineTo((item.x + item.width) * scaleX, (item.y + item.height) * scaleY)
-                            lineTo(item.x * scaleX, (item.y + item.height) * scaleY)
-                            close()
-                        }
-                        drawPath(path, Color(item.strokeArgb), style = Stroke(1f))
-                    }
+                ShapeKind.Rectangle -> {
+                    item.fillArgb?.let { drawRect(Color(it), topLeft, objectSize) }
+                    drawRect(Color(item.strokeArgb), topLeft, objectSize, style = stroke)
                 }
-                is SceneObject.TextBox -> drawCircle(
-                    Color(item.argb),
-                    1.2f,
-                    Offset(item.x * scaleX, item.y * scaleY),
-                )
-                is SceneObject.Audio -> drawCircle(
-                    Color(0xFFEF4444),
-                    3f,
-                    Offset((item.x + item.width / 2f) * scaleX, (item.y + item.height / 2f) * scaleY),
-                )
+                ShapeKind.RoundedRectangle -> {
+                    val corner = androidx.compose.ui.geometry.CornerRadius(3f, 3f)
+                    item.fillArgb?.let { drawRoundRect(Color(it), topLeft, objectSize, corner) }
+                    drawRoundRect(Color(item.strokeArgb), topLeft, objectSize, corner, style = stroke)
+                }
+                ShapeKind.Ellipse -> {
+                    item.fillArgb?.let { drawOval(Color(it), topLeft, objectSize) }
+                    drawOval(Color(item.strokeArgb), topLeft, objectSize, style = stroke)
+                }
+                ShapeKind.Triangle -> {
+                    val path = Path().apply {
+                        moveTo(topLeft.x + objectSize.width / 2f, topLeft.y)
+                        lineTo(topLeft.x + objectSize.width, topLeft.y + objectSize.height)
+                        lineTo(topLeft.x, topLeft.y + objectSize.height)
+                        close()
+                    }
+                    item.fillArgb?.let { drawPath(path, Color(it)) }
+                    drawPath(path, Color(item.strokeArgb), style = stroke)
+                }
             }
         }
+        is SceneObject.TextBox -> {
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = item.argb
+                textSize = item.size * scaleY
+                isUnderlineText = item.underline
+                typeface = android.graphics.Typeface.create(
+                    if (item.fontFamily.startsWith("file:")) null else item.fontFamily,
+                    when {
+                        item.bold && item.italic -> android.graphics.Typeface.BOLD_ITALIC
+                        item.bold -> android.graphics.Typeface.BOLD
+                        item.italic -> android.graphics.Typeface.ITALIC
+                        else -> android.graphics.Typeface.NORMAL
+                    },
+                )
+                textAlign = when (item.alignment) {
+                    TextAlignment.Start -> Paint.Align.LEFT
+                    TextAlignment.Center -> Paint.Align.CENTER
+                    TextAlignment.End -> Paint.Align.RIGHT
+                }
+            }
+            if (item.fontFamily.startsWith("file:")) runCatching {
+                paint.typeface = android.graphics.Typeface.createFromFile(item.fontFamily.removePrefix("file:"))
+            }
+            val baseX = when (item.alignment) {
+                TextAlignment.Start -> item.x
+                TextAlignment.Center -> item.x + item.width / 2f
+                TextAlignment.End -> item.x + item.width
+            } * scaleX
+            item.text.lines().forEachIndexed { index, line ->
+                val baseline = (item.y + index * item.size * 1.2f) * scaleY
+                item.outlineArgb?.takeIf { item.outlineWidth > 0f }?.let { outlineColor ->
+                    val fillColor = paint.color
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeWidth = (item.outlineWidth * scaleX).coerceAtLeast(.5f)
+                    paint.color = outlineColor
+                    canvas.drawText(line, baseX, baseline, paint)
+                    paint.style = Paint.Style.FILL
+                    paint.color = fillColor
+                }
+                canvas.drawText(line, baseX, baseline, paint)
+            }
+        }
+        is SceneObject.Audio -> {
+            val radius = (minOf(item.width * scaleX, item.height * scaleY) / 2f).coerceAtLeast(2f)
+            drawCircle(Color(0xFFEF4444), radius, pivot)
+            drawCircle(Color.White, radius * .24f, pivot)
+        }
     }
+    canvas.restoreToCount(checkpoint)
 }
 
 @Composable
@@ -4222,6 +4405,13 @@ private data class PagePlacement(
     fun contains(point: PagePoint) = point.x in left..right && point.y in top..bottom
     fun toLocal(point: PagePoint) = PagePoint(point.x - left, point.y - top)
 }
+
+private data class VisibleInkPageKey(
+    val pageId: PageId,
+    val left: Float,
+    val top: Float,
+    val renderRevision: Int,
+)
 
 private data class PendingInkStroke(
     val page: PageEntry,
@@ -4270,22 +4460,60 @@ private fun createDocumentLayout(pages: List<PageEntry>): DocumentLayout {
     return DocumentLayout(width, top, placements)
 }
 
+private fun AutomaticOcrResult.toRecognizedPageText(
+    pageSize: PageSize,
+    bitmapWidth: Int,
+    bitmapHeight: Int,
+): RecognizedPageText {
+    fun android.graphics.Rect.toPageBounds(): PageRect? {
+        if (width() <= 0 || height() <= 0 || bitmapWidth <= 0 || bitmapHeight <= 0) return null
+        val pageLeft = (left.toFloat() / bitmapWidth * pageSize.widthMicrons)
+            .coerceIn(0f, pageSize.widthMicrons)
+        val pageTop = (top.toFloat() / bitmapHeight * pageSize.heightMicrons)
+            .coerceIn(0f, pageSize.heightMicrons)
+        val pageRight = (right.toFloat() / bitmapWidth * pageSize.widthMicrons)
+            .coerceIn(pageLeft, pageSize.widthMicrons)
+        val pageBottom = (bottom.toFloat() / bitmapHeight * pageSize.heightMicrons)
+            .coerceIn(pageTop, pageSize.heightMicrons)
+        return PageRect(pageLeft, pageTop, pageRight, pageBottom)
+    }
+
+    val recognizedTokens = tokens.mapNotNull { token ->
+        token.text.trim().takeIf(String::isNotBlank)?.let { tokenText ->
+            token.bounds.toPageBounds()?.let { bounds ->
+                RecognizedTextToken(tokenText, bounds, token.lineIndex)
+            }
+        }
+    }
+    return RecognizedPageText(recognizedTokens, languageDisplayName())
+}
+
 private fun PageEntry.ensureRuntimeStrokes() {
-    session.page.strokes.forEach { stroke ->
+    val sourcePage = session.page
+    if (runtimeStrokesMatch(sourcePage)) return
+    val strokes = sourcePage.strokes
+    val currentIds = strokes.mapTo(hashSetOf(), InkStroke::id)
+    var changed = renderStrokes.keys.removeAll { it !in currentIds }
+    changed = renderStrokeFailures.keys.removeAll { it !in currentIds } || changed
+    strokes.forEach { stroke ->
         if (stroke.id !in renderStrokes && stroke.id !in renderStrokeFailures) {
             runCatching { stroke.toAndroidXStroke() }
-                .onSuccess { renderStrokes[stroke.id] = RuntimeInkStroke(it, 0f, 0f) }
+                .onSuccess {
+                    renderStrokes[stroke.id] = RuntimeInkStroke(it, 0f, 0f)
+                    changed = true
+                }
                 .onFailure { error ->
                     renderStrokeFailures[stroke.id] = error.message ?: error::class.java.simpleName
+                    changed = true
                 }
         }
     }
+    markRuntimeStrokesSynchronized()
+    if (changed) markRuntimeStrokesChanged()
 }
 
 private fun PageEntry.syncRuntimeStrokes() {
-    val currentIds = session.page.strokes.mapTo(hashSetOf(), InkStroke::id)
-    renderStrokes.keys.filterNot(currentIds::contains).forEach(renderStrokes::remove)
-    renderStrokeFailures.keys.filterNot(currentIds::contains).forEach(renderStrokeFailures::remove)
+    invalidateRuntimeStrokeSource()
     ensureRuntimeStrokes()
 }
 
@@ -4320,6 +4548,7 @@ private fun ContinuousPageCanvas(
     var selectedObjectPage by remember(tab.id) { mutableIntStateOf(-1) }
     var copiedImage by remember(tab.id) { mutableStateOf<SceneObject.Image?>(null) }
     var selectionClipboard by remember(tab.id) { mutableStateOf<SelectionClipboard?>(null) }
+    var clipboardPasteTargetPage by remember(tab.id) { mutableIntStateOf(-1) }
     var mixedSelection by remember(tab.id) { mutableStateOf<MixedSelection?>(null) }
     var lassoPoints by remember(tab.id) { mutableStateOf<List<PagePoint>>(emptyList()) }
     var lassoCaptureRegion by remember(tab.id) { mutableStateOf<LassoCaptureRegion?>(null) }
@@ -4345,6 +4574,10 @@ private fun ContinuousPageCanvas(
     var ocrTitle by remember(tab.id) { mutableStateOf("Text from image") }
     var ocrDetail by remember(tab.id) { mutableStateOf("The result stays on your device.") }
     var ocrBusy by remember(tab.id) { mutableStateOf(false) }
+    val recognizedPdfText = remember(tab.id) { mutableStateMapOf<PageId, RecognizedPageText>() }
+    var textRangeSelection by remember(tab.id) { mutableStateOf<TextRangeSelection?>(null) }
+    var draggedTextHandle by remember(tab.id) { mutableStateOf<TextSelectionHandle?>(null) }
+    var draggedTextHandlePoint by remember(tab.id) { mutableStateOf<PagePoint?>(null) }
     var activeAudioRecording by remember(tab.id) { mutableStateOf<ActiveAudioRecording?>(null) }
     var pendingAudioPoint by remember(tab.id) { mutableStateOf<PagePoint?>(null) }
     var audioError by remember(tab.id) { mutableStateOf<String?>(null) }
@@ -4356,7 +4589,46 @@ private fun ContinuousPageCanvas(
     var lastStylusHover by remember(tab.id) { mutableStateOf<StylusHoverSample?>(null) }
     var radialMenuCenter by remember(tab.id) { mutableStateOf<Offset?>(null) }
     var radialMenuHighlighted by remember(tab.id) { mutableIntStateOf(-1) }
-    val textRecognizer = remember { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    var previousMode by remember(tab.id) { mutableStateOf(mode) }
+    var deferredWetUndoCount by remember(tab.id) { mutableIntStateOf(0) }
+
+    fun clearHistorySelection() {
+        textRangeSelection = null
+        draggedTextHandle = null
+        draggedTextHandlePoint = null
+        mixedSelection = null
+        lassoPoints = emptyList()
+        lassoCaptureRegion = null
+        selectionDrag = PagePoint(0f, 0f)
+        movingSelection = false
+        selectedObject = -1
+        selectedObjectPage = -1
+        stylusObjectPage = -1
+        stylusObjectIndex = -1
+        stylusCanTransformObject = false
+        stylusResizingObject = false
+        fingerResizingImage = false
+        showTextEditor = false
+        showShapeEditor = false
+    }
+
+    val clearSelectionForHistory by rememberUpdatedState(::clearHistorySelection)
+    val hasUndoableSelection = textRangeSelection != null || mixedSelection != null ||
+        lassoCaptureRegion != null || lassoPoints.isNotEmpty() || selectedObject >= 0
+
+    LaunchedEffect(hasUndoableSelection) {
+        if (hasUndoableSelection) tab.beginSelectionUndo() else tab.endSelectionUndo()
+    }
+
+    DisposableEffect(tab.id) {
+        tab.clearSelectionForHistory = { clearSelectionForHistory() }
+        onDispose {
+            tab.clearSelectionForHistory = {}
+            tab.endSelectionUndo()
+        }
+    }
+
+    val textRecognizer = remember { AutomaticTextRecognizer(context) }
     DisposableEffect(textRecognizer) { onDispose { textRecognizer.close() } }
 
     val saveLassoScreenshot = rememberLauncherForActivityResult(
@@ -4371,22 +4643,43 @@ private fun ContinuousPageCanvas(
                         "The screenshot could not be encoded."
                     }
                 } ?: error("The selected file could not be opened.")
+            }.onSuccess {
+                lassoScreenshot?.takeIf { it.bitmap === bitmap }?.let {
+                    lassoScreenshot = null
+                }
+                bitmap.takeUnless(Bitmap::isRecycled)?.recycle()
             }.onFailure { error ->
                 lassoScreenshotError = "Screenshot could not be saved: ${error.message ?: "Unknown error"}"
             }
         }
     }
 
+    LaunchedEffect(mode) {
+        if (previousMode == EditorMode.Lasso && mode != EditorMode.Lasso) {
+            mixedSelection = null
+            lassoPoints = emptyList()
+            lassoCaptureRegion = null
+            selectionDrag = PagePoint(0f, 0f)
+            movingSelection = false
+        }
+        previousMode = mode
+    }
+
     BackHandler(
         enabled = radialMenuCenter != null || lassoScreenshot != null || lassoCaptureRegion != null || mixedSelection != null ||
-            lassoPoints.isNotEmpty() || selectedObject >= 0 ||
+            lassoPoints.isNotEmpty() || clipboardPasteTargetPage >= 0 || selectedObject >= 0 ||
             showCropEditor || showTextEditor || showShapeEditor || showAudioPlayer ||
-            confirmSelectedDelete || confirmMixedDelete,
+            confirmSelectedDelete || confirmMixedDelete || textRangeSelection != null,
     ) {
         when {
             radialMenuCenter != null -> {
                 radialMenuCenter = null
                 radialMenuHighlighted = -1
+            }
+            textRangeSelection != null -> {
+                textRangeSelection = null
+                draggedTextHandle = null
+                draggedTextHandlePoint = null
             }
             lassoScreenshot != null -> {
                 lassoScreenshot?.bitmap?.takeUnless(Bitmap::isRecycled)?.recycle()
@@ -4398,15 +4691,8 @@ private fun ContinuousPageCanvas(
             showAudioPlayer -> showAudioPlayer = false
             confirmSelectedDelete -> confirmSelectedDelete = false
             confirmMixedDelete -> confirmMixedDelete = false
-            else -> {
-                mixedSelection = null
-                lassoPoints = emptyList()
-                lassoCaptureRegion = null
-                selectionDrag = PagePoint(0f, 0f)
-                movingSelection = false
-                selectedObject = -1
-                selectedObjectPage = -1
-            }
+            clipboardPasteTargetPage >= 0 -> clipboardPasteTargetPage = -1
+            else -> clearHistorySelection()
         }
     }
 
@@ -4562,79 +4848,74 @@ private fun ContinuousPageCanvas(
             val height = (image.bitmap.height * (1f - image.crop.topFraction - image.crop.bottomFraction)).roundToInt().coerceAtLeast(1)
             Bitmap.createBitmap(image.bitmap, left, top, width, height)
         }.getOrDefault(image.bitmap)
-        textRecognizer.process(InputImage.fromBitmap(cropped, 0))
-            .addOnSuccessListener { result ->
+        textRecognizer.process(cropped) { recognition ->
+            recognition.onSuccess { result ->
                 ocrBusy = false
+                ocrDetail = "Detected ${result.languageDisplayName()}. The result stays on your device."
                 ocrText = result.text.ifBlank { "No readable text was found in this image." }
-                if (cropped !== image.bitmap && !cropped.isRecycled) cropped.recycle()
-            }
-            .addOnFailureListener { error ->
+            }.onFailure { error ->
                 ocrBusy = false
                 ocrText = "Text recognition failed: ${error.message ?: "Unknown error"}"
-                if (cropped !== image.bitmap && !cropped.isRecycled) cropped.recycle()
             }
+            if (cropped !== image.bitmap && !cropped.isRecycled) cropped.recycle()
+        }
     }
 
-    fun recognizePdfText(page: PageEntry, point: PagePoint) {
+    fun beginPdfTextSelection(page: PageEntry, point: PagePoint) {
         if (ocrBusy || page.pdfSource == null || page.objects.any { it.contains(point) }) return
-        ocrBusy = true
-        ocrTitle = "Text from PDF"
-        ocrDetail = "Hold near another line to read a different part of the page."
+        ocrText = null
+        ocrTitle = "Text selection"
+        ocrDetail = "No selectable text was found near that point."
         fun fail(message: String) {
             ocrBusy = false
             ocrText = message
         }
-        fun recognizeRenderedPage() {
-            tab.renderPdfForText(page.id) { rendered ->
-                rendered.onFailure { error ->
-                    fail("Text could not be read: ${error.message ?: "Unknown error"}")
-                }.onSuccess { bitmap ->
-                    textRecognizer.process(InputImage.fromBitmap(bitmap, 0))
-                        .addOnSuccessListener { result ->
-                            val targetX = point.x / page.size.widthMicrons * bitmap.width
-                            val targetY = point.y / page.size.heightMicrons * bitmap.height
-                            fun distance(bounds: android.graphics.Rect): Float {
-                                val dx = when {
-                                    targetX < bounds.left -> bounds.left - targetX
-                                    targetX > bounds.right -> targetX - bounds.right
-                                    else -> 0f
-                                }
-                                val dy = when {
-                                    targetY < bounds.top -> bounds.top - targetY
-                                    targetY > bounds.bottom -> targetY - bounds.bottom
-                                    else -> 0f
-                                }
-                                return hypot(dx, dy)
-                            }
-                            val nearest = result.textBlocks.asSequence()
-                                .flatMap { it.lines.asSequence() }
-                                .mapNotNull { line -> line.boundingBox?.let { line to distance(it) } }
-                                .minByOrNull { it.second }
-                                ?.takeIf { it.second <= minOf(bitmap.width, bitmap.height) * .09f }
-                                ?.first
-                                ?.text
-                                ?.trim()
-                                .orEmpty()
-                            bitmap.takeUnless(Bitmap::isRecycled)?.recycle()
-                            ocrBusy = false
-                            ocrText = nearest.ifBlank { "No readable text was found near that point." }
-                        }
-                        .addOnFailureListener { error ->
-                            bitmap.takeUnless(Bitmap::isRecycled)?.recycle()
-                            fail("Text recognition failed: ${error.message ?: "Unknown error"}")
-                        }
+
+        fun activate(recognized: RecognizedPageText) {
+            val nearest = nearestRecognizedTokenIndex(
+                tokens = recognized.tokens,
+                point = point,
+                maxDistance = minOf(page.size.widthMicrons, page.size.heightMicrons) * .055f,
+            ) ?: return fail("No selectable text was found near that point.")
+            ocrBusy = false
+            textRangeSelection = TextRangeSelection(
+                pageId = page.id,
+                tokens = recognized.tokens,
+                startIndex = nearest,
+                endIndex = nearest,
+                languageName = recognized.languageName,
+            )
+            draggedTextHandle = null
+            draggedTextHandlePoint = null
+            mixedSelection = null
+            lassoPoints = emptyList()
+            lassoCaptureRegion = null
+            selectedObject = -1
+            selectedObjectPage = -1
+            clipboardPasteTargetPage = -1
+        }
+
+        recognizedPdfText[page.id]?.let {
+            activate(it)
+            return
+        }
+
+        ocrBusy = true
+        tab.renderPdfForText(page.id) { rendered ->
+            rendered.onFailure { error ->
+                fail("Text could not be read: ${error.message ?: "Unknown error"}")
+            }.onSuccess { bitmap ->
+                textRecognizer.process(bitmap) { recognition ->
+                    recognition.onSuccess { result ->
+                        val recognized = result.toRecognizedPageText(page.size, bitmap.width, bitmap.height)
+                        recognizedPdfText[page.id] = recognized
+                        activate(recognized)
+                    }.onFailure { error ->
+                        fail("Text recognition failed: ${error.message ?: "Unknown error"}")
+                    }
+                    bitmap.takeUnless(Bitmap::isRecycled)?.recycle()
                 }
             }
-        }
-        tab.pdfTextNear(page.id, point) { extraction ->
-            extraction.onFailure { recognizeRenderedPage() }
-                .onSuccess { embedded ->
-                    if (embedded.isNullOrBlank()) recognizeRenderedPage()
-                    else {
-                        ocrBusy = false
-                        ocrText = embedded
-                    }
-                }
         }
     }
     var actionFeedback by remember { mutableStateOf<String?>(null) }
@@ -4644,6 +4925,8 @@ private fun ContinuousPageCanvas(
     val actionScope = rememberCoroutineScope()
     val pageJumpPadding = with(LocalDensity.current) { 20.dp.toPx() }
     val objectHandleRadius = with(LocalDensity.current) { 30.dp.toPx() }
+    val textHandleVisualOffset = with(LocalDensity.current) { 15.dp.toPx() }
+    val textSelectionPadding = with(LocalDensity.current) { 4.dp.toPx() }
     val radialMenuRadius = with(LocalDensity.current) { 132.dp.toPx() }
     val hoverRecognizer = remember(tab.id) {
         HoverDoubleTapRecognizer(
@@ -4657,6 +4940,10 @@ private fun ContinuousPageCanvas(
     }
     val hapticFeedback = LocalHapticFeedback.current
     val selectionColor = MaterialTheme.colorScheme.primary
+
+    fun syncWetInkUndoAvailability(activeInk: Boolean = inkOverlay?.hasUncommittedInk == true) {
+        tab.updateWetInkUndoAvailable(activeInk || pendingInk.isNotEmpty())
+    }
 
     val radialTools = remember {
         listOf(
@@ -4798,9 +5085,50 @@ private fun ContinuousPageCanvas(
 
     val visibleWorldTop = -viewport.offsetY / viewport.scale
     val visibleWorldBottom = (viewportHeight - viewport.offsetY) / viewport.scale
-    layout.pages.asSequence()
+    val visiblePlacements = layout.pages.asSequence()
         .filter { it.bottom >= visibleWorldTop && it.top <= visibleWorldBottom }
-        .forEach { it.page.ensureRuntimeStrokes() }
+        .toList()
+    visiblePlacements.forEach { it.page.ensureRuntimeStrokes() }
+    val hiddenStrokeIds = if (movingSelection) mixedSelection?.strokeIds.orEmpty() else emptySet()
+    val visibleInkKey = visiblePlacements.map { placement ->
+        VisibleInkPageKey(
+            placement.page.id,
+            placement.left,
+            placement.top,
+            placement.page.renderRevision,
+        )
+    }
+    val permanentCommittedStrokes = remember(visibleInkKey, hiddenStrokeIds) {
+        visiblePlacements.flatMap { placement ->
+            placement.page.session.page.strokes.inInkRenderOrder().mapNotNull { stroke ->
+                if (stroke.id in hiddenStrokeIds) return@mapNotNull null
+                placement.page.renderStrokes[stroke.id]?.let { runtime ->
+                    CommittedInkStroke(
+                        stroke = runtime.stroke,
+                        documentOffsetX = placement.left - runtime.inputOriginX,
+                        documentOffsetY = placement.top - runtime.inputOriginY,
+                        isHighlighter = stroke.style.tool == InkTool.Highlighter,
+                    )
+                }
+            }
+        }
+    }
+    val pendingInkSnapshot = pendingInk.toList()
+    val stagedCommittedStrokes = remember(visibleInkKey, pendingInkSnapshot) {
+        pendingInkSnapshot.mapNotNull { pending ->
+            val placement = visiblePlacements.firstOrNull { it.page === pending.page }
+                ?: return@mapNotNull null
+            CommittedInkStroke(
+                stroke = pending.nativeStroke.renderStroke,
+                documentOffsetX = placement.left - pending.inputOriginX,
+                documentOffsetY = placement.top - pending.inputOriginY,
+                isHighlighter = pending.nativeStroke.style.tool == InkTool.Highlighter,
+            )
+        }
+    }
+    val visibleCommittedStrokes = remember(permanentCommittedStrokes, stagedCommittedStrokes) {
+        permanentCommittedStrokes + stagedCommittedStrokes
+    }
 
     fun selectedImage(): Pair<PageEntry, SceneObject.Image>? {
         val page = tab.pages.getOrNull(selectedObjectPage) ?: return null
@@ -4851,7 +5179,10 @@ private fun ContinuousPageCanvas(
     fun removeSelectedImage(copyFirst: Boolean) {
         val page = tab.pages.getOrNull(selectedObjectPage) ?: return
         val image = page.objects.getOrNull(selectedObject) as? SceneObject.Image ?: return
-        if (copyFirst) copiedImage = image
+        if (copyFirst) {
+            copiedImage = image
+            selectionClipboard = null
+        }
         tab.recordObjectEdit(page)
         page.objects.removeAt(selectedObject)
         page.reindexObjects()
@@ -4874,6 +5205,7 @@ private fun ContinuousPageCanvas(
     fun copyMixedSelection(): SelectionClipboard? {
         val selection = mixedSelection ?: return null
         val page = tab.pages.getOrNull(selection.pageIndex) ?: return null
+        copiedImage = null
         return SelectionClipboard(
             strokes = page.session.page.strokes.filter { it.id in selection.strokeIds },
             objects = page.objects.filter { it.id in selection.objectIds },
@@ -4926,6 +5258,25 @@ private fun ContinuousPageCanvas(
         lassoCaptureRegion = mixedSelectionBounds(pastedSelection, tab.pages)?.let {
             LassoCaptureRegion(targetPageIndex, it)
         }
+        clipboardPasteTargetPage = -1
+    }
+
+    fun pasteCopiedImage(targetPageIndex: Int = tab.selectedPageIndex) {
+        val source = copiedImage ?: return
+        val page = tab.pages.getOrNull(targetPageIndex) ?: return
+        tab.recordObjectEdit(page)
+        page.objects += source.copy(
+            id = ObjectId(UUID.randomUUID().toString()),
+            x = source.x + 5_000f,
+            y = source.y + 5_000f,
+            locked = false,
+            zIndex = (page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L,
+        )
+        selectedObjectPage = targetPageIndex
+        selectedObject = page.objects.lastIndex
+        tab.selectedPageIndex = targetPageIndex
+        clipboardPasteTargetPage = -1
+        tab.persistObjects()
     }
 
     fun transformMixedSelection(translation: PagePoint = PagePoint(0f, 0f), rotationRadians: Float = 0f) {
@@ -4957,6 +5308,7 @@ private fun ContinuousPageCanvas(
                         }
                     }
                 }
+                page.markRuntimeStrokesChanged()
                 page.syncRuntimeStrokes()
             }
             if (selection.objectIds.isNotEmpty()) {
@@ -4993,9 +5345,12 @@ private fun ContinuousPageCanvas(
                     inputOriginX = pending.inputOriginX,
                     inputOriginY = pending.inputOriginY,
                 )
+                pending.page.markRuntimeStrokesChanged()
+                pending.page.markRuntimeStrokesSynchronized()
             }
             pendingInk.remove(pending)
         }
+        syncWetInkUndoAvailability()
     }
 
     fun resolvePendingInk() {
@@ -5013,9 +5368,19 @@ private fun ContinuousPageCanvas(
             strokes.forEach { pending ->
                 pendingInk.remove(pending)
             }
+            syncWetInkUndoAvailability()
             onAction(match.mapping.action)
             actionFeedback = "${match.mapping.name} · ${(match.confidence * 100).roundToInt()}%"
         }
+    }
+
+    fun finishDeferredWetUndo() {
+        val count = deferredWetUndoCount
+        if (count <= 0) return
+        deferredWetUndoCount = 0
+        actionRecognitionJob?.cancel()
+        commitPendingInk()
+        repeat(count) { tab.undo() }
     }
 
     DisposableEffect(tab.id) {
@@ -5023,9 +5388,17 @@ private fun ContinuousPageCanvas(
             actionRecognitionJob?.cancel()
             commitPendingInk()
         }
+        tab.deferUndoForWetInk = {
+            if (inkOverlay?.hasUncommittedInk == true) {
+                deferredWetUndoCount++
+                true
+            } else false
+        }
         onDispose {
             tab.flushPendingInk()
             tab.flushPendingInk = {}
+            tab.deferUndoForWetInk = { false }
+            tab.updateWetInkUndoAvailable(false)
         }
     }
 
@@ -5143,80 +5516,21 @@ private fun ContinuousPageCanvas(
                         selectedObjectPage == placement.index && selectedObject == objectIndex,
                     )
                 }
-                placement.page.session.page.strokes.asSequence()
-                    .filter { it.id !in placement.page.renderStrokes }
-                    .filterNot { stroke ->
-                        movingSelection && mixedSelection?.pageIndex == placement.index &&
-                            stroke.id in mixedSelection!!.strokeIds
-                    }
-                    .sortedBy(InkStroke::zIndex)
-                    .forEach { stroke -> drawSavedStroke(stroke, placement, viewport) }
+                if (placement.page.renderStrokeFailures.isNotEmpty()) {
+                    placement.page.session.page.strokes.asSequence()
+                        .filter { it.id in placement.page.renderStrokeFailures }
+                        .filterNot { stroke -> stroke.id in hiddenStrokeIds }
+                        .toList()
+                        .inInkRenderOrder()
+                        .forEach { stroke -> drawSavedStroke(stroke, placement, viewport) }
+                }
             }
         }
         AndroidView(
             factory = { context -> InkAuthoringOverlayView(context).also { inkOverlay = it } },
             update = { view ->
                 view.viewport = viewport
-                val permanentStrokes = layout.pages.asSequence()
-                    .filter { it.bottom >= visibleWorldTop && it.top <= visibleWorldBottom }
-                    .flatMap { placement ->
-                        placement.page.session.page.strokes.asSequence()
-                            .filterNot { stroke ->
-                                movingSelection && mixedSelection?.pageIndex == placement.index &&
-                                    stroke.id in mixedSelection!!.strokeIds
-                            }
-                            .mapNotNull { stroke ->
-                            placement.page.renderStrokes[stroke.id]?.let { runtime ->
-                                CommittedInkStroke(
-                                    stroke = runtime.stroke,
-                                    strokeToViewTransform = Matrix().apply {
-                                        setValues(
-                                            floatArrayOf(
-                                                viewport.scale,
-                                                0f,
-                                                viewport.offsetX +
-                                                    (placement.left - runtime.inputOriginX) * viewport.scale,
-                                                0f,
-                                                viewport.scale,
-                                                viewport.offsetY +
-                                                    (placement.top - runtime.inputOriginY) * viewport.scale,
-                                                0f,
-                                                0f,
-                                                1f,
-                                            ),
-                                        )
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    .toList()
-                val stagedStrokes = pendingInk.asSequence().mapNotNull { pending ->
-                    val placement = layout.pages.firstOrNull { it.page === pending.page }
-                        ?.takeIf { it.bottom >= visibleWorldTop && it.top <= visibleWorldBottom }
-                        ?: return@mapNotNull null
-                    CommittedInkStroke(
-                        stroke = pending.nativeStroke.renderStroke,
-                        strokeToViewTransform = Matrix().apply {
-                            setValues(
-                                floatArrayOf(
-                                    viewport.scale,
-                                    0f,
-                                    viewport.offsetX +
-                                        (placement.left - pending.inputOriginX) * viewport.scale,
-                                    0f,
-                                    viewport.scale,
-                                    viewport.offsetY +
-                                        (placement.top - pending.inputOriginY) * viewport.scale,
-                                    0f,
-                                    0f,
-                                    1f,
-                                ),
-                            )
-                        },
-                    )
-                }.toList()
-                view.committedStrokes = permanentStrokes + stagedStrokes
+                view.committedStrokes = visibleCommittedStrokes
                 view.minimumScale = minimumScale
                 view.stylusInputEnabled = mode == EditorMode.Ink
                 view.alwaysRecognizeActionGestures = actionMappings.isNotEmpty() && actionActivationMode != ActionActivationMode.Disabled
@@ -5307,6 +5621,7 @@ private fun ContinuousPageCanvas(
                                 stylusCanTransformObject = alreadySelected
                             } else {
                                 val zIndex = (placement.page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
+                                tab.beginSelectionUndo()
                                 tab.recordObjectEdit(placement.page)
                                 stylusObjectEditRecorded = true
                                 placement.page.objects += SceneObject.TextBox("Text", local.x, local.y, 8_000f, zIndex = zIndex)
@@ -5352,6 +5667,7 @@ private fun ContinuousPageCanvas(
                                 }
                             } else {
                                 val zIndex = (placement.page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
+                                tab.beginSelectionUndo()
                                 tab.recordObjectEdit(placement.page)
                                 stylusObjectEditRecorded = true
                                 placement.page.objects += SceneObject.Rectangle(
@@ -5494,9 +5810,42 @@ private fun ContinuousPageCanvas(
                 view.onCanvasTouchAt = { point ->
                     layout.pageAt(point)?.let { tab.selectedPageIndex = it.index }
                 }
-                view.onFingerObjectDown = { point ->
+                view.onFingerObjectDown = fingerObjectDown@{ point ->
                     fingerObjectEditRecorded = false
                     val placement = layout.pageAt(point)
+                    val activeTextSelection = textRangeSelection
+                    if (activeTextSelection != null) {
+                        val selectionPlacement = layout.pages.firstOrNull {
+                            it.page.id == activeTextSelection.pageId
+                        }
+                        if (selectionPlacement != null) {
+                            val local = selectionPlacement.toLocal(point)
+                            val visualOffset = textHandleVisualOffset / viewport.scale
+                            val hitRadius = objectHandleRadius / viewport.scale
+                            val handleHit = TextSelectionHandle.entries
+                                .map { handle ->
+                                    val boundary = activeTextSelection.handlePosition(handle)
+                                    val center = PagePoint(boundary.x, boundary.y + visualOffset)
+                                    handle to hypot(local.x - center.x, local.y - center.y)
+                                }
+                                .minByOrNull { it.second }
+                                ?.takeIf { it.second <= hitRadius }
+                                ?.first
+                            if (handleHit != null) {
+                                draggedTextHandle = handleHit
+                                draggedTextHandlePoint = local
+                                return@fingerObjectDown FingerObjectGesture.Move
+                            }
+                            if (selectionPlacement.contains(point) && activeTextSelection.contains(
+                                    local,
+                                    textSelectionPadding / viewport.scale,
+                                )
+                            ) {
+                                return@fingerObjectDown FingerObjectGesture.SelectOnly
+                            }
+                        }
+                        return@fingerObjectDown FingerObjectGesture.Canvas
+                    }
                     if (placement == null) {
                         fingerResizingImage = false
                         FingerObjectGesture.Canvas
@@ -5542,7 +5891,23 @@ private fun ContinuousPageCanvas(
                     }
                 }
                 view.onFingerObjectDrag = { dx, dy ->
-                    if (movingSelection && mixedSelection != null) {
+                    val textHandle = draggedTextHandle
+                    val activeTextSelection = textRangeSelection
+                    val previousTextPoint = draggedTextHandlePoint
+                    if (textHandle != null && activeTextSelection != null && previousTextPoint != null) {
+                        val current = PagePoint(previousTextPoint.x + dx, previousTextPoint.y + dy)
+                        draggedTextHandlePoint = current
+                        nearestRecognizedTokenIndex(activeTextSelection.tokens, current)?.let { tokenIndex ->
+                            val previousIndex = when (textHandle) {
+                                TextSelectionHandle.Start -> activeTextSelection.startIndex
+                                TextSelectionHandle.End -> activeTextSelection.endIndex
+                            }
+                            if (tokenIndex != previousIndex) {
+                                textRangeSelection = activeTextSelection.move(textHandle, tokenIndex)
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        }
+                    } else if (movingSelection && mixedSelection != null) {
                         selectionDrag = PagePoint(selectionDrag.x + dx, selectionDrag.y + dy)
                     } else {
                         val page = tab.pages.getOrNull(selectedObjectPage)
@@ -5560,7 +5925,10 @@ private fun ContinuousPageCanvas(
                     }
                 }
                 view.onFingerObjectUp = {
-                    if (movingSelection && mixedSelection != null) {
+                    if (draggedTextHandle != null) {
+                        draggedTextHandle = null
+                        draggedTextHandlePoint = null
+                    } else if (movingSelection && mixedSelection != null) {
                         if (selectionDrag.x != 0f || selectionDrag.y != 0f) transformMixedSelection(selectionDrag)
                         selectionDrag = PagePoint(0f, 0f)
                         movingSelection = false
@@ -5572,6 +5940,30 @@ private fun ContinuousPageCanvas(
                     if (radialMenuCenter != null) {
                         radialMenuCenter = null
                         radialMenuHighlighted = -1
+                        return@fingerTap
+                    }
+                    textRangeSelection?.let { activeTextSelection ->
+                        val activePlacement = layout.pages.firstOrNull {
+                            it.page.id == activeTextSelection.pageId
+                        }
+                        val insideSelection = activePlacement?.toLocal(point)?.let { local ->
+                            val padding = objectHandleRadius / viewport.scale
+                            val overText = activeTextSelection.contains(local, padding)
+                            val overHandle = TextSelectionHandle.entries.any { handle ->
+                                val boundary = activeTextSelection.handlePosition(handle)
+                                val center = PagePoint(
+                                    boundary.x,
+                                    boundary.y + textHandleVisualOffset / viewport.scale,
+                                )
+                                hypot(local.x - center.x, local.y - center.y) <= padding
+                            }
+                            overText || overHandle
+                        } == true
+                        if (!insideSelection) {
+                            textRangeSelection = null
+                            draggedTextHandle = null
+                            draggedTextHandlePoint = null
+                        }
                         return@fingerTap
                     }
                     val placement = layout.pageAt(point) ?: return@fingerTap
@@ -5597,6 +5989,7 @@ private fun ContinuousPageCanvas(
                                 showTextEditor = false
                             } else {
                                 val zIndex = (placement.page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L
+                                tab.beginSelectionUndo()
                                 tab.recordObjectEdit(placement.page)
                                 placement.page.objects += SceneObject.TextBox("Text", local.x, local.y, 8_000f, zIndex = zIndex)
                                 selectedObjectPage = placement.index
@@ -5639,9 +6032,20 @@ private fun ContinuousPageCanvas(
                         }
                     }
                 }
+                view.onFingerDoubleTap = doubleTap@{ point ->
+                    if (copiedImage == null && selectionClipboard == null) return@doubleTap
+                    val placement = layout.pageAt(point) ?: return@doubleTap
+                    clipboardPasteTargetPage = placement.index
+                    tab.selectedPageIndex = placement.index
+                    mixedSelection = null
+                    lassoCaptureRegion = null
+                    selectedObject = -1
+                    selectedObjectPage = -1
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                }
                 view.onFingerLongPress = longPress@{ point ->
                     val placement = layout.pageAt(point) ?: return@longPress
-                    recognizePdfText(placement.page, placement.toLocal(point))
+                    beginPdfTextSelection(placement.page, placement.toLocal(point))
                 }
                 view.onStylusHover = { sample ->
                     lastStylusHover = sample
@@ -5685,6 +6089,7 @@ private fun ContinuousPageCanvas(
                                 inputOriginY = placement.top,
                             )
                             pendingInk += pending
+                            syncWetInkUndoAvailability()
                             // Display pending Action Map ink in the viewport-aware renderer. The native
                             // wet layer uses release-time screen coordinates and otherwise floats while panning.
                             view.removeFinishedStroke(localized.id)
@@ -5708,6 +6113,7 @@ private fun ContinuousPageCanvas(
                             }
                         }
                     } ?: view.removeFinishedStroke(finished.id)
+                    finishDeferredWetUndo()
                 }
                 view.onStrokeProgress = { _, samples, style, _ ->
                     val placement = samples.firstOrNull()?.position?.let(layout::pageAt)
@@ -5722,9 +6128,11 @@ private fun ContinuousPageCanvas(
                     } else null
                     if (placement != null && corrected != null) {
                         addCorrectedShape(placement.page, corrected, style)
+                        finishDeferredWetUndo()
                         true
                     } else false
                 }
+                view.onUncommittedInkChanged = ::syncWetInkUndoAvailability
                 view.onErase = { point ->
                     if (!eraserHistoryActive) {
                         tab.beginHistoryTransaction()
@@ -5762,6 +6170,47 @@ private fun ContinuousPageCanvas(
             },
             modifier = Modifier.fillMaxSize().graphicsLayer { clip = true },
         )
+        textRangeSelection?.let { selection ->
+            val placement = layout.pages.firstOrNull { it.page.id == selection.pageId }
+            if (placement != null) Canvas(Modifier.fillMaxSize().zIndex(34f)) {
+                val cornerRadius = 2.dp.toPx()
+                val handleRadius = 6.dp.toPx()
+                val handleStrokeWidth = 2.dp.toPx()
+                selection.selectedLineBounds().forEach { bounds ->
+                    val topLeftPoint = viewport.toScreen(PagePoint(
+                        placement.left + bounds.left,
+                        placement.top + bounds.top,
+                    ))
+                    val bottomRightPoint = viewport.toScreen(PagePoint(
+                        placement.left + bounds.right,
+                        placement.top + bounds.bottom,
+                    ))
+                    val topLeft = Offset(topLeftPoint.x, topLeftPoint.y)
+                    val bottomRight = Offset(bottomRightPoint.x, bottomRightPoint.y)
+                    drawRoundRect(
+                        color = selectionColor.copy(alpha = .28f),
+                        topLeft = topLeft,
+                        size = Size(
+                            (bottomRight.x - topLeft.x).coerceAtLeast(1f),
+                            (bottomRight.y - topLeft.y).coerceAtLeast(1f),
+                        ),
+                        cornerRadius = CornerRadius(cornerRadius, cornerRadius),
+                    )
+                }
+                TextSelectionHandle.entries.forEach { handle ->
+                    val boundary = selection.handlePosition(handle)
+                    val boundaryPoint = viewport.toScreen(PagePoint(
+                        placement.left + boundary.x,
+                        placement.top + boundary.y,
+                    ))
+                    val boundaryScreen = Offset(boundaryPoint.x, boundaryPoint.y)
+                    val center = Offset(boundaryScreen.x, boundaryScreen.y + textHandleVisualOffset)
+                    drawLine(selectionColor, boundaryScreen, center, handleStrokeWidth)
+                    drawCircle(Color.White, handleRadius + handleStrokeWidth, center)
+                    drawCircle(selectionColor, handleRadius, center)
+                }
+            }
+        }
         radialMenuCenter?.let { center ->
             RadialToolWheel(
                 center = center,
@@ -5785,7 +6234,8 @@ private fun ContinuousPageCanvas(
                     val bounds = mixedSelectionBounds(selection, tab.pages)
                     if (placement != null && bounds != null) {
                         if (movingSelection) {
-                            placement.page.session.page.strokes.filter { it.id in selection.strokeIds }.forEach { stroke ->
+                            placement.page.session.page.strokes.filter { it.id in selection.strokeIds }
+                                .inInkRenderOrder().forEach { stroke ->
                                 val path = Path()
                                 stroke.samples.forEachIndexed { index, sample ->
                                     val screen = viewport.toScreen(PagePoint(
@@ -5822,6 +6272,25 @@ private fun ContinuousPageCanvas(
                 }
             }
         }
+        textRangeSelection?.let { selection ->
+            TextRangeSelectionBar(
+                languageName = selection.languageName,
+                onSelectAll = { textRangeSelection = selection.selectAll() },
+                onCopy = {
+                    val text = selection.selectedText()
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as
+                        android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Selected PDF text", text))
+                    actionFeedback = "Copied selected text"
+                },
+                onDismiss = {
+                    textRangeSelection = null
+                    draggedTextHandle = null
+                    draggedTextHandlePoint = null
+                },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(48f),
+            )
+        }
         mixedSelection?.let { selection ->
             MixedSelectionBar(
                 hasClipboard = selectionClipboard != null,
@@ -5851,8 +6320,8 @@ private fun ContinuousPageCanvas(
                     mixedSelection = selection.copy(strokeIds = nextIds.ifEmpty { selection.strokeIds })
                 },
                 onRotate = { transformMixedSelection(rotationRadians = (Math.PI / 2.0).toFloat()) },
-                onUndo = { tab.undo(); mixedSelection = null },
-                onRedo = { tab.redo(); mixedSelection = null },
+                onUndo = tab::undo,
+                onRedo = tab::redo,
                 onMovePage = { direction ->
                     val source = tab.pages.getOrNull(selection.pageIndex) ?: return@MixedSelectionBar
                     val targetIndex = (selection.pageIndex + direction).coerceIn(0, tab.pages.lastIndex)
@@ -5880,21 +6349,11 @@ private fun ContinuousPageCanvas(
                 canPaste = copiedImage != null,
                 onCrop = { showCropEditor = true },
                 onCut = { removeSelectedImage(copyFirst = true) },
-                onCopy = { copiedImage = image },
-                onPaste = {
-                    val page = tab.pages.getOrNull(selectedObjectPage) ?: return@ImageSelectionBar
-                    val source = copiedImage ?: return@ImageSelectionBar
-                    tab.recordObjectEdit(page)
-                    page.objects += source.copy(
-                        id = ObjectId(UUID.randomUUID().toString()),
-                        x = source.x + 5_000f,
-                        y = source.y + 5_000f,
-                        locked = false,
-                        zIndex = (page.objects.maxOfOrNull(SceneObject::zIndex) ?: -1L) + 1L,
-                    )
-                    selectedObject = page.objects.lastIndex
-                    tab.persistObjects()
+                onCopy = {
+                    copiedImage = image
+                    selectionClipboard = null
                 },
+                onPaste = { pasteCopiedImage(selectedObjectPage) },
                 onLock = { replaceSelectedImage { it.copy(locked = true) } },
                 onUnlock = { replaceSelectedImage { it.copy(locked = false) } },
                 onRotate = { replaceSelectedImage { it.copy(rotation = (it.rotation + 90f) % 360f) } },
@@ -5910,7 +6369,10 @@ private fun ContinuousPageCanvas(
             ?.let { (_, item) ->
             ObjectSelectionBar(
                 onEdit = { if (item is SceneObject.TextBox) showTextEditor = true else showShapeEditor = true },
-                onCopy = { selectionClipboard = SelectionClipboard(emptyList(), listOf(item)) },
+                onCopy = {
+                    copiedImage = null
+                    selectionClipboard = SelectionClipboard(emptyList(), listOf(item))
+                },
                 onDuplicate = {
                     val page = tab.pages.getOrNull(selectedObjectPage) ?: return@ObjectSelectionBar
                     tab.recordObjectEdit(page)
@@ -5923,8 +6385,21 @@ private fun ContinuousPageCanvas(
                 onFront = { moveSelectedObjectToFront(true) },
                 onBack = { moveSelectedObjectToFront(false) },
                 onDelete = { confirmSelectedDelete = true },
-                onUndo = { tab.undo(); selectedObject = -1; selectedObjectPage = -1 },
-                onRedo = { tab.redo(); selectedObject = -1; selectedObjectPage = -1 },
+                onUndo = tab::undo,
+                onRedo = tab::redo,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(45f),
+            )
+        }
+        if (
+            mixedSelection == null && lassoCaptureRegion == null && selectedObject < 0 &&
+            clipboardPasteTargetPage >= 0 && (copiedImage != null || selectionClipboard != null)
+        ) {
+            ClipboardPasteBar(
+                onPaste = {
+                    if (copiedImage != null) pasteCopiedImage(clipboardPasteTargetPage)
+                    else pasteMixedSelection(clipboardPasteTargetPage)
+                },
+                onDismiss = { clipboardPasteTargetPage = -1 },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).zIndex(45f),
             )
         }
@@ -6671,6 +7146,39 @@ private fun LassoCaptureBar(
 ) {
     SelectionActionStrip(
         listOf(ImageActionSpec(Icons.Outlined.PhotoCamera, "Screenshot", onScreenshot)),
+        modifier,
+    )
+}
+
+@Composable
+private fun TextRangeSelectionBar(
+    languageName: String,
+    onSelectAll: () -> Unit,
+    onCopy: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SelectionActionStrip(
+        listOf(
+            ImageActionSpec(Icons.Outlined.SelectAll, "Select all $languageName text", onSelectAll),
+            ImageActionSpec(Icons.Outlined.ContentCopy, "Copy selected text", onCopy),
+            ImageActionSpec(Icons.Outlined.Close, "Close text selection", onDismiss),
+        ),
+        modifier,
+    )
+}
+
+@Composable
+private fun ClipboardPasteBar(
+    onPaste: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SelectionActionStrip(
+        listOf(
+            ImageActionSpec(Icons.Outlined.ContentPaste, stringResource(R.string.paste), onPaste),
+            ImageActionSpec(Icons.Outlined.Close, stringResource(R.string.cancel), onDismiss),
+        ),
         modifier,
     )
 }
@@ -7893,7 +8401,7 @@ private fun FloatingNotebookCard(
                         previewPage,
                         Modifier
                             .fillMaxHeight()
-                            .aspectRatio(previewPage.size.widthMicrons / previewPage.size.heightMicrons)
+                            .aspectRatio(previewPage.previewAspectRatio())
                             .clip(RoundedCornerShape(4.dp))
                             .shadow(4.dp, RoundedCornerShape(4.dp)),
                     ) else Icon(Icons.Outlined.Edit, null, Modifier.size(38.dp), tint = Color.White)

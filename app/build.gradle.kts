@@ -55,6 +55,11 @@ dependencies {
     implementation(libs.androidx.ink.storage)
     implementation(libs.androidx.input.motionprediction)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
+    implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
 
     testImplementation(libs.junit)
 }
