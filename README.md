@@ -34,7 +34,7 @@ No account, no ads, no network. Your notes stay on your tablet.
 
 ### Lasso, text and images
 
-<!-- TODO(media): docs/media/lasso.gif — lasso a drawing, move it, recolor it -->
+<img src="docs/media/lasso.gif" width="100%" alt="Lassoing handwriting, moving it and recoloring it blue" />
 
 - Lasso anything to move, scale, rotate, recolor, copy or delete it
 - Capture a lasso area as an image, then share it, save it to Photos or paste it back in
