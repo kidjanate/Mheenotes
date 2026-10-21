@@ -387,9 +387,7 @@ private fun Sidebar(
     val c = M.colors
     Column(Modifier.width(264.dp).fillMaxHeight().padding(start = 12.dp, top = 12.dp, bottom = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(c.accent), contentAlignment = Alignment.Center) {
-                Icon(Lucide.LibraryBig, tint = c.onAccent, size = 17.dp)
-            }
+            androidx.compose.foundation.Image(org.jetbrains.compose.resources.painterResource(Res.drawable.app_icon), null, Modifier.size(30.dp))
             Spacer(Modifier.width(10.dp))
             Text(stringResource(Res.string.app_name), Modifier.weight(1f), style = M.type.headline)
             IconButton(Lucide.Settings, onSettings, size = 36.dp, iconSize = 19.dp, tint = c.textSecondary)

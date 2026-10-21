@@ -11,3 +11,8 @@ captures/
 *.apk
 
 .worktrees/
+
+# Release signing: never commit the key or its passwords
+*.jks
+*.keystore
+keystore.properties
