@@ -41,6 +41,11 @@ class MainActivity : ComponentActivity() {
         if (Fixtures.enabled) when (intent.getStringExtra("fixture")) {
             "library" -> Fixtures.library(intent.getIntExtra("count", 1000))
             "dense" -> Fixtures.densePage(intent.getIntExtra("count", 20_000))
+            "blank" -> AppGraph.scope.launch {
+                AppGraph.awaitLoaded()
+                val n = AppGraph.createNotebook("Tools test", null, com.mheenotes.core.model.Template.Grid, com.mheenotes.core.model.PageSize.A4)
+                AppState.shared.open(n.id)
+            }
         }
         if (Fixtures.enabled) intent.getStringExtra("importLegacy")?.let { path ->
             AppGraph.scope.launch {

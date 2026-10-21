@@ -24,6 +24,8 @@ class Settings {
         private set
     var holdToShape by mutableStateOf(true)
         private set
+    var lowLatencyInk by mutableStateOf(true)
+        private set
     var toolbarDock by mutableStateOf("Top")
         private set
     /** Serialized tool presets, owned by the editor. */
@@ -40,6 +42,7 @@ class Settings {
         lib.setting("holdShape")?.let { holdToShape = it == "1" }
         lib.setting("tools")?.let { toolPresets = it }
         lib.setting("dock")?.let { toolbarDock = it }
+        lib.setting("lowLatency")?.let { lowLatencyInk = it == "1" }
     }
 
     private fun put(k: String, v: String) = library?.putSetting(k, v)
@@ -53,4 +56,5 @@ class Settings {
     fun updateHoldShape(v: Boolean) { holdToShape = v; put("holdShape", v.s()) }
     fun updateTools(v: String) { toolPresets = v; put("tools", v) }
     fun updateDock(v: String) { toolbarDock = v; put("dock", v) }
+    fun updateLowLatency(v: Boolean) { lowLatencyInk = v; put("lowLatency", v.s()) }
 }

@@ -80,6 +80,21 @@ actual fun InkCanvas(tab: EditorTab, doc: NotebookDocument, topInset: Dp, modifi
     chrome.topInset = with(density) { topInset.toPx() }
     chrome.bottomInset = with(density) { 24.dp.toPx() }
     val view = remember(tab, doc) { InkCanvasView(context, tab, doc, rasterizer(fonts), chrome) }
+    val lowLatency = AppGraph.settings.lowLatencyInk
+    val container = remember(view, lowLatency) {
+        android.widget.FrameLayout(context).apply {
+            (view.parent as? android.view.ViewGroup)?.removeView(view)
+            addView(view)
+            if (lowLatency) {
+                // Not clickable, so touches fall through to the canvas underneath.
+                val surface = android.view.SurfaceView(context)
+                addView(surface)
+                view.front = runCatching { FrontInk(surface) }.getOrNull()
+            } else {
+                view.front?.release(); view.front = null
+            }
+        }
+    }
     DisposableEffect(view) {
         tab.canvas = object : CanvasController {
             override fun commitSelection() = view.commitSelection()
@@ -104,7 +119,7 @@ actual fun InkCanvas(tab: EditorTab, doc: NotebookDocument, topInset: Dp, modifi
         tab.scrollRequest = null
     }
     LaunchedEffect(Tools.current) { if (Tools.current != ToolKind.Lasso) view.commitSelection() }
-    AndroidView({ view }, modifier, update = { it.invalidate() })
+    AndroidView({ container }, modifier, update = { view.invalidate() })
 }
 
 // ---- Page thumbnails -----------------------------------------------------------------------

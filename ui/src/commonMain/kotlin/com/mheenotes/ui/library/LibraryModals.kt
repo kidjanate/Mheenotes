@@ -216,6 +216,8 @@ fun SettingsModal(visible: Boolean, onDismiss: () -> Unit) {
                 ListRow(s.scribbleErase) { Toggle(st.scribbleErase, st::updateScribble) }
                 Divider(Modifier.padding(start = 16.dp))
                 ListRow(s.drawHoldShapes) { Toggle(st.holdToShape, st::updateHoldShape) }
+                Divider(Modifier.padding(start = 16.dp))
+                ListRow(s.lowLatency, subtitle = s.lowLatencyHint) { Toggle(st.lowLatencyInk, st::updateLowLatency) }
             }
         }
         Spacer(Modifier.height(22.dp))

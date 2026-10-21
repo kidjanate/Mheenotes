@@ -92,6 +92,12 @@ class InkCanvasView(
 
     private val loading = HashSet<Id>()
 
+    /** Front-buffered wet ink; null when low-latency ink is off or unsupported. */
+    var front: FrontInk? = null
+    private var frontDrawn = 0
+    private var frontClearPending = false
+    private val frontActive: Boolean get() = front != null && wetTool != Tool.Highlighter && snappedShape == null
+
     init {
         isFocusable = true
         doc.onContent = { pageId, removed, added ->
@@ -336,7 +342,10 @@ class InkCanvasView(
         }
     }
 
+    private val pendingUnloaded = ArrayList<Pair<Id, Stroke>>()
+
     private fun drawOverlays(canvas: Canvas, level: Int) {
+        for ((pageId, s) in pendingUnloaded) pageSpace(canvas, pageId) { drawInkStroke(s) }
         if (pending.isNotEmpty()) {
             pending.removeAll { (pageId, item) -> tilesFresh(pageId, item.bounds, level) || doc.content(pageId)?.get(item.id) == null }
             for ((pageId, item) in pending) pageSpace(canvas, pageId) {
@@ -348,7 +357,7 @@ class InkCanvasView(
             }
         }
         val wet = wetStroke
-        if (wet != null && wetPage != null) pageSpace(canvas, wetPage!!) {
+        if (wet != null && wetPage != null && !(frontActive && mode == Mode.Ink)) pageSpace(canvas, wetPage!!) {
             val shape = snappedShape
             if (shape != null) drawShape(shape) else drawInkStroke(wet)
         }
@@ -529,7 +538,11 @@ class InkCanvasView(
         val (pi, x, y) = toPage(e.x, e.y)
         if (pi < 0) { mode = Mode.Ignore; return }
         val page = layout.pages[pi]
-        if (doc.content(page.id) == null) { ensureLoaded(page.id); mode = Mode.Ignore; return }
+        // Ink never waits for page data; it is saved once the page finishes loading.
+        if (doc.content(page.id) == null) {
+            ensureLoaded(page.id)
+            if (!(Tools.isInk && !eraserEnd)) { mode = Mode.Ignore; return }
+        }
         wetPage = page.id
         when {
             eraserEnd || Tools.current == ToolKind.Eraser -> { mode = Mode.Erase; erasedOriginals.clear(); erasedAdded.clear(); lastSampleX = x; lastSampleY = y; eraseAt(x, y, x, y) }
@@ -553,6 +566,9 @@ class InkCanvasView(
         snappedShape = null
         addSample(x, y, pressureOf(e, 0, -1), force = true)
         holdX = x; holdY = y
+        if (frontClearPending) { front?.clear(); frontClearPending = false }
+        frontDrawn = 0
+        sendFront()
         lastMoveAt = SystemClock.uptimeMillis()
         scheduleHoldCheck()
     }
@@ -575,6 +591,7 @@ class InkCanvasView(
         if (SystemClock.uptimeMillis() - lastMoveAt < HOLD_MS - 20) { scheduleHoldCheck(); return@Runnable }
         val rec = ShapeRecognizer.recognize(wetPoints.toArray()) ?: return@Runnable
         snappedShape = ShapeItem(newId(), 0, rec.kind, rec.frame, wetColor, max(wetWidth, 1f))
+        front?.clear()
         performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
         invalidate()
     }
@@ -620,6 +637,7 @@ class InkCanvasView(
                 val (_, x, y) = toPage(e.getX(idx), e.getY(idx), pi)
                 val before = wetPoints.size
                 addSample(x, y, pressureOf(e, idx, -1))
+                sendFront()
                 if (wetPoints.size != before && hypot(x - holdX, y - holdY) * scale > 3 * density) {
                     holdX = x; holdY = y
                     lastMoveAt = SystemClock.uptimeMillis()
@@ -750,14 +768,40 @@ class InkCanvasView(
         clamp(); publish(); invalidate()
     }
 
+    /** Sends samples not yet on the front buffer, overlapping one so the pieces join. */
+    private fun sendFront() {
+        val f = front ?: return
+        if (!frontActive) return
+        val n = wetPoints.size / 3
+        if (n <= frontDrawn) return
+        val i = layout.indexOf(wetPage ?: return)
+        val start = max(0, frontDrawn - 1)
+        val pts = FloatArray((n - start) * 3) { wetPoints[start * 3 + it] }
+        f.render(WetSegment(wetTool, wetColor, wetWidth, pts, frontDrawn == 0, scale, layout.left(i) * scale + tx, layout.tops[i] * scale + ty))
+        frontDrawn = n
+    }
+
+    /** Clears the front buffer after the view has drawn the finished stroke itself. */
+    private fun scheduleFrontClear() {
+        if (front == null) return
+        frontClearPending = true
+        postOnAnimation {
+            postOnAnimation {
+                if (frontClearPending && mode != Mode.Ink) { front?.clear(); frontClearPending = false }
+            }
+        }
+    }
+
     private fun cancelWet() {
         removeCallbacks(holdCheck)
+        front?.clear()
         wetStroke = null; snappedShape = null
         mode = Mode.None
         invalidate()
     }
 
     private fun finishInk() {
+        scheduleFrontClear()
         val pageId = wetPage ?: return
         val pts = wetPoints.toArray()
         wetStroke = null
@@ -782,6 +826,18 @@ class InkCanvasView(
             }
         }
         val stroke = Stroke(newId(), doc.nextSeq(), wetTool, wetColor, wetWidth, pts)
+        if (doc.content(pageId) == null) {
+            // Keep it on screen until the page loads, then record it.
+            pendingUnloaded += pageId to stroke
+            tab.scope.launch {
+                doc.load(pageId)
+                pendingUnloaded.remove(pageId to stroke)
+                doc.edit(pageId, emptyList(), listOf(stroke))
+                pending += pageId to stroke
+                invalidate()
+            }
+            return
+        }
         doc.edit(pageId, emptyList(), listOf(stroke))
         pending += pageId to stroke
     }
@@ -967,6 +1023,8 @@ class InkCanvasView(
     }
 
     fun release() {
+        front?.release()
+        front = null
         doc.onContent = { _, _, _ -> }
         tiles.close()
         animator?.cancel()

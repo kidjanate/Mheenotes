@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -75,13 +74,15 @@ fun App(state: AppState = remember { AppState.shared }) {
                     AnimatedContent(
                         state.screen,
                         transitionSpec = {
-                            if (targetState == Screen.Editor) {
-                                (scaleIn(Motion.standard(), initialScale = 0.96f) + fadeIn(Motion.fade()))
-                                    .togetherWith(scaleOut(Motion.standard(), targetScale = 1.02f) + fadeOut(Motion.fade()))
+                            // The incoming screen sits on top so it receives touches mid-transition.
+                            val t = if (targetState == Screen.Editor) {
+                                (scaleIn(Motion.snappy(), initialScale = 0.97f) + fadeIn(Motion.fade()))
+                                    .togetherWith(fadeOut(Motion.fade()))
                             } else {
-                                (scaleIn(Motion.standard(), initialScale = 1.02f) + fadeIn(Motion.fade()))
-                                    .togetherWith(scaleOut(Motion.standard(), targetScale = 0.97f) + fadeOut(Motion.fade()))
+                                (scaleIn(Motion.snappy(), initialScale = 1.02f) + fadeIn(Motion.fade()))
+                                    .togetherWith(fadeOut(Motion.fade()))
                             }
+                            t.apply { targetContentZIndex = 1f }
                         },
                         label = "screen",
                     ) { screen ->

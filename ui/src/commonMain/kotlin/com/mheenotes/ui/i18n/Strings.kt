@@ -162,6 +162,8 @@ open class Strings {
     open val about = "About"
     open val developer = "Developer"
     open val inkActivity = "Ink this week"
+    open val lowLatency = "Low-latency ink"
+    open val lowLatencyHint = "Draws the pen stroke straight to the display. Turn off if ink flickers."
     open val perfFixture = "Generate 1,000 test notebooks"
     open val denseFixture = "Generate a 20,000-stroke notebook"
 }
@@ -318,6 +320,8 @@ object Th : Strings() {
     override val about = "เกี่ยวกับ"
     override val developer = "นักพัฒนา"
     override val inkActivity = "การเขียนสัปดาห์นี้"
+    override val lowLatency = "หมึกหน่วงต่ำ"
+    override val lowLatencyHint = "วาดเส้นปากกาลงจอโดยตรง ปิดหากหมึกกะพริบ"
     override val perfFixture = "สร้างสมุดโน้ตทดสอบ 1,000 เล่ม"
     override val denseFixture = "สร้างสมุดโน้ต 20,000 เส้น"
 }
