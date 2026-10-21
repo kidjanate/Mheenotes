@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
@@ -355,7 +356,8 @@ fun <T> Segmented(
                 .fillMaxHeight()
                 .shadow(1.5.dp, RoundedCornerShape(Radii.sm - 3.dp), ambientColor = c.shadow, spotColor = c.shadow)
                 .clip(RoundedCornerShape(Radii.sm - 3.dp))
-                .background(if (c.isDark) c.fillStrong else c.surface),
+                // Opaque in dark mode, or the shadow shows through the translucent fill.
+                .background(if (c.isDark) c.fillStrong.compositeOver(c.elevated) else c.surface),
         )
         Row(Modifier.fillMaxWidth().fillMaxHeight()) {
             options.forEach { o ->

@@ -299,7 +299,12 @@ fun LibraryScreen(app: AppState) {
         onConfirm = { confirmFolderForever?.let { AppGraph.deleteFolderForever(it.id) } },
         onDismiss = { confirmFolderForever = null },
     )
-    SettingsModal(showSettings) { showSettings = false }
+    var replayTour by remember { mutableStateOf(false) }
+    SettingsModal(showSettings, { showSettings = false }, onTour = { showSettings = false; replayTour = true })
+    com.mheenotes.ui.onboarding.WelcomeTour(
+        !AppGraph.settings.onboarded || replayTour,
+        onImportPdf = { AppGraph.settings.finishOnboarding(); replayTour = false; importer.pdf(currentFolderId) },
+    ) { AppGraph.settings.finishOnboarding(); replayTour = false }
 }
 
 fun filterNotebooks(all: List<Notebook>, section: Section, query: String, sort: LibrarySort, folders: List<Folder> = emptyList()): List<Notebook> {

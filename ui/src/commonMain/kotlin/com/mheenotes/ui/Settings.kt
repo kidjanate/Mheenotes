@@ -37,6 +37,9 @@ class Settings {
         private set
     var toolbarDock by mutableStateOf("Top")
         private set
+    /** False until the welcome tour has been finished or skipped once. */
+    var onboarded by mutableStateOf(true)
+        private set
     /** Serialized tool presets, owned by the editor. */
     var toolPresets by mutableStateOf("")
         private set
@@ -55,6 +58,7 @@ class Settings {
         lib.setting("askInsert")?.let { askInsertPage = it == "1" }
         lib.setting("language")?.let { v -> AppLanguage.entries.firstOrNull { it.name == v }?.let { language = it } }
         lib.setting("pressure")?.let { pressure = it == "1" }
+        onboarded = lib.setting("onboarded") == "1"
     }
 
     private fun put(k: String, v: String) = library?.putSetting(k, v)
@@ -72,4 +76,5 @@ class Settings {
     fun updateAskInsert(v: Boolean) { askInsertPage = v; put("askInsert", v.s()) }
     fun updateLanguage(v: AppLanguage) { language = v; put("language", v.name) }
     fun updatePressure(v: Boolean) { pressure = v; put("pressure", v.s()) }
+    fun finishOnboarding() { onboarded = true; put("onboarded", "1") }
 }

@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Folder
 import com.composables.icons.lucide.House
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Sparkles
 import com.mheenotes.core.model.Folder
 import com.mheenotes.core.model.Id
 import com.mheenotes.core.model.PAPER_WHITE
@@ -193,7 +194,37 @@ fun MoveModal(targets: Set<Id>?, folders: List<Folder>, onDismiss: () -> Unit, o
 }
 
 @Composable
-fun SettingsModal(visible: Boolean, onDismiss: () -> Unit) {
+fun ThemePicker(modifier: Modifier = Modifier) {
+    val s = S
+    val c = M.colors
+    val st = AppGraph.settings
+    Segmented(ThemeMode.entries, st.theme, st::updateTheme, modifier) { o, sel ->
+        Text(
+            when (o) { ThemeMode.System -> s.themeSystem; ThemeMode.Light -> s.themeLight; ThemeMode.Dark -> s.themeDark },
+            style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary,
+        )
+    }
+}
+
+@Composable
+fun LanguagePicker(modifier: Modifier = Modifier) {
+    val s = S
+    val c = M.colors
+    val st = AppGraph.settings
+    Segmented(com.mheenotes.ui.AppLanguage.entries, st.language, st::updateLanguage, modifier) { o, sel ->
+        Text(
+            when (o) {
+                com.mheenotes.ui.AppLanguage.System -> s.themeSystem
+                com.mheenotes.ui.AppLanguage.English -> "English"
+                com.mheenotes.ui.AppLanguage.Thai -> "ไทย"
+            },
+            style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary,
+        )
+    }
+}
+
+@Composable
+fun SettingsModal(visible: Boolean, onDismiss: () -> Unit, onTour: () -> Unit = {}) {
     val s = S
     var showLicenses by remember { mutableStateOf(false) }
     val c = M.colors
@@ -202,12 +233,7 @@ fun SettingsModal(visible: Boolean, onDismiss: () -> Unit) {
         ModalTitle(s.settings)
         Text(s.appearance, style = M.type.calloutStrong, color = c.textSecondary)
         Spacer(Modifier.height(10.dp))
-        Segmented(ThemeMode.entries, st.theme, st::updateTheme, Modifier.fillMaxWidth()) { o, sel ->
-            Text(
-                when (o) { ThemeMode.System -> s.themeSystem; ThemeMode.Light -> s.themeLight; ThemeMode.Dark -> s.themeDark },
-                style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary,
-            )
-        }
+        ThemePicker(Modifier.fillMaxWidth())
         Spacer(Modifier.height(22.dp))
         Text(s.input, style = M.type.calloutStrong, color = c.textSecondary)
         Spacer(Modifier.height(8.dp))
@@ -229,24 +255,23 @@ fun SettingsModal(visible: Boolean, onDismiss: () -> Unit) {
         Spacer(Modifier.height(22.dp))
         Text(s.language, style = M.type.calloutStrong, color = c.textSecondary)
         Spacer(Modifier.height(10.dp))
-        Segmented(com.mheenotes.ui.AppLanguage.entries, st.language, st::updateLanguage, Modifier.fillMaxWidth()) { o, sel ->
-            Text(
-                when (o) {
-                    com.mheenotes.ui.AppLanguage.System -> s.themeSystem
-                    com.mheenotes.ui.AppLanguage.English -> "English"
-                    com.mheenotes.ui.AppLanguage.Thai -> "ไทย"
-                },
-                style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary,
-            )
-        }
+        LanguagePicker(Modifier.fillMaxWidth())
         Spacer(Modifier.height(22.dp))
         Text(s.about, style = M.type.calloutStrong, color = c.textSecondary)
         Spacer(Modifier.height(8.dp))
         Card(Modifier.fillMaxWidth(), color = c.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
-            ListRow(s.licenses, icon = Lucide.FileText, onClick = { showLicenses = true }) {
-                com.mheenotes.ui.design.Icon(Lucide.ChevronRight, tint = c.textTertiary, size = 16.dp)
+            Column {
+                ListRow(s.tour, icon = Lucide.Sparkles, onClick = onTour) {
+                    com.mheenotes.ui.design.Icon(Lucide.ChevronRight, tint = c.textTertiary, size = 16.dp)
+                }
+                Divider(Modifier.padding(start = 48.dp))
+                ListRow(s.licenses, icon = Lucide.FileText, onClick = { showLicenses = true }) {
+                    com.mheenotes.ui.design.Icon(Lucide.ChevronRight, tint = c.textTertiary, size = 16.dp)
+                }
             }
         }
+        Spacer(Modifier.height(18.dp))
+        Text(s.madeWith, Modifier.fillMaxWidth(), style = M.type.caption.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), color = c.textTertiary)
         ModalActions { Button(s.done, onDismiss, style = ButtonStyle.Primary) }
     }
     com.mheenotes.ui.settings.LicensesModal(showLicenses) { showLicenses = false }
