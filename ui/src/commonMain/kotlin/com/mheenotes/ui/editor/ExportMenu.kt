@@ -1,5 +1,8 @@
 package com.mheenotes.ui.editor
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
 import com.composables.icons.lucide.Download
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
@@ -27,7 +30,6 @@ import com.mheenotes.ui.design.ModalTitle
 import com.mheenotes.ui.design.Segmented
 import com.mheenotes.ui.design.Text
 import com.mheenotes.ui.design.TextField
-import com.mheenotes.ui.i18n.S
 import com.mheenotes.core.doc.parsePageRange
 import kotlinx.coroutines.launch
 
@@ -37,7 +39,6 @@ enum class PageRange { All, Current, Custom }
 
 @Composable
 fun ExportModal(tab: EditorTab, visible: Boolean, onDismiss: () -> Unit) {
-    val s = S
     val c = M.colors
     val scope = rememberCoroutineScope()
     val overlays = LocalOverlays.current
@@ -51,41 +52,44 @@ fun ExportModal(tab: EditorTab, visible: Boolean, onDismiss: () -> Unit) {
         range == PageRange.Current -> listOf(tab.currentPage.coerceIn(0, pages.lastIndex))
         else -> parsePageRange(custom, pages.size)
     }
-    val saver = rememberExportSaver { ok -> overlays.toast(if (ok) s.savedToFiles else s.exportFailed) }
+    val savedText = stringResource(Res.string.saved_to_files)
+    val failedText = stringResource(Res.string.export_failed)
+    val exportingText = stringResource(Res.string.exporting)
+    val saver = rememberExportSaver { ok -> overlays.toast(if (ok) savedText else failedText) }
     fun run(save: Boolean) {
         val chosen = selected ?: return
         onDismiss()
         tab.canvas?.commitSelection()
-        overlays.toast(s.exporting)
+        overlays.toast(exportingText)
         scope.launch {
             val result = runCatching { Exporter.export(tab, kind, chosen, fileName.trim()) }.getOrElse { it.printStackTrace(); null }
             when {
-                result == null -> overlays.toast(s.exportFailed)
+                result == null -> overlays.toast(failedText)
                 save -> saver.save(result)
                 else -> Exporter.share(result)
             }
         }
     }
     Modal(visible, onDismiss, width = 480.dp) {
-        ModalTitle(s.export)
-        Text(s.fileName, style = M.type.calloutStrong, color = c.textSecondary)
+        ModalTitle(stringResource(Res.string.export))
+        Text(stringResource(Res.string.file_name), style = M.type.calloutStrong, color = c.textSecondary)
         Spacer(Modifier.height(8.dp))
-        TextField(fileName, { fileName = it.take(80) }, Modifier.fillMaxWidth(), placeholder = s.untitled, clearable = true)
+        TextField(fileName, { fileName = it.take(80) }, Modifier.fillMaxWidth(), placeholder = stringResource(Res.string.untitled), clearable = true)
         Spacer(Modifier.height(16.dp))
         Segmented(ExportKind.entries, kind, { kind = it }, Modifier.fillMaxWidth()) { o, sel ->
             Text(
-                when (o) { ExportKind.Pdf -> "PDF"; ExportKind.Png -> s.imageFormat; ExportKind.Notebook -> s.exportNotebook },
+                when (o) { ExportKind.Pdf -> "PDF"; ExportKind.Png -> stringResource(Res.string.image_format); ExportKind.Notebook -> stringResource(Res.string.export_notebook) },
                 style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary, maxLines = 1,
             )
         }
         AnimatedVisibility(kind != ExportKind.Notebook) {
             Column {
                 Spacer(Modifier.height(20.dp))
-                Text(s.pages_, style = M.type.calloutStrong, color = c.textSecondary)
+                Text(stringResource(Res.string.pages_), style = M.type.calloutStrong, color = c.textSecondary)
                 Spacer(Modifier.height(8.dp))
                 Segmented(PageRange.entries, range, { range = it }, Modifier.fillMaxWidth()) { o, sel ->
                     Text(
-                        when (o) { PageRange.All -> s.exportAll; PageRange.Current -> s.exportCurrent; PageRange.Custom -> s.exportRange },
+                        when (o) { PageRange.All -> stringResource(Res.string.export_all); PageRange.Current -> stringResource(Res.string.export_current); PageRange.Custom -> stringResource(Res.string.export_range) },
                         style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary, maxLines = 1,
                     )
                 }
@@ -95,7 +99,7 @@ fun ExportModal(tab: EditorTab, visible: Boolean, onDismiss: () -> Unit) {
                         TextField(custom, { custom = it }, Modifier.fillMaxWidth(), placeholder = "1-3, 5")
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            if (selected == null) s.rangeInvalid else s.pages(selected.size),
+                            if (selected == null) stringResource(Res.string.range_invalid) else pluralStringResource(Res.plurals.pages, selected.size, selected.size),
                             style = M.type.caption, color = if (selected == null) c.danger else c.textTertiary,
                         )
                     }
@@ -103,9 +107,9 @@ fun ExportModal(tab: EditorTab, visible: Boolean, onDismiss: () -> Unit) {
             }
         }
         ModalActions {
-            Button(s.cancel, onDismiss)
-            Button(s.saveToFiles, { run(save = true) }, icon = Lucide.Download, enabled = selected != null)
-            Button(s.share, { run(save = false) }, icon = Lucide.Share2, style = ButtonStyle.Primary, enabled = selected != null)
+            Button(stringResource(Res.string.cancel), onDismiss)
+            Button(stringResource(Res.string.save_to_files), { run(save = true) }, icon = Lucide.Download, enabled = selected != null)
+            Button(stringResource(Res.string.share), { run(save = false) }, icon = Lucide.Share2, style = ButtonStyle.Primary, enabled = selected != null)
         }
     }
 }

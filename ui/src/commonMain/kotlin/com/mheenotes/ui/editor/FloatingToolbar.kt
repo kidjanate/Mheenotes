@@ -1,5 +1,7 @@
 package com.mheenotes.ui.editor
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloatAsState
@@ -80,7 +82,6 @@ import com.mheenotes.ui.design.Slider
 import com.mheenotes.ui.design.Text
 import com.mheenotes.ui.design.Toggle
 import com.mheenotes.ui.design.pressable
-import com.mheenotes.ui.i18n.S
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -200,12 +201,11 @@ private fun ToolButton(k: ToolKind, side: PopoverSide, tab: EditorTab) {
 
 @Composable
 private fun ToolOptions(k: ToolKind) {
-    val s = S
     val c = M.colors
     Column(Modifier.padding(10.dp)) {
         if (k == ToolKind.Eraser) {
             Segmented(EraserMode.entries, Tools.eraserMode, { Tools.eraserMode = it; Tools.save() }, Modifier.fillMaxWidth()) { o, sel ->
-                Text(if (o == EraserMode.Whole) s.eraseWhole else s.erasePartial, style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary)
+                Text(if (o == EraserMode.Whole) stringResource(Res.string.erase_whole) else stringResource(Res.string.erase_partial), style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary)
             }
             Spacer(Modifier.height(14.dp))
         }
@@ -221,10 +221,10 @@ private fun ToolOptions(k: ToolKind) {
                 )
             }
             Spacer(Modifier.height(6.dp))
-            ListRow(s.fill, Modifier.padding(horizontal = 0.dp)) { Toggle(Tools.shapeFill, { Tools.shapeFill = it }) }
+            ListRow(stringResource(Res.string.fill), Modifier.padding(horizontal = 0.dp)) { Toggle(Tools.shapeFill, { Tools.shapeFill = it }) }
         }
         if (k != ToolKind.Eraser && k != ToolKind.Lasso) {
-            Text(s.color, style = M.type.caption, color = c.textSecondary)
+            Text(stringResource(Res.string.color), style = M.type.caption, color = c.textSecondary)
             Spacer(Modifier.height(8.dp))
             val palette = if (k == ToolKind.Highlighter) HIGHLIGHT_COLORS else INK_COLORS
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -236,11 +236,11 @@ private fun ToolOptions(k: ToolKind) {
             Spacer(Modifier.height(14.dp))
         }
         if (k == ToolKind.Text) {
-            Text(s.fontSize, style = M.type.caption, color = c.textSecondary)
+            Text(stringResource(Res.string.font_size), style = M.type.caption, color = c.textSecondary)
             Slider(Tools.textSize, { Tools.textSize = it }, Modifier.fillMaxWidth(), range = 8f..48f, onChangeFinished = { Tools.save() })
         } else if (k != ToolKind.Lasso) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(s.width, Modifier.weight(1f), style = M.type.caption, color = c.textSecondary)
+                Text(stringResource(Res.string.width), Modifier.weight(1f), style = M.type.caption, color = c.textSecondary)
                 Text(((Tools.widthOf(k) * 10).roundToInt() / 10f).toString(), style = M.type.caption, color = c.textTertiary)
             }
             val defaults = Tools.widthsOf(k)
@@ -275,7 +275,6 @@ private fun ToolOptions(k: ToolKind) {
 @Composable
 private fun CustomColors(k: ToolKind) {
     val c = M.colors
-    val s = S
     // null = closed, -1 = adding a new color, otherwise the index being edited.
     var editing by remember { mutableStateOf<Int?>(null) }
     fun forTool(argb: Int) = if (k == ToolKind.Highlighter) (argb and 0x00FFFFFF) or 0x66000000 else argb or 0xFF000000.toInt()
@@ -296,14 +295,14 @@ private fun CustomColors(k: ToolKind) {
         ) { Icon(Lucide.Plus, tint = if (editing == -1) c.accent else c.textSecondary, size = 16.dp) }
     }
     if (Tools.customColors.isNotEmpty() && editing == null) {
-        Text(s.customColorHint, Modifier.padding(top = 4.dp), style = M.type.caption, color = c.textTertiary)
+        Text(stringResource(Res.string.custom_color_hint), Modifier.padding(top = 4.dp), style = M.type.caption, color = c.textTertiary)
     }
     androidx.compose.animation.AnimatedVisibility(editing != null) {
         val target = editing ?: return@AnimatedVisibility
         val original = remember(target) { Tools.colorOf(k) }
         key(target) {
             Column(Modifier.padding(top = 10.dp)) {
-                Text(if (target == -1) s.newColor else s.editColor, style = M.type.calloutStrong, color = c.textSecondary)
+                Text(if (target == -1) stringResource(Res.string.new_color) else stringResource(Res.string.edit_color), style = M.type.calloutStrong, color = c.textSecondary)
                 Spacer(Modifier.height(8.dp))
                 val start = if (target >= 0) Tools.customColors.getOrNull(target) ?: original else original or 0xFF000000.toInt()
                 var chosen by remember { mutableStateOf(start) }
@@ -311,13 +310,13 @@ private fun CustomColors(k: ToolKind) {
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (target >= 0) {
-                        com.mheenotes.ui.design.Button(s.delete, {
+                        com.mheenotes.ui.design.Button(stringResource(Res.string.delete), {
                             Tools.removeCustomColor(target); Tools.setColor(k, original); editing = null
                         }, style = com.mheenotes.ui.design.ButtonStyle.Danger, compact = true)
                     } else {
-                        com.mheenotes.ui.design.Button(s.cancel, { Tools.setColor(k, original); editing = null }, compact = true)
+                        com.mheenotes.ui.design.Button(stringResource(Res.string.cancel), { Tools.setColor(k, original); editing = null }, compact = true)
                     }
-                    com.mheenotes.ui.design.Button(s.done, {
+                    com.mheenotes.ui.design.Button(stringResource(Res.string.done), {
                         if (target >= 0) Tools.updateCustomColor(target, chosen) else Tools.addCustomColor(chosen)
                         editing = null
                     }, Modifier.weight(1f), style = com.mheenotes.ui.design.ButtonStyle.Primary, compact = true)

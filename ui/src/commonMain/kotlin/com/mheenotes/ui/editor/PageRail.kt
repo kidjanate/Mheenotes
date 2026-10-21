@@ -50,7 +50,6 @@ import com.mheenotes.ui.design.PopoverSide
 import com.mheenotes.ui.design.Radii
 import com.mheenotes.ui.design.Text
 import com.mheenotes.ui.design.pressable
-import com.mheenotes.ui.i18n.S
 import kotlin.math.roundToInt
 
 /** Thumbnail column for jumping, reordering (long-press drag) and page actions. */

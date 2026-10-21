@@ -1,5 +1,7 @@
 package com.mheenotes.ui.editor
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
 import com.composables.icons.lucide.ArrowDown
 import com.composables.icons.lucide.ArrowUp
 import com.composables.icons.lucide.Crop
@@ -116,7 +118,6 @@ import com.mheenotes.ui.design.Radii
 import com.mheenotes.ui.design.Spinner
 import com.mheenotes.ui.design.Text
 import com.mheenotes.ui.design.pressable
-import com.mheenotes.ui.i18n.S
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -176,7 +177,6 @@ fun EditorScreen(app: AppState) {
 @Composable
 private fun TopBar(app: AppState, tab: EditorTab, rail: Boolean, onRail: () -> Unit, modifier: Modifier) {
     val c = M.colors
-    val s = S
     val doc = tab.doc
     val canUndo by (doc?.canUndo ?: remember { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsState()
     val canRedo by (doc?.canRedo ?: remember { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsState()
@@ -186,7 +186,7 @@ private fun TopBar(app: AppState, tab: EditorTab, rail: Boolean, onRail: () -> U
     var export by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     val currentTitle = lib.notebooks.firstOrNull { it.id == tab.notebookId }?.title.orEmpty()
-    com.mheenotes.ui.library.NameModal(renaming, s.rename, s.notebookName, currentTitle, s.save, { renaming = false }) {
+    com.mheenotes.ui.library.NameModal(renaming, stringResource(Res.string.rename), stringResource(Res.string.notebook_name), currentTitle, stringResource(Res.string.save), { renaming = false }) {
         AppGraph.rename(tab.notebookId, it)
         renaming = false
     }
@@ -202,7 +202,7 @@ private fun TopBar(app: AppState, tab: EditorTab, rail: Boolean, onRail: () -> U
             Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 app.tabs.forEach { t ->
                     key(t.notebookId) {
-                        val title = lib.notebooks.firstOrNull { it.id == t.notebookId }?.title ?: s.untitled
+                        val title = lib.notebooks.firstOrNull { it.id == t.notebookId }?.title ?: stringResource(Res.string.untitled)
                         val dragging = dragId == t.notebookId
                         Box(
                             Modifier
@@ -248,12 +248,12 @@ private fun TopBar(app: AppState, tab: EditorTab, rail: Boolean, onRail: () -> U
             Box {
                 IconButton(Lucide.Ellipsis, { more = true })
                 Popover(more, { more = false }, align = Alignment.End) {
-                    MenuItem(s.resetZoom, icon = Lucide.Maximize) { more = false; tab.scrollRequest = ScrollRequest.FitWidth }
-                    MenuItem(s.goToPage, icon = Lucide.Hash) { more = false; tab.pageDialog = PageDialog.GoTo }
+                    MenuItem(stringResource(Res.string.reset_zoom), icon = Lucide.Maximize) { more = false; tab.scrollRequest = ScrollRequest.FitWidth }
+                    MenuItem(stringResource(Res.string.go_to_page), icon = Lucide.Hash) { more = false; tab.pageDialog = PageDialog.GoTo }
                     if (doc?.pages?.value?.any { it.pdf != null } == true) {
-                        MenuItem(s.searchPdf, icon = Lucide.Search) { more = false; tab.search = tab.search ?: PdfSearchState() }
+                        MenuItem(stringResource(Res.string.search_pdf), icon = Lucide.Search) { more = false; tab.search = tab.search ?: PdfSearchState() }
                     }
-                    if (ItemClipboard.items.isNotEmpty()) MenuItem(s.paste, icon = Lucide.ClipboardPaste) { more = false; doc?.let { paste(tab, it) } }
+                    if (ItemClipboard.items.isNotEmpty()) MenuItem(stringResource(Res.string.paste), icon = Lucide.ClipboardPaste) { more = false; doc?.let { paste(tab, it) } }
                     MenuDivider()
                     PageMenuItems(tab, doc, tab.currentPage) { more = false }
                 }
@@ -282,21 +282,20 @@ private fun TabPill(title: String, active: Boolean, closable: Boolean, onClick: 
 
 @Composable
 fun PageMenuItems(tab: EditorTab, doc: NotebookDocument?, index: Int, dismiss: () -> Unit) {
-    val s = S
     doc ?: return
     val page = doc.pages.value.getOrNull(index)
-    MenuItem(s.insertPageBefore, icon = Lucide.ArrowUpToLine) { dismiss(); requestAddPage(tab, doc, index - 1) }
-    MenuItem(s.insertPageAfter, icon = Lucide.ArrowDownToLine) { dismiss(); requestAddPage(tab, doc, index) }
-    MenuItem(s.insertPdfPages, icon = Lucide.FileInput) { dismiss(); tab.pdfTools?.insertPages(index) }
-    MenuItem(s.duplicatePage, icon = Lucide.CopyPlus) { dismiss(); duplicatePage(tab, doc, index) }
+    MenuItem(stringResource(Res.string.insert_page_before), icon = Lucide.ArrowUpToLine) { dismiss(); requestAddPage(tab, doc, index - 1) }
+    MenuItem(stringResource(Res.string.insert_page_after), icon = Lucide.ArrowDownToLine) { dismiss(); requestAddPage(tab, doc, index) }
+    MenuItem(stringResource(Res.string.insert_pdf_pages), icon = Lucide.FileInput) { dismiss(); tab.pdfTools?.insertPages(index) }
+    MenuItem(stringResource(Res.string.duplicate_page), icon = Lucide.CopyPlus) { dismiss(); duplicatePage(tab, doc, index) }
     MenuDivider()
-    MenuItem(s.pageSettings, icon = Lucide.Ruler) { dismiss(); tab.pageDialog = PageDialog.Settings(index) }
-    MenuItem(s.bookmark, icon = Lucide.Bookmark, trailing = if (page?.bookmarked == true) "✓" else null) { dismiss(); toggleBookmark(doc, index) }
-    MenuItem(s.rotatePage, icon = Lucide.RotateCw) { dismiss(); rotatePage(tab, doc, index) }
-    MenuItem(s.copyToNotebook, icon = Lucide.Files) { dismiss(); tab.pageDialog = PageDialog.CopyMove(index, move = false) }
-    MenuItem(s.moveToNotebook, icon = Lucide.FolderInput) { dismiss(); tab.pageDialog = PageDialog.CopyMove(index, move = true) }
+    MenuItem(stringResource(Res.string.page_settings), icon = Lucide.Ruler) { dismiss(); tab.pageDialog = PageDialog.Settings(index) }
+    MenuItem(stringResource(Res.string.bookmark), icon = Lucide.Bookmark, trailing = if (page?.bookmarked == true) "✓" else null) { dismiss(); toggleBookmark(doc, index) }
+    MenuItem(stringResource(Res.string.rotate_page), icon = Lucide.RotateCw) { dismiss(); rotatePage(tab, doc, index) }
+    MenuItem(stringResource(Res.string.copy_to_notebook), icon = Lucide.Files) { dismiss(); tab.pageDialog = PageDialog.CopyMove(index, move = false) }
+    MenuItem(stringResource(Res.string.move_to_notebook), icon = Lucide.FolderInput) { dismiss(); tab.pageDialog = PageDialog.CopyMove(index, move = true) }
     MenuDivider()
-    if (doc.pages.value.size > 1) MenuItem(s.deletePage, icon = Lucide.Trash2, danger = true) { dismiss(); deletePage(tab, doc, index) }
+    if (doc.pages.value.size > 1) MenuItem(stringResource(Res.string.delete_page), icon = Lucide.Trash2, danger = true) { dismiss(); deletePage(tab, doc, index) }
 }
 
 /** Adds a page after [index]: asks for paper first unless the user turned that off. */
@@ -365,7 +364,6 @@ fun paste(tab: EditorTab, doc: NotebookDocument) {
 
 @Composable
 private fun SelectionBar(tab: EditorTab, doc: NotebookDocument, onCapture: () -> Unit) {
-    val s = S
     val c = M.colors
     val sel = tab.selection
     val bounds = tab.selectionScreenBounds()
@@ -401,7 +399,6 @@ private fun SelectionBar(tab: EditorTab, doc: NotebookDocument, onCapture: () ->
 /** Context-aware actions: what shows depends on what kind of items are selected. */
 @Composable
 private fun SelectionActions(tab: EditorTab, doc: NotebookDocument, sel: Selection, onCapture: () -> Unit) {
-    val s = S
     val c = M.colors
     val canvas = tab.canvas
     val images = sel.items.filterIsInstance<ImageItem>()
@@ -409,7 +406,7 @@ private fun SelectionActions(tab: EditorTab, doc: NotebookDocument, sel: Selecti
     val shapes = sel.items.filterIsInstance<ShapeItem>()
     // A locked image only offers unlocking.
     if (images.any { it.locked }) {
-        Button(s.unlock, { canvas?.replaceSelection { if (it is ImageItem) it.copy(locked = false) else it } }, icon = Lucide.LockOpen, style = ButtonStyle.Ghost, compact = true)
+        Button(stringResource(Res.string.unlock), { canvas?.replaceSelection { if (it is ImageItem) it.copy(locked = false) else it } }, icon = Lucide.LockOpen, style = ButtonStyle.Ghost, compact = true)
         return
     }
     var colors by remember { mutableStateOf(false) }
@@ -460,9 +457,9 @@ private fun SelectionActions(tab: EditorTab, doc: NotebookDocument, sel: Selecti
             Popover(shapeStyle, { shapeStyle = false }, width = 280.dp) {
                 Column(Modifier.padding(10.dp)) {
                     val first = shapes.first()
-                    Text(s.width, style = M.type.caption, color = c.textSecondary)
+                    Text(stringResource(Res.string.width), style = M.type.caption, color = c.textSecondary)
                     Slider(first.strokeWidth, { w -> canvas?.replaceSelection { if (it is ShapeItem) it.copy(strokeWidth = w) else it } }, Modifier.fillMaxWidth(), range = 0.5f..12f)
-                    ListRow(s.fill) {
+                    ListRow(stringResource(Res.string.fill)) {
                         Toggle(first.fillArgb != null, { on ->
                             canvas?.replaceSelection { if (it is ShapeItem) it.copy(fillArgb = if (on) (it.argb and 0x00FFFFFF) or 0x33000000 else null) else it }
                         })
@@ -484,15 +481,15 @@ private fun SelectionActions(tab: EditorTab, doc: NotebookDocument, sel: Selecti
     Box {
         IconButton(Lucide.Ellipsis, { more = true })
         Popover(more, { more = false }) {
-            MenuItem(s.applyPen, icon = Lucide.PenLine) { more = false; canvas?.replaceSelection { applyPen(it) } }
-            MenuItem(s.bringToFront, icon = Lucide.ArrowUpToLine) { more = false; canvas?.replaceSelection { reSeq(it, doc.nextSeq()) } }
-            MenuItem(s.sendToBack, icon = Lucide.ArrowDownToLine) { more = false; canvas?.replaceSelection { reSeq(it, -doc.nextSeq()) } }
+            MenuItem(stringResource(Res.string.apply_pen), icon = Lucide.PenLine) { more = false; canvas?.replaceSelection { applyPen(it) } }
+            MenuItem(stringResource(Res.string.bring_to_front), icon = Lucide.ArrowUpToLine) { more = false; canvas?.replaceSelection { reSeq(it, doc.nextSeq()) } }
+            MenuItem(stringResource(Res.string.send_to_back), icon = Lucide.ArrowDownToLine) { more = false; canvas?.replaceSelection { reSeq(it, -doc.nextSeq()) } }
             MenuDivider()
-            MenuItem(s.previousPage, icon = Lucide.ArrowUp, enabled = doc.pages.value.indexOfFirst { it.id == sel.pageId } > 0) { more = false; canvas?.moveSelectionToPage(-1) }
-            MenuItem(s.nextPage, icon = Lucide.ArrowDown, enabled = doc.pages.value.indexOfFirst { it.id == sel.pageId } < doc.pages.value.lastIndex) { more = false; canvas?.moveSelectionToPage(1) }
+            MenuItem(stringResource(Res.string.previous_page), icon = Lucide.ArrowUp, enabled = doc.pages.value.indexOfFirst { it.id == sel.pageId } > 0) { more = false; canvas?.moveSelectionToPage(-1) }
+            MenuItem(stringResource(Res.string.next_page), icon = Lucide.ArrowDown, enabled = doc.pages.value.indexOfFirst { it.id == sel.pageId } < doc.pages.value.lastIndex) { more = false; canvas?.moveSelectionToPage(1) }
             if (images.isNotEmpty()) {
                 MenuDivider()
-                MenuItem(s.lock, icon = Lucide.Lock) { more = false; canvas?.replaceSelection { if (it is ImageItem) it.copy(locked = true) else it }; canvas?.commitSelection() }
+                MenuItem(stringResource(Res.string.lock), icon = Lucide.Lock) { more = false; canvas?.replaceSelection { if (it is ImageItem) it.copy(locked = true) else it }; canvas?.commitSelection() }
             }
         }
     }
@@ -538,7 +535,7 @@ private fun PageIndicator(tab: EditorTab, doc: NotebookDocument, modifier: Modif
     val alpha by animateFloatAsState(if (tab.writing) 0f else 1f, Motion.fade(), label = "pi")
     Box(modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(20.dp).graphicsLayer { this.alpha = alpha }) {
         Card(Modifier.pressable(onClick = onClick), shape = RoundedCornerShape(50), color = c.elevated.copy(alpha = 0.95f), elevation = 6.dp) {
-            Text(S.pageOf(tab.currentPage + 1, pages.size), Modifier.padding(horizontal = 14.dp, vertical = 8.dp), style = M.type.calloutStrong, color = c.textSecondary)
+            Text(stringResource(Res.string.page_of, tab.currentPage + 1, pages.size), Modifier.padding(horizontal = 14.dp, vertical = 8.dp), style = M.type.calloutStrong, color = c.textSecondary)
         }
     }
 }

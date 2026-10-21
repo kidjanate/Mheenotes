@@ -1,5 +1,7 @@
 package com.mheenotes.ui.settings
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -38,16 +40,14 @@ import com.mheenotes.ui.design.ModalTitle
 import com.mheenotes.ui.design.Motion
 import com.mheenotes.ui.design.Radii
 import com.mheenotes.ui.design.Text
-import com.mheenotes.ui.i18n.S
 
 /** Open-source notices: every bundled library and font, tap one to read its license. */
 @Composable
 fun LicensesModal(visible: Boolean, onDismiss: () -> Unit) {
-    val s = S
     val c = M.colors
     var open by remember { mutableStateOf<String?>(null) }
     Modal(visible, onDismiss, width = 640.dp) {
-        ModalTitle(s.licenses, s.licensesIntro)
+        ModalTitle(stringResource(Res.string.licenses), stringResource(Res.string.licenses_intro))
         Card(Modifier.fillMaxWidth().heightIn(max = 420.dp), color = c.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
             LazyColumn {
                 items(COMPONENTS, key = { it.name }) { comp ->
@@ -76,6 +76,6 @@ fun LicensesModal(visible: Boolean, onDismiss: () -> Unit) {
                 }
             }
         }
-        ModalActions { Button(s.done, onDismiss, style = ButtonStyle.Primary) }
+        ModalActions { Button(stringResource(Res.string.done), onDismiss, style = ButtonStyle.Primary) }
     }
 }

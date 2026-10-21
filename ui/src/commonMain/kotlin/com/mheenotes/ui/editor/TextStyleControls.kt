@@ -30,7 +30,6 @@ import com.mheenotes.ui.design.IconButton
 import com.mheenotes.ui.design.M
 import com.mheenotes.ui.design.Segmented
 import com.mheenotes.ui.design.Text
-import com.mheenotes.ui.i18n.S
 import kotlin.math.roundToInt
 
 /**
@@ -39,7 +38,6 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun TextStyleControls(style: TextItem, onChange: (TextItem) -> Unit, modifier: Modifier = Modifier) {
-    val s = S
     val c = M.colors
     Column(modifier.padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -57,7 +55,7 @@ fun TextStyleControls(style: TextItem, onChange: (TextItem) -> Unit, modifier: M
         }
         Spacer(Modifier.height(8.dp))
         Segmented(FontKind.entries, style.font, { onChange(style.copy(font = it)) }, Modifier.fillMaxWidth()) { o, sel ->
-            Text(fontLabel(o, s), style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary, maxLines = 1)
+            Text(fontLabel(o), style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary, maxLines = 1)
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {

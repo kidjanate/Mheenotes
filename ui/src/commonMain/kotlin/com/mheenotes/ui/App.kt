@@ -74,7 +74,7 @@ class AppState {
 }
 
 @Composable
-fun App(state: AppState = remember { AppState.shared }) {
+fun App(state: AppState = remember { AppState.shared }) = ProvideAppLanguage(AppGraph.settings.language) {
     MheenotesTheme(AppGraph.settings.theme) {
         SystemBars(M.colors.isDark)
         OverlayHost {

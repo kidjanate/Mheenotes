@@ -1,5 +1,10 @@
 package com.mheenotes.ui.library
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getPluralString
+import org.jetbrains.compose.resources.pluralStringResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
@@ -98,7 +103,6 @@ import com.mheenotes.ui.design.Radii
 import com.mheenotes.ui.design.Text
 import com.mheenotes.ui.design.TextField
 import com.mheenotes.ui.design.pressable
-import com.mheenotes.ui.i18n.S
 import com.mheenotes.ui.platform.rememberImporter
 
 sealed interface Section {
@@ -128,8 +132,6 @@ fun LibraryScreen(app: AppState) {
     val ui = remember { LibraryUi.shared }
     val lib by AppGraph.library.state.collectAsState()
     val settings = AppGraph.settings
-    val s = S
-
     val visible by remember(lib, ui.section, ui.query, settings.librarySort) {
         derivedStateOf { filterNotebooks(lib.notebooks, ui.section, ui.query, settings.librarySort, lib.folders) }
     }
@@ -167,8 +169,13 @@ fun LibraryScreen(app: AppState) {
     var confirmEmpty by remember { mutableStateOf(false) }
     var confirmFolder by remember { mutableStateOf<Folder?>(null) }
     val overlays = LocalOverlays.current
+    val importFailedText = stringResource(Res.string.import_failed)
+    val exportingText = stringResource(Res.string.exporting)
+    val untitledText = stringResource(Res.string.untitled)
+    val newFolderText = stringResource(Res.string.new_folder)
     val importer = rememberImporter { count ->
-        if (count < 0) overlays.toast(s.importFailed) else if (count > 0) overlays.toast(s.imported(count))
+        if (count < 0) overlays.toast(importFailedText)
+        else if (count > 0) AppGraph.scope.launch { overlays.toast(getPluralString(Res.plurals.imported, count, count)) }
     }
     val currentFolderId = (ui.section as? Section.InFolder)?.id
 
@@ -223,7 +230,7 @@ fun LibraryScreen(app: AppState) {
                         onExport = { importer.share(it.id) },
                         onOpenInNewWindow = { importer.openInNewWindow(it.id) },
                         onDeleteFolderForever = { confirmFolderForever = it },
-                        onSharePdf = { overlays.toast(s.exporting); importer.sharePdf(it.id) },
+                        onSharePdf = { overlays.toast(exportingText); importer.sharePdf(it.id) },
                     )
                 }
             }
@@ -242,27 +249,27 @@ fun LibraryScreen(app: AppState) {
     }
 
     NewNotebookModal(showNew, onDismiss = { showNew = false }) { title, template, size, paper ->
-        val n = AppGraph.createNotebook(title.ifBlank { s.untitled }, currentFolderId, template, size, paper)
+        val n = AppGraph.createNotebook(title.ifBlank { untitledText }, currentFolderId, template, size, paper)
         showNew = false
         app.open(n.id)
     }
     NameModal(
         visible = newFolderFor != null,
-        title = s.newFolder,
-        placeholder = s.folderName,
+        title = stringResource(Res.string.new_folder),
+        placeholder = stringResource(Res.string.folder_name),
         initial = "",
-        confirm = s.create,
+        confirm = stringResource(Res.string.create),
         onDismiss = { newFolderFor = null },
     ) { name ->
         val parent = (newFolderFor as? Section.InFolder)?.id
-        AppGraph.createFolder(name.ifBlank { s.newFolder }, parent)
+        AppGraph.createFolder(name.ifBlank { newFolderText }, parent)
         newFolderFor = null
     }
-    NameModal(renameTarget != null, s.rename, s.notebookName, renameTarget?.title ?: "", s.save, { renameTarget = null }) {
+    NameModal(renameTarget != null, stringResource(Res.string.rename), stringResource(Res.string.notebook_name), renameTarget?.title ?: "", stringResource(Res.string.save), { renameTarget = null }) {
         renameTarget?.let { n -> AppGraph.rename(n.id, it) }
         renameTarget = null
     }
-    NameModal(renameFolder != null, s.rename, s.folderName, renameFolder?.name ?: "", s.save, { renameFolder = null }) {
+    NameModal(renameFolder != null, stringResource(Res.string.rename), stringResource(Res.string.folder_name), renameFolder?.name ?: "", stringResource(Res.string.save), { renameFolder = null }) {
         renameFolder?.let { f -> if (it.isNotBlank()) AppGraph.renameFolder(f.id, it) }
         renameFolder = null
     }
@@ -272,12 +279,12 @@ fun LibraryScreen(app: AppState) {
         ui.endSelection()
     }
     ConfirmModal(
-        confirmDelete != null, s.deleteForeverConfirm, s.cannotUndo, s.deleteForever, s.cancel, danger = true,
+        confirmDelete != null, stringResource(Res.string.delete_forever_confirm), stringResource(Res.string.cannot_undo), stringResource(Res.string.delete_forever), stringResource(Res.string.cancel), danger = true,
         onConfirm = { confirmDelete?.forEach(AppGraph::deleteForever); ui.endSelection() },
         onDismiss = { confirmDelete = null },
     )
     ConfirmModal(
-        confirmEmpty, s.emptyTrashConfirm, s.cannotUndo, s.emptyTrash, s.cancel, danger = true,
+        confirmEmpty, stringResource(Res.string.empty_trash_confirm), stringResource(Res.string.cannot_undo), stringResource(Res.string.empty_trash), stringResource(Res.string.cancel), danger = true,
         onConfirm = {
             lib.folders.filter { AppGraph.isTrashRoot(it) }.forEach { AppGraph.deleteFolderForever(it.id) }
             AppGraph.library.state.value.notebooks.filter { it.trashedAt != null }.forEach { AppGraph.deleteForever(it.id) }
@@ -285,7 +292,7 @@ fun LibraryScreen(app: AppState) {
         onDismiss = { confirmEmpty = false },
     )
     ConfirmModal(
-        confirmFolder != null, s.deleteFolderConfirm, s.deleteFolderBody, s.delete, s.cancel, danger = true,
+        confirmFolder != null, stringResource(Res.string.delete_folder_confirm), stringResource(Res.string.delete_folder_body), stringResource(Res.string.delete), stringResource(Res.string.cancel), danger = true,
         onConfirm = {
             confirmFolder?.let { f ->
                 if ((ui.section as? Section.InFolder)?.id == f.id) ui.section = Section.All
@@ -295,7 +302,7 @@ fun LibraryScreen(app: AppState) {
         onDismiss = { confirmFolder = null },
     )
     ConfirmModal(
-        confirmFolderForever != null, s.deleteForeverConfirm, s.cannotUndo, s.deleteForever, s.cancel, danger = true,
+        confirmFolderForever != null, stringResource(Res.string.delete_forever_confirm), stringResource(Res.string.cannot_undo), stringResource(Res.string.delete_forever), stringResource(Res.string.cancel), danger = true,
         onConfirm = { confirmFolderForever?.let { AppGraph.deleteFolderForever(it.id) } },
         onDismiss = { confirmFolderForever = null },
     )
@@ -345,11 +352,11 @@ fun filterNotebooks(all: List<Notebook>, section: Section, query: String, sort: 
 
 @Composable
 private fun sectionTitle(section: Section, folders: List<Folder>): String = when (section) {
-    Section.All -> S.allNotes
-    Section.Favorites -> S.favorites
-    Section.Recents -> S.recents
-    Section.Trash -> S.trash
-    is Section.InFolder -> folders.firstOrNull { it.id == section.id }?.name ?: S.folders
+    Section.All -> stringResource(Res.string.all_notes)
+    Section.Favorites -> stringResource(Res.string.favorites)
+    Section.Recents -> stringResource(Res.string.recents)
+    Section.Trash -> stringResource(Res.string.trash)
+    is Section.InFolder -> folders.firstOrNull { it.id == section.id }?.name ?: stringResource(Res.string.folders)
 }
 
 private fun breadcrumbs(section: Section, folders: List<Folder>): List<Folder> {
@@ -378,23 +385,22 @@ private fun Sidebar(
     onDeleteFolder: (Folder) -> Unit,
 ) {
     val c = M.colors
-    val s = S
     Column(Modifier.width(264.dp).fillMaxHeight().padding(start = 12.dp, top = 12.dp, bottom = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(c.accent), contentAlignment = Alignment.Center) {
                 Icon(Lucide.LibraryBig, tint = c.onAccent, size = 17.dp)
             }
             Spacer(Modifier.width(10.dp))
-            Text(s.appName, Modifier.weight(1f), style = M.type.headline)
+            Text(stringResource(Res.string.app_name), Modifier.weight(1f), style = M.type.headline)
             IconButton(Lucide.Settings, onSettings, size = 36.dp, iconSize = 19.dp, tint = c.textSecondary)
         }
-        SidebarItem(Lucide.LibraryBig, s.allNotes, ui.section == Section.All, dropKey = "root") { ui.section = Section.All; ui.endSelection() }
-        SidebarItem(Lucide.Clock, s.recents, ui.section == Section.Recents) { ui.section = Section.Recents; ui.endSelection() }
-        SidebarItem(Lucide.Star, s.favorites, ui.section == Section.Favorites) { ui.section = Section.Favorites; ui.endSelection() }
-        SidebarItem(Lucide.Trash2, s.trash, ui.section == Section.Trash, badge = trashCount.takeIf { it > 0 }) { ui.section = Section.Trash; ui.endSelection() }
+        SidebarItem(Lucide.LibraryBig, stringResource(Res.string.all_notes), ui.section == Section.All, dropKey = "root") { ui.section = Section.All; ui.endSelection() }
+        SidebarItem(Lucide.Clock, stringResource(Res.string.recents), ui.section == Section.Recents) { ui.section = Section.Recents; ui.endSelection() }
+        SidebarItem(Lucide.Star, stringResource(Res.string.favorites), ui.section == Section.Favorites) { ui.section = Section.Favorites; ui.endSelection() }
+        SidebarItem(Lucide.Trash2, stringResource(Res.string.trash), ui.section == Section.Trash, badge = trashCount.takeIf { it > 0 }) { ui.section = Section.Trash; ui.endSelection() }
 
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 22.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(s.folders.uppercase(), Modifier.weight(1f), style = M.type.overline, color = c.textTertiary)
+            Text(stringResource(Res.string.folders).uppercase(), Modifier.weight(1f), style = M.type.overline, color = c.textTertiary)
             IconButton(Lucide.FolderPlus, onNewFolder, size = 30.dp, iconSize = 16.dp, tint = c.textSecondary)
         }
         val expanded = remember { mutableStateOf(emptySet<Id>()) }
@@ -472,7 +478,6 @@ private fun FolderRow(
     modifier: Modifier = Modifier,
 ) {
     val c = M.colors
-    val s = S
     var menu by remember { mutableStateOf(false) }
     val rot by androidx.compose.animation.core.animateFloatAsState(if (expanded) 90f else 0f, Motion.standard(), label = "chev")
     Box(modifier) {
@@ -500,8 +505,8 @@ private fun FolderRow(
             if (count > 0) Text(count.toString(), style = M.type.caption, color = c.textTertiary)
         }
         Popover(menu, { menu = false }, side = PopoverSide.End) {
-            MenuItem(s.rename, icon = Lucide.PenLine) { menu = false; onRename() }
-            MenuItem(s.delete, icon = Lucide.Trash2, danger = true) { menu = false; onDelete() }
+            MenuItem(stringResource(Res.string.rename), icon = Lucide.PenLine) { menu = false; onRename() }
+            MenuItem(stringResource(Res.string.delete), icon = Lucide.Trash2, danger = true) { menu = false; onDelete() }
         }
     }
 }
@@ -521,7 +526,6 @@ private fun Header(
     onEmptyTrash: () -> Unit,
 ) {
     val c = M.colors
-    val s = S
     val settings = AppGraph.settings
     val trash = ui.section == Section.Trash
     Column(Modifier.fillMaxWidth().padding(start = 28.dp, end = 24.dp, top = 14.dp)) {
@@ -530,44 +534,44 @@ private fun Header(
             Spacer(Modifier.weight(1f))
             TextField(
                 ui.query, { ui.query = it }, Modifier.width(260.dp),
-                placeholder = s.searchNotes, leading = Lucide.Search, clearable = true,
+                placeholder = stringResource(Res.string.search_notes), leading = Lucide.Search, clearable = true,
             )
             Spacer(Modifier.width(8.dp))
             var sortMenu by remember { mutableStateOf(false) }
             Box {
                 IconButton(Lucide.ArrowUpDown, { sortMenu = true }, tint = c.textSecondary)
                 Popover(sortMenu, { sortMenu = false }, align = Alignment.End) {
-                    MenuLabel(s.sortBy)
+                    MenuLabel(stringResource(Res.string.sort_by))
                     LibrarySort.entries.forEach { o ->
                         val label = when (o) {
-                            LibrarySort.Edited -> s.sortRecent
-                            LibrarySort.Opened -> s.sortOpened
-                            LibrarySort.Title -> s.sortTitle
-                            LibrarySort.Created -> s.sortCreated
-                            LibrarySort.Pages -> s.sortPages
+                            LibrarySort.Edited -> stringResource(Res.string.sort_recent)
+                            LibrarySort.Opened -> stringResource(Res.string.sort_opened)
+                            LibrarySort.Title -> stringResource(Res.string.sort_title)
+                            LibrarySort.Created -> stringResource(Res.string.sort_created)
+                            LibrarySort.Pages -> stringResource(Res.string.sort_pages)
                         }
                         MenuItem(label, icon = if (settings.librarySort == o) Lucide.Check else null) { settings.updateSort(o); sortMenu = false }
                     }
                     MenuDivider()
-                    MenuItem(s.viewGrid, icon = Lucide.LayoutGrid, trailing = if (settings.libraryGrid) "✓" else null) { settings.updateGrid(true); sortMenu = false }
-                    MenuItem(s.viewList, icon = Lucide.LayoutList, trailing = if (!settings.libraryGrid) "✓" else null) { settings.updateGrid(false); sortMenu = false }
+                    MenuItem(stringResource(Res.string.view_grid), icon = Lucide.LayoutGrid, trailing = if (settings.libraryGrid) "✓" else null) { settings.updateGrid(true); sortMenu = false }
+                    MenuItem(stringResource(Res.string.view_list), icon = Lucide.LayoutList, trailing = if (!settings.libraryGrid) "✓" else null) { settings.updateGrid(false); sortMenu = false }
                 }
             }
             Spacer(Modifier.width(4.dp))
             if (trash) {
-                Button(s.emptyTrash, onEmptyTrash, style = ButtonStyle.Danger, compact = true)
+                Button(stringResource(Res.string.empty_trash), onEmptyTrash, style = ButtonStyle.Danger, compact = true)
             } else {
-                Button(if (ui.selecting) s.done else s.select, { if (ui.selecting) ui.endSelection() else ui.selecting = true }, style = ButtonStyle.Ghost, compact = true)
+                Button(if (ui.selecting) stringResource(Res.string.done) else stringResource(Res.string.select), { if (ui.selecting) ui.endSelection() else ui.selecting = true }, style = ButtonStyle.Ghost, compact = true)
                 Spacer(Modifier.width(8.dp))
                 var newMenu by remember { mutableStateOf(false) }
                 Box {
-                    Button(s.new, { newMenu = true }, icon = Lucide.Plus, style = ButtonStyle.Primary, compact = true)
+                    Button(stringResource(Res.string.new), { newMenu = true }, icon = Lucide.Plus, style = ButtonStyle.Primary, compact = true)
                     Popover(newMenu, { newMenu = false }, align = Alignment.End) {
-                        MenuItem(s.newNotebook, icon = Lucide.FilePlus) { newMenu = false; onNew() }
-                        MenuItem(s.newFolder, icon = Lucide.FolderPlus) { newMenu = false; onNewFolder() }
+                        MenuItem(stringResource(Res.string.new_notebook), icon = Lucide.FilePlus) { newMenu = false; onNew() }
+                        MenuItem(stringResource(Res.string.new_folder), icon = Lucide.FolderPlus) { newMenu = false; onNewFolder() }
                         MenuDivider()
-                        MenuItem(s.importPdf, icon = Lucide.FileUp) { newMenu = false; onImportPdf() }
-                        MenuItem(s.importNotebook, icon = Lucide.FolderInput) { newMenu = false; onImportFile() }
+                        MenuItem(stringResource(Res.string.import_pdf), icon = Lucide.FileUp) { newMenu = false; onImportPdf() }
+                        MenuItem(stringResource(Res.string.import_notebook), icon = Lucide.FolderInput) { newMenu = false; onImportFile() }
                     }
                 }
             }
@@ -585,7 +589,7 @@ private fun Header(
         Row(verticalAlignment = Alignment.Bottom) {
             Text(title, Modifier.weight(1f, fill = false).animateContentSize(), style = M.type.display, maxLines = 1)
             Spacer(Modifier.width(12.dp))
-            Text(s.notebooksCount(count), Modifier.padding(bottom = 5.dp), style = M.type.callout, color = c.textTertiary)
+            Text(pluralStringResource(Res.plurals.notebooks_count, count, count), Modifier.padding(bottom = 5.dp), style = M.type.callout, color = c.textTertiary)
         }
         Spacer(Modifier.height(14.dp))
     }
@@ -615,7 +619,7 @@ private fun NotebookCollection(
     val state = rememberLazyGridState()
     LaunchedEffect(ui.section) { state.scrollToItem(0) }
     val overlays = LocalOverlays.current
-    val alreadyOpen = S.alreadyOpen
+    val alreadyOpen = stringResource(Res.string.already_open)
     val actions = NotebookActions(
         open = { n -> if (ui.selecting) ui.toggle(n.id) else if (!trash && !app.open(n.id)) overlays.toast(alreadyOpen) },
         rename = onRename, move = onMove, deleteForever = onDeleteForever, export = onExport, sharePdf = onSharePdf,
@@ -656,17 +660,16 @@ private fun NotebookCollection(
 @Composable
 private fun EmptyState(ui: LibraryUi, trash: Boolean, onNew: () -> Unit) {
     val c = M.colors
-    val s = S
     Column(Modifier.fillMaxSize().padding(bottom = 80.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Box(Modifier.size(84.dp).clip(CircleShape).background(c.fill), contentAlignment = Alignment.Center) {
             Icon(if (trash) Lucide.Trash2 else if (ui.query.isNotBlank()) Lucide.Search else Lucide.FilePlus, tint = c.textTertiary, size = 34.dp)
         }
         Spacer(Modifier.height(18.dp))
         val (title, body) = when {
-            trash -> s.trashEmptyTitle to s.trashEmptyBody
-            ui.query.isNotBlank() -> s.noResults to null
-            ui.section is Section.InFolder -> s.folderEmpty to s.noNotesBody
-            else -> s.noNotesTitle to s.noNotesBody
+            trash -> stringResource(Res.string.trash_empty_title) to stringResource(Res.string.trash_empty_body)
+            ui.query.isNotBlank() -> stringResource(Res.string.no_results) to null
+            ui.section is Section.InFolder -> stringResource(Res.string.folder_empty) to stringResource(Res.string.no_notes_body)
+            else -> stringResource(Res.string.no_notes_title) to stringResource(Res.string.no_notes_body)
         }
         Text(title, style = M.type.headline)
         if (body != null) {
@@ -675,7 +678,7 @@ private fun EmptyState(ui: LibraryUi, trash: Boolean, onNew: () -> Unit) {
         }
         if (!trash && ui.query.isBlank()) {
             Spacer(Modifier.height(22.dp))
-            Button(s.newNotebook, onNew, icon = Lucide.Plus, style = ButtonStyle.Primary)
+            Button(stringResource(Res.string.new_notebook), onNew, icon = Lucide.Plus, style = ButtonStyle.Primary)
         }
     }
 }
@@ -689,7 +692,6 @@ private fun SelectionBar(
     onDeleteForever: () -> Unit,
     modifier: Modifier,
 ) {
-    val s = S
     val c = M.colors
     AnimatedVisibility(
         ui.selecting || (trash && ui.selection.isNotEmpty()),
@@ -700,15 +702,15 @@ private fun SelectionBar(
         val none = ui.selection.isEmpty()
         Card(shape = RoundedCornerShape(Radii.xl), color = c.elevated, elevation = 18.dp) {
             Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(s.selected(ui.selection.size), Modifier.padding(horizontal = 10.dp), style = M.type.calloutStrong, color = c.textSecondary)
-                Button(s.selectAll, { ui.selection = if (ui.selection.size == allIds.size) emptySet() else allIds.toSet() }, style = ButtonStyle.Ghost, compact = true)
+                Text(stringResource(Res.string.selected, ui.selection.size), Modifier.padding(horizontal = 10.dp), style = M.type.calloutStrong, color = c.textSecondary)
+                Button(stringResource(Res.string.select_all), { ui.selection = if (ui.selection.size == allIds.size) emptySet() else allIds.toSet() }, style = ButtonStyle.Ghost, compact = true)
                 if (trash) {
-                    Button(s.restore, { AppGraph.restore(ui.selection); ui.endSelection() }, enabled = !none, compact = true)
-                    Button(s.deleteForever, onDeleteForever, style = ButtonStyle.Danger, enabled = !none, compact = true)
+                    Button(stringResource(Res.string.restore), { AppGraph.restore(ui.selection); ui.endSelection() }, enabled = !none, compact = true)
+                    Button(stringResource(Res.string.delete_forever), onDeleteForever, style = ButtonStyle.Danger, enabled = !none, compact = true)
                 } else {
-                    Button(s.moveTo, onMove, icon = Lucide.FolderInput, enabled = !none, compact = true)
-                    Button(s.favorite, { AppGraph.setFavorite(ui.selection, true); ui.endSelection() }, icon = Lucide.Star, enabled = !none, compact = true)
-                    Button(s.moveToTrash, { AppGraph.trash(ui.selection); ui.endSelection() }, icon = Lucide.Trash2, style = ButtonStyle.Danger, enabled = !none, compact = true)
+                    Button(stringResource(Res.string.move_to), onMove, icon = Lucide.FolderInput, enabled = !none, compact = true)
+                    Button(stringResource(Res.string.favorite), { AppGraph.setFavorite(ui.selection, true); ui.endSelection() }, icon = Lucide.Star, enabled = !none, compact = true)
+                    Button(stringResource(Res.string.move_to_trash), { AppGraph.trash(ui.selection); ui.endSelection() }, icon = Lucide.Trash2, style = ButtonStyle.Danger, enabled = !none, compact = true)
                 }
                 IconButton(Lucide.X, { ui.endSelection() }, size = 34.dp, iconSize = 17.dp, tint = c.textSecondary)
             }

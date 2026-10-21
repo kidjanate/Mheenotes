@@ -1,5 +1,7 @@
 package com.mheenotes.ui.editor
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -53,7 +55,6 @@ import com.mheenotes.ui.design.ModalTitle
 import com.mheenotes.ui.design.Motion
 import com.mheenotes.ui.design.Radii
 import com.mheenotes.ui.design.Spinner
-import com.mheenotes.ui.i18n.S
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -91,7 +92,7 @@ fun CaptureAreaBar(tab: EditorTab, onCapture: () -> Unit) {
                 shape = RoundedCornerShape(Radii.lg), color = M.colors.elevated, elevation = 14.dp,
             ) {
                 Row(Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(S.capture, onCapture, icon = Lucide.Camera, style = ButtonStyle.Ghost, compact = true)
+                    Button(stringResource(Res.string.capture), onCapture, icon = Lucide.Camera, style = ButtonStyle.Ghost, compact = true)
                     IconButton(Lucide.X, { tab.captureArea = null }, tint = M.colors.textSecondary)
                 }
             }
@@ -101,7 +102,6 @@ fun CaptureAreaBar(tab: EditorTab, onCapture: () -> Unit) {
 
 @Composable
 fun CaptureModal(tab: EditorTab, doc: NotebookDocument, request: CaptureRequest?, onDismiss: () -> Unit) {
-    val s = S
     val scope = rememberCoroutineScope()
     val overlays = LocalOverlays.current
     var image by remember(request) { mutableStateOf<ImageBitmap?>(null) }
@@ -109,9 +109,9 @@ fun CaptureModal(tab: EditorTab, doc: NotebookDocument, request: CaptureRequest?
     LaunchedEffect(request) {
         if (request != null) image = LassoCapture.render(tab, doc, request.pageId, request.lasso)
     }
-    val title = AppGraph.library.notebook(tab.notebookId)?.title ?: s.appName
+    val title = AppGraph.library.notebook(tab.notebookId)?.title ?: stringResource(Res.string.app_name)
     Modal(request != null, onDismiss, width = 560.dp) {
-        ModalTitle(s.captureTitle)
+        ModalTitle(stringResource(Res.string.capture_title))
         Box(
             Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 360.dp).clip(RoundedCornerShape(Radii.md)).background(M.colors.fill).padding(12.dp),
             contentAlignment = Alignment.Center,
@@ -119,20 +119,22 @@ fun CaptureModal(tab: EditorTab, doc: NotebookDocument, request: CaptureRequest?
             val img = image
             if (img == null) Spinner() else Image(img, null, Modifier.fillMaxWidth().heightIn(max = 336.dp), contentScale = ContentScale.Fit)
         }
+        val savedText = stringResource(Res.string.saved_to_photos)
+        val failedText = stringResource(Res.string.export_failed)
         ModalActions {
             val img = image
             val enabled = img != null && !busy
-            Button(s.share, { if (img != null) scope.launch { LassoCapture.share(img, title) } }, icon = Lucide.Share2, enabled = enabled, compact = true)
-            Button(s.saveToPhotos, {
+            Button(stringResource(Res.string.share), { if (img != null) scope.launch { LassoCapture.share(img, title) } }, icon = Lucide.Share2, enabled = enabled, compact = true)
+            Button(stringResource(Res.string.save_to_photos), {
                 if (img != null) scope.launch {
                     busy = true
-                    overlays.toast(if (LassoCapture.saveToPhotos(img, title)) s.savedToPhotos else s.exportFailed)
+                    overlays.toast(if (LassoCapture.saveToPhotos(img, title)) savedText else failedText)
                     busy = false
                     onDismiss()
                 }
             }, icon = Lucide.Download, enabled = enabled, compact = true)
             Spacer(Modifier.width(4.dp))
-            Button(s.insertIntoNote, {
+            Button(stringResource(Res.string.insert_into_note), {
                 val req = request
                 if (img != null && req != null) scope.launch {
                     busy = true

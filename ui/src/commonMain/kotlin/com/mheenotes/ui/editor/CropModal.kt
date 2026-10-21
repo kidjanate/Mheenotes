@@ -1,5 +1,7 @@
 package com.mheenotes.ui.editor
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -35,7 +37,6 @@ import com.mheenotes.ui.design.Modal
 import com.mheenotes.ui.design.ModalActions
 import com.mheenotes.ui.design.ModalTitle
 import com.mheenotes.ui.design.Spinner
-import com.mheenotes.ui.i18n.S
 import kotlin.math.abs
 
 /** Loads an image asset for previews (platform cache). */
@@ -44,12 +45,11 @@ expect suspend fun loadImageAsset(notebookId: Id, assetId: Id, maxPixels: Int): 
 /** Crop window drawn over the whole image; drag the corners or the middle. */
 @Composable
 fun CropModal(tab: EditorTab, image: ImageItem?, onDismiss: () -> Unit, onApply: (ImageItem) -> Unit) {
-    val s = S
     var bmp by remember(image) { mutableStateOf<ImageBitmap?>(null) }
     var crop by remember(image) { mutableStateOf(image?.crop ?: Rect(0f, 0f, 1f, 1f)) }
     androidx.compose.runtime.LaunchedEffect(image) { if (image != null) bmp = loadImageAsset(tab.notebookId, image.assetId, 2048) }
     Modal(image != null, onDismiss, width = 640.dp) {
-        ModalTitle(s.crop)
+        ModalTitle(stringResource(Res.string.crop))
         val b = bmp
         if (b == null) {
             Box(Modifier.fillMaxWidth().heightIn(min = 200.dp), contentAlignment = Alignment.Center) { Spinner() }
@@ -105,8 +105,8 @@ fun CropModal(tab: EditorTab, image: ImageItem?, onDismiss: () -> Unit, onApply:
             }
         }
         ModalActions {
-            Button(s.cancel, onDismiss)
-            Button(s.done, {
+            Button(stringResource(Res.string.cancel), onDismiss)
+            Button(stringResource(Res.string.done), {
                 val img = image ?: return@Button
                 onApply(img.withCrop(crop))
                 onDismiss()

@@ -1,5 +1,7 @@
 package com.mheenotes.ui.editor
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -55,7 +57,6 @@ import com.mheenotes.ui.design.Motion
 import com.mheenotes.ui.design.Radii
 import com.mheenotes.ui.design.Spinner
 import com.mheenotes.ui.design.Text
-import com.mheenotes.ui.i18n.S
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
@@ -105,7 +106,6 @@ fun PdfSearchBar(tab: EditorTab, doc: NotebookDocument, tools: PdfTools, topInse
     var last by remember { mutableStateOf<PdfSearchState?>(null) }
     tab.search?.let { last = it }
     val state = last ?: return
-    val s = S
     val c = M.colors
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = remember { FocusRequester() }
@@ -165,7 +165,7 @@ fun PdfSearchBar(tab: EditorTab, doc: NotebookDocument, tools: PdfTools, topInse
                         keyboardActions = KeyboardActions(onSearch = { go(1) }),
                         decorationBox = { inner ->
                             Box {
-                                if (state.query.isEmpty()) Text(s.searchPdf, style = M.type.callout, color = c.textTertiary, maxLines = 1)
+                                if (state.query.isEmpty()) Text(stringResource(Res.string.search_pdf), style = M.type.callout, color = c.textTertiary, maxLines = 1)
                                 inner()
                             }
                         },

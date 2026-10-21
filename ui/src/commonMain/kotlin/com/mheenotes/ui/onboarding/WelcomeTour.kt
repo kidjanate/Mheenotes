@@ -1,5 +1,7 @@
 package com.mheenotes.ui.onboarding
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -64,7 +66,6 @@ import com.mheenotes.ui.design.M
 import com.mheenotes.ui.design.Modal
 import com.mheenotes.ui.design.Radii
 import com.mheenotes.ui.design.Text
-import com.mheenotes.ui.i18n.S
 import com.mheenotes.ui.library.LanguagePicker
 import com.mheenotes.ui.library.ThemePicker
 import kotlinx.coroutines.launch
@@ -78,7 +79,6 @@ private const val PAGES = 6
 /** First-run tour: language, theme, then the essentials, each page with a small looping animation. */
 @Composable
 fun WelcomeTour(visible: Boolean, onImportPdf: () -> Unit, onDone: () -> Unit) {
-    val s = S
     val c = M.colors
     val pager = rememberPagerState { PAGES }
     val scope = rememberCoroutineScope()
@@ -91,13 +91,13 @@ fun WelcomeTour(visible: Boolean, onImportPdf: () -> Unit, onDone: () -> Unit) {
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
-                if (!last) Button(s.tourSkip, onDone, style = ButtonStyle.Ghost, compact = true)
+                if (!last) Button(stringResource(Res.string.tour_skip), onDone, style = ButtonStyle.Ghost, compact = true)
             }
             Dots(pager)
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                if (pager.currentPage > 0) Button(s.tourBack, { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }, style = ButtonStyle.Ghost, compact = true)
-                if (last) Button(s.tourStart, onDone, style = ButtonStyle.Primary, compact = true)
-                else Button(s.tourNext, { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }, style = ButtonStyle.Primary, compact = true)
+                if (pager.currentPage > 0) Button(stringResource(Res.string.tour_back), { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }, style = ButtonStyle.Ghost, compact = true)
+                if (last) Button(stringResource(Res.string.tour_start), onDone, style = ButtonStyle.Primary, compact = true)
+                else Button(stringResource(Res.string.tour_next), { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }, style = ButtonStyle.Primary, compact = true)
             }
         }
     }
@@ -105,17 +105,16 @@ fun WelcomeTour(visible: Boolean, onImportPdf: () -> Unit, onDone: () -> Unit) {
 
 @Composable
 private fun TourPage(page: Int, pager: PagerState, onImportPdf: () -> Unit) {
-    val s = S
     val c = M.colors
     // How far this page is from the centre, for a gentle parallax on the art.
     val shift = (pager.currentPage - page) + pager.currentPageOffsetFraction
     val (title, body) = when (page) {
-        0 -> s.tourHelloTitle to s.tourHelloBody
-        1 -> s.tourThemeTitle to s.tourThemeBody
-        2 -> s.tourWriteTitle to s.tourWriteBody
-        3 -> s.tourPdfTitle to s.tourPdfBody
-        4 -> s.tourGestureTitle to s.tourGestureBody
-        else -> s.tourReadyTitle to s.tourReadyBody
+        0 -> stringResource(Res.string.tour_hello_title) to stringResource(Res.string.tour_hello_body)
+        1 -> stringResource(Res.string.tour_theme_title) to stringResource(Res.string.tour_theme_body)
+        2 -> stringResource(Res.string.tour_write_title) to stringResource(Res.string.tour_write_body)
+        3 -> stringResource(Res.string.tour_pdf_title) to stringResource(Res.string.tour_pdf_body)
+        4 -> stringResource(Res.string.tour_gesture_title) to stringResource(Res.string.tour_gesture_body)
+        else -> stringResource(Res.string.tour_ready_title) to stringResource(Res.string.tour_ready_body)
     }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
@@ -141,7 +140,7 @@ private fun TourPage(page: Int, pager: PagerState, onImportPdf: () -> Unit) {
         when (page) {
             0 -> LanguagePicker(Modifier.width(380.dp))
             1 -> ThemePicker(Modifier.width(380.dp))
-            5 -> Button(s.importPdf, onImportPdf, icon = Lucide.FileUp)
+            5 -> Button(stringResource(Res.string.import_pdf), onImportPdf, icon = Lucide.FileUp)
         }
     }
 }

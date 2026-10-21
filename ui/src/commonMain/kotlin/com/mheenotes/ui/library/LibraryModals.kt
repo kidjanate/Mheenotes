@@ -1,5 +1,7 @@
 package com.mheenotes.ui.library
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.FileText
 import androidx.compose.animation.core.animateDpAsState
@@ -62,7 +64,6 @@ import com.mheenotes.ui.design.TextField
 import com.mheenotes.ui.design.ThemeMode
 import com.mheenotes.ui.design.Toggle
 import com.mheenotes.ui.design.pressable
-import com.mheenotes.ui.i18n.S
 import com.mheenotes.ui.render.drawTemplate
 
 val PAPER_COLORS = listOf(PAPER_WHITE, 0xFFFBF6E9.toInt(), 0xFFEFF3F8.toInt(), 0xFF26272B.toInt())
@@ -73,18 +74,17 @@ fun NewNotebookModal(
     onDismiss: () -> Unit,
     onCreate: (String, Template, PageSize, Int) -> Unit,
 ) {
-    val s = S
     var title by remember(visible) { mutableStateOf("") }
     var template by remember { mutableStateOf(Template.Lined) }
     var size by remember { mutableStateOf(PageSize.A4) }
     var paper by remember { mutableStateOf(PAPER_WHITE) }
     Modal(visible, onDismiss, width = 600.dp) {
-        ModalTitle(s.newNotebook)
+        ModalTitle(stringResource(Res.string.new_notebook))
         val focus = remember { FocusRequester() }
-        TextField(title, { title = it }, Modifier.fillMaxWidth().focusRequester(focus), placeholder = s.notebookName, onSubmit = { onCreate(title, template, size, paper) })
+        TextField(title, { title = it }, Modifier.fillMaxWidth().focusRequester(focus), placeholder = stringResource(Res.string.notebook_name), onSubmit = { onCreate(title, template, size, paper) })
         LaunchedEffect(visible) { if (visible) runCatching { focus.requestFocus() } }
         Spacer(Modifier.height(22.dp))
-        Text(s.template, style = M.type.calloutStrong, color = M.colors.textSecondary)
+        Text(stringResource(Res.string.template), style = M.type.calloutStrong, color = M.colors.textSecondary)
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Template.entries.forEach { t ->
@@ -94,19 +94,19 @@ fun NewNotebookModal(
         Spacer(Modifier.height(20.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(s.paper, style = M.type.calloutStrong, color = M.colors.textSecondary)
+                Text(stringResource(Res.string.paper), style = M.type.calloutStrong, color = M.colors.textSecondary)
                 Spacer(Modifier.height(10.dp))
                 val sizes = listOf(PageSize.A4, PageSize.Letter, PageSize.A5, PageSize.Square)
                 Segmented(sizes, size, { size = it }, Modifier.fillMaxWidth()) { o, sel ->
                     Text(
-                        when (o) { PageSize.A4 -> s.sizeA4; PageSize.Letter -> s.sizeLetter; PageSize.A5 -> s.sizeA5; else -> s.sizeSquare },
+                        when (o) { PageSize.A4 -> stringResource(Res.string.size_a4); PageSize.Letter -> stringResource(Res.string.size_letter); PageSize.A5 -> stringResource(Res.string.size_a5); else -> stringResource(Res.string.size_square) },
                         style = M.type.calloutStrong, color = if (sel) M.colors.text else M.colors.textSecondary, maxLines = 1,
                     )
                 }
             }
             Spacer(Modifier.width(24.dp))
             Column {
-                Text(s.paperColor, style = M.type.calloutStrong, color = M.colors.textSecondary)
+                Text(stringResource(Res.string.paper_color), style = M.type.calloutStrong, color = M.colors.textSecondary)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     PAPER_COLORS.forEach { p -> ColorDot(Color(p), p == paper, { paper = p }) }
@@ -114,8 +114,8 @@ fun NewNotebookModal(
             }
         }
         ModalActions {
-            Button(s.cancel, onDismiss)
-            Button(s.create, { onCreate(title, template, size, paper) }, style = ButtonStyle.Primary)
+            Button(stringResource(Res.string.cancel), onDismiss)
+            Button(stringResource(Res.string.create), { onCreate(title, template, size, paper) }, style = ButtonStyle.Primary)
         }
     }
 }
@@ -123,7 +123,6 @@ fun NewNotebookModal(
 @Composable
 private fun TemplateOption(t: Template, paper: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val c = M.colors
-    val s = S
     val border by animateDpAsState(if (selected) 2.5.dp else 0.75.dp, Motion.snappy(), label = "b")
     Column(modifier.pressable(pressedScale = 0.94f, onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
         Canvas(
@@ -141,7 +140,7 @@ private fun TemplateOption(t: Template, paper: Int, selected: Boolean, modifier:
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            com.mheenotes.ui.editor.templateLabel(t, s),
+            com.mheenotes.ui.editor.templateLabel(t),
             style = M.type.caption, color = if (selected) c.accent else c.textSecondary,
         )
     }
@@ -164,7 +163,7 @@ fun NameModal(
         TextField(value, { value = it }, Modifier.fillMaxWidth().focusRequester(focus), placeholder = placeholder, clearable = true, onSubmit = { onConfirm(value) })
         LaunchedEffect(visible) { if (visible) runCatching { focus.requestFocus() } }
         ModalActions {
-            Button(S.cancel, onDismiss)
+            Button(stringResource(Res.string.cancel), onDismiss)
             Button(confirm, { onConfirm(value) }, style = ButtonStyle.Primary)
         }
     }
@@ -172,13 +171,12 @@ fun NameModal(
 
 @Composable
 fun MoveModal(targets: Set<Id>?, folders: List<Folder>, onDismiss: () -> Unit, onMove: (Id?) -> Unit) {
-    val s = S
     val c = M.colors
     Modal(targets != null, onDismiss, width = 420.dp) {
-        ModalTitle(s.moveTo)
+        ModalTitle(stringResource(Res.string.move_to))
         Card(Modifier.fillMaxWidth().heightIn(max = 380.dp), color = c.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
             LazyColumn {
-                item { ListRow(s.topLevel, icon = Lucide.House, onClick = { onMove(null) }) }
+                item { ListRow(stringResource(Res.string.top_level), icon = Lucide.House, onClick = { onMove(null) }) }
                 val byParent = folders.groupBy { it.parentId }
                 val rows = ArrayList<Pair<Folder, Int>>()
                 fun walk(p: Id?, d: Int) { byParent[p].orEmpty().sortedBy { it.name.lowercase() }.forEach { rows += it to d; walk(it.id, d + 1) } }
@@ -189,18 +187,17 @@ fun MoveModal(targets: Set<Id>?, folders: List<Folder>, onDismiss: () -> Unit, o
                 }
             }
         }
-        ModalActions { Button(s.cancel, onDismiss) }
+        ModalActions { Button(stringResource(Res.string.cancel), onDismiss) }
     }
 }
 
 @Composable
 fun ThemePicker(modifier: Modifier = Modifier) {
-    val s = S
     val c = M.colors
     val st = AppGraph.settings
     Segmented(ThemeMode.entries, st.theme, st::updateTheme, modifier) { o, sel ->
         Text(
-            when (o) { ThemeMode.System -> s.themeSystem; ThemeMode.Light -> s.themeLight; ThemeMode.Dark -> s.themeDark },
+            when (o) { ThemeMode.System -> stringResource(Res.string.theme_system); ThemeMode.Light -> stringResource(Res.string.theme_light); ThemeMode.Dark -> stringResource(Res.string.theme_dark) },
             style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary,
         )
     }
@@ -208,13 +205,12 @@ fun ThemePicker(modifier: Modifier = Modifier) {
 
 @Composable
 fun LanguagePicker(modifier: Modifier = Modifier) {
-    val s = S
     val c = M.colors
     val st = AppGraph.settings
     Segmented(com.mheenotes.ui.AppLanguage.entries, st.language, st::updateLanguage, modifier) { o, sel ->
         Text(
             when (o) {
-                com.mheenotes.ui.AppLanguage.System -> s.themeSystem
+                com.mheenotes.ui.AppLanguage.System -> stringResource(Res.string.theme_system)
                 com.mheenotes.ui.AppLanguage.English -> "English"
                 com.mheenotes.ui.AppLanguage.Thai -> "ไทย"
             },
@@ -225,54 +221,53 @@ fun LanguagePicker(modifier: Modifier = Modifier) {
 
 @Composable
 fun SettingsModal(visible: Boolean, onDismiss: () -> Unit, onTour: () -> Unit = {}) {
-    val s = S
     var showLicenses by remember { mutableStateOf(false) }
     val c = M.colors
     val st = AppGraph.settings
     Modal(visible, onDismiss, width = 520.dp) {
-        ModalTitle(s.settings)
-        Text(s.appearance, style = M.type.calloutStrong, color = c.textSecondary)
+        ModalTitle(stringResource(Res.string.settings))
+        Text(stringResource(Res.string.appearance), style = M.type.calloutStrong, color = c.textSecondary)
         Spacer(Modifier.height(10.dp))
         ThemePicker(Modifier.fillMaxWidth())
         Spacer(Modifier.height(22.dp))
-        Text(s.input, style = M.type.calloutStrong, color = c.textSecondary)
+        Text(stringResource(Res.string.input), style = M.type.calloutStrong, color = c.textSecondary)
         Spacer(Modifier.height(8.dp))
         Card(Modifier.fillMaxWidth(), color = c.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
             Column {
-                ListRow(s.fingerDraws) { Toggle(st.fingerDraws, st::updateFingerDraws) }
+                ListRow(stringResource(Res.string.finger_draws)) { Toggle(st.fingerDraws, st::updateFingerDraws) }
                 Divider(Modifier.padding(start = 16.dp))
-                ListRow(s.scribbleErase) { Toggle(st.scribbleErase, st::updateScribble) }
+                ListRow(stringResource(Res.string.scribble_erase)) { Toggle(st.scribbleErase, st::updateScribble) }
                 Divider(Modifier.padding(start = 16.dp))
-                ListRow(s.drawHoldShapes) { Toggle(st.holdToShape, st::updateHoldShape) }
+                ListRow(stringResource(Res.string.draw_hold_shapes)) { Toggle(st.holdToShape, st::updateHoldShape) }
                 Divider(Modifier.padding(start = 16.dp))
-                ListRow(s.lowLatency, subtitle = s.lowLatencyHint) { Toggle(st.lowLatencyInk, st::updateLowLatency) }
+                ListRow(stringResource(Res.string.low_latency), subtitle = stringResource(Res.string.low_latency_hint)) { Toggle(st.lowLatencyInk, st::updateLowLatency) }
                 Divider(Modifier.padding(start = 16.dp))
-                ListRow(s.pressure) { Toggle(st.pressure, st::updatePressure) }
+                ListRow(stringResource(Res.string.pressure)) { Toggle(st.pressure, st::updatePressure) }
                 Divider(Modifier.padding(start = 16.dp))
-                ListRow(s.askInsertPage) { Toggle(st.askInsertPage, st::updateAskInsert) }
+                ListRow(stringResource(Res.string.ask_insert_page)) { Toggle(st.askInsertPage, st::updateAskInsert) }
             }
         }
         Spacer(Modifier.height(22.dp))
-        Text(s.language, style = M.type.calloutStrong, color = c.textSecondary)
+        Text(stringResource(Res.string.language), style = M.type.calloutStrong, color = c.textSecondary)
         Spacer(Modifier.height(10.dp))
         LanguagePicker(Modifier.fillMaxWidth())
         Spacer(Modifier.height(22.dp))
-        Text(s.about, style = M.type.calloutStrong, color = c.textSecondary)
+        Text(stringResource(Res.string.about), style = M.type.calloutStrong, color = c.textSecondary)
         Spacer(Modifier.height(8.dp))
         Card(Modifier.fillMaxWidth(), color = c.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
             Column {
-                ListRow(s.tour, icon = Lucide.Sparkles, onClick = onTour) {
+                ListRow(stringResource(Res.string.tour), icon = Lucide.Sparkles, onClick = onTour) {
                     com.mheenotes.ui.design.Icon(Lucide.ChevronRight, tint = c.textTertiary, size = 16.dp)
                 }
                 Divider(Modifier.padding(start = 48.dp))
-                ListRow(s.licenses, icon = Lucide.FileText, onClick = { showLicenses = true }) {
+                ListRow(stringResource(Res.string.licenses), icon = Lucide.FileText, onClick = { showLicenses = true }) {
                     com.mheenotes.ui.design.Icon(Lucide.ChevronRight, tint = c.textTertiary, size = 16.dp)
                 }
             }
         }
         Spacer(Modifier.height(18.dp))
-        Text(s.madeWith, Modifier.fillMaxWidth(), style = M.type.caption.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), color = c.textTertiary)
-        ModalActions { Button(s.done, onDismiss, style = ButtonStyle.Primary) }
+        Text(stringResource(Res.string.made_with), Modifier.fillMaxWidth(), style = M.type.caption.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), color = c.textTertiary)
+        ModalActions { Button(stringResource(Res.string.done), onDismiss, style = ButtonStyle.Primary) }
     }
     com.mheenotes.ui.settings.LicensesModal(showLicenses) { showLicenses = false }
 }

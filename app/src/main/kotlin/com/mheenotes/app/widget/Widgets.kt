@@ -44,8 +44,12 @@ import androidx.glance.text.TextStyle
 import com.mheenotes.app.MainActivity
 import com.mheenotes.core.model.Notebook
 import com.mheenotes.ui.AppGraph
-import com.mheenotes.ui.i18n.strings
-import com.mheenotes.ui.library.relativeTime
+import com.mheenotes.ui.library.loadRelativeTime
+import com.mheenotes.ui.res.Res
+import com.mheenotes.ui.res.ink_activity
+import com.mheenotes.ui.res.no_notes_title
+import com.mheenotes.ui.res.recents
+import org.jetbrains.compose.resources.getString
 import java.io.File
 
 private val Bg = ColorProvider(day = Color(0xFFFFFFFF), night = Color(0xFF1B1B1F))
@@ -60,6 +64,8 @@ private fun openIntent(context: Context, notebookId: String?) =
         notebookId?.let { putExtra("openId", it) }
     }
 
+private class RecentLabels(val recents: String, val empty: String, val times: Map<String, String>)
+
 /** Three most recently opened notebooks with their covers. */
 class RecentNotesWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Exact
@@ -68,7 +74,8 @@ class RecentNotesWidget : GlanceAppWidget() {
         AppGraph.awaitLoaded()
         val recent = AppGraph.library.state.value.notebooks.filter { it.trashedAt == null }.sortedByDescending { it.openedAt }.take(3)
         val covers = recent.associate { n -> n.id to cover(n) }
-        provideContent { Recent(context, recent, covers) }
+        val labels = RecentLabels(getString(Res.string.recents), getString(Res.string.no_notes_title), recent.associate { it.id to loadRelativeTime(it.openedAt) })
+        provideContent { Recent(context, recent, covers, labels) }
     }
 
     private fun cover(n: Notebook): Bitmap? {
@@ -78,13 +85,12 @@ class RecentNotesWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun Recent(context: Context, recent: List<Notebook>, covers: Map<String, Bitmap?>) {
-        val s = strings()
+    private fun Recent(context: Context, recent: List<Notebook>, covers: Map<String, Bitmap?>, s: RecentLabels) {
         Column(GlanceModifier.fillMaxSize().background(Bg).cornerRadius(24.dp).padding(14.dp)) {
             Text(s.recents, style = TextStyle(color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium))
             Spacer(GlanceModifier.height(10.dp))
             if (recent.isEmpty()) {
-                Text(s.noNotesTitle, style = TextStyle(color = Fg, fontSize = 14.sp))
+                Text(s.empty, style = TextStyle(color = Fg, fontSize = 14.sp))
             }
             Row(GlanceModifier.fillMaxWidth()) {
                 recent.forEachIndexed { i, n ->
@@ -95,7 +101,7 @@ class RecentNotesWidget : GlanceAppWidget() {
                         }
                         Spacer(GlanceModifier.height(6.dp))
                         Text(n.title, maxLines = 1, style = TextStyle(color = Fg, fontSize = 13.sp, fontWeight = FontWeight.Medium))
-                        Text(relativeTime(n.openedAt, s), maxLines = 1, style = TextStyle(color = Muted, fontSize = 11.sp))
+                        Text(s.times[n.id].orEmpty(), maxLines = 1, style = TextStyle(color = Muted, fontSize = 11.sp))
                     }
                 }
             }
@@ -112,18 +118,18 @@ class InkActivityWidget : GlanceAppWidget() {
         val days = AppGraph.library.activity(7)
         val night = context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
         val graph = graph(days, night)
+        val title = getString(Res.string.ink_activity)
         provideContent {
-            val s = strings()
             Column(
                 GlanceModifier.fillMaxSize().background(Bg).cornerRadius(24.dp).padding(14.dp)
                     .clickable(actionStartActivity(openIntent(context, null))),
             ) {
                 Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(s.inkActivity, GlanceModifier.defaultWeight(), style = TextStyle(color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium))
+                    Text(title, GlanceModifier.defaultWeight(), style = TextStyle(color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium))
                     Text(days.sum().toString(), style = TextStyle(color = Fg, fontSize = 16.sp, fontWeight = FontWeight.Bold))
                 }
                 Spacer(GlanceModifier.height(8.dp))
-                Image(ImageProvider(graph), s.inkActivity, GlanceModifier.fillMaxWidth().defaultWeight(), contentScale = ContentScale.FillBounds)
+                Image(ImageProvider(graph), title, GlanceModifier.fillMaxWidth().defaultWeight(), contentScale = ContentScale.FillBounds)
             }
         }
     }

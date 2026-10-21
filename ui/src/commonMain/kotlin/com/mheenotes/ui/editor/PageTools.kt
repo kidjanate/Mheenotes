@@ -1,5 +1,7 @@
 package com.mheenotes.ui.editor
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -57,7 +59,6 @@ import com.mheenotes.ui.design.Segmented
 import com.mheenotes.ui.design.Spinner
 import com.mheenotes.ui.design.Text
 import com.mheenotes.ui.design.TextField
-import com.mheenotes.ui.i18n.S
 import com.mheenotes.ui.library.PAPER_COLORS
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -114,16 +115,15 @@ val LINE_COLORS = listOf(null, 0x2E3A5A8C, 0x40E5484D, 0x402FA36B, 0x408E4EC6, 0
 
 @Composable
 fun PageSetupForm(setup: PageSetup, onChange: (PageSetup) -> Unit, showSize: Boolean = true) {
-    val s = S
     val c = M.colors
-    Text(s.template, style = M.type.calloutStrong, color = c.textSecondary)
+    Text(stringResource(Res.string.template), style = M.type.calloutStrong, color = c.textSecondary)
     Spacer(Modifier.height(8.dp))
     Segmented(Template.entries, setup.template, { onChange(setup.copy(template = it)) }, Modifier.fillMaxWidth()) { o, sel ->
-        Text(templateLabel(o, s), style = M.type.caption, color = if (sel) c.text else c.textSecondary, maxLines = 1)
+        Text(templateLabel(o), style = M.type.caption, color = if (sel) c.text else c.textSecondary, maxLines = 1)
     }
     if (showSize) {
         Spacer(Modifier.height(16.dp))
-        Text(s.paper, style = M.type.calloutStrong, color = c.textSecondary)
+        Text(stringResource(Res.string.paper), style = M.type.calloutStrong, color = c.textSecondary)
         Spacer(Modifier.height(8.dp))
         @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -146,20 +146,20 @@ fun PageSetupForm(setup: PageSetup, onChange: (PageSetup) -> Unit, showSize: Boo
             }
         }
         Segmented(listOf(false, true), setup.landscape, { onChange(setup.copy(landscape = it)) }, Modifier.fillMaxWidth()) { o, sel ->
-            Text(if (o) s.landscape else s.portrait, style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary)
+            Text(if (o) stringResource(Res.string.landscape) else stringResource(Res.string.portrait), style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary)
         }
     }
     Spacer(Modifier.height(16.dp))
     Row {
         Column(Modifier.weight(1f)) {
-            Text(s.paperColor, style = M.type.calloutStrong, color = c.textSecondary)
+            Text(stringResource(Res.string.paper_color), style = M.type.calloutStrong, color = c.textSecondary)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 PAPER_COLORS.forEach { p -> ColorDot(Color(p), p == setup.paperArgb, { onChange(setup.copy(paperArgb = p)) }) }
             }
         }
         Column(Modifier.weight(1f)) {
-            Text(s.lineColor, style = M.type.calloutStrong, color = c.textSecondary)
+            Text(stringResource(Res.string.line_color), style = M.type.calloutStrong, color = c.textSecondary)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 LINE_COLORS.forEach { l ->
@@ -174,10 +174,9 @@ fun PageSetupForm(setup: PageSetup, onChange: (PageSetup) -> Unit, showSize: Boo
 
 @Composable
 private fun presetLabel(p: PaperPreset): String {
-    val s = S
     return when (p) {
-        PaperPreset.A4 -> s.sizeA4; PaperPreset.Letter -> s.sizeLetter; PaperPreset.A5 -> s.sizeA5; PaperPreset.A3 -> s.sizeA3
-        PaperPreset.Square -> s.sizeSquare; PaperPreset.Wide -> s.sizeWide; PaperPreset.Screen -> s.sizeScreen; PaperPreset.Custom -> s.sizeCustom
+        PaperPreset.A4 -> stringResource(Res.string.size_a4); PaperPreset.Letter -> stringResource(Res.string.size_letter); PaperPreset.A5 -> stringResource(Res.string.size_a5); PaperPreset.A3 -> stringResource(Res.string.size_a3)
+        PaperPreset.Square -> stringResource(Res.string.size_square); PaperPreset.Wide -> stringResource(Res.string.size_wide); PaperPreset.Screen -> stringResource(Res.string.size_screen); PaperPreset.Custom -> stringResource(Res.string.size_custom)
     }
 }
 
@@ -283,7 +282,6 @@ fun PageDialogs(tab: EditorTab, doc: NotebookDocument, pdfTools: PdfTools) {
     val dialog = tab.pageDialog
     val close = { tab.pageDialog = null }
     val aspect = screenAspect()
-    val s = S
     val pages by doc.pages.collectAsState()
 
     // Page settings
@@ -292,17 +290,17 @@ fun PageDialogs(tab: EditorTab, doc: NotebookDocument, pdfTools: PdfTools) {
     var setup by remember(settings) { mutableStateOf(settingsPage?.let { PageSetup.from(it) }) }
     var applyAll by remember(settings) { mutableStateOf(false) }
     Modal(settings != null, close, width = 560.dp) {
-        ModalTitle(s.pageSettings)
+        ModalTitle(stringResource(Res.string.page_settings))
         setup?.let { st -> PageSetupForm(st, { setup = it }, showSize = settingsPage?.pdf == null) }
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(applyAll, { applyAll = it })
             Spacer(Modifier.width(10.dp))
-            Text(s.applyToAll, style = M.type.body)
+            Text(stringResource(Res.string.apply_to_all), style = M.type.body)
         }
         ModalActions {
-            Button(s.cancel, close)
-            Button(s.done, {
+            Button(stringResource(Res.string.cancel), close)
+            Button(stringResource(Res.string.done), {
                 val st = setup
                 if (st != null && settings != null) applyPageSetup(doc, if (applyAll) pages.indices.toList() else listOf(settings.index), st, aspect)
                 close()
@@ -317,17 +315,17 @@ fun PageDialogs(tab: EditorTab, doc: NotebookDocument, pdfTools: PdfTools) {
     }
     var dontAsk by remember(insert) { mutableStateOf(false) }
     Modal(insert != null, close, width = 560.dp) {
-        ModalTitle(s.addPage)
+        ModalTitle(stringResource(Res.string.add_page))
         insertSetup?.let { st -> PageSetupForm(st, { insertSetup = it }) }
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(dontAsk, { dontAsk = it })
             Spacer(Modifier.width(10.dp))
-            Text(s.dontAskAgain, style = M.type.body)
+            Text(stringResource(Res.string.dont_ask_again), style = M.type.body)
         }
         ModalActions {
-            Button(s.cancel, close)
-            Button(s.insert, {
+            Button(stringResource(Res.string.cancel), close)
+            Button(stringResource(Res.string.insert), {
                 val st = insertSetup
                 if (st != null && insert != null) insertPage(tab, doc, insert.afterIndex, st, aspect)
                 if (dontAsk) AppGraph.settings.updateAskInsert(false)
@@ -339,14 +337,14 @@ fun PageDialogs(tab: EditorTab, doc: NotebookDocument, pdfTools: PdfTools) {
     // Go to page
     var goTo by remember(dialog) { mutableStateOf("") }
     Modal(dialog == PageDialog.GoTo, close, width = 360.dp) {
-        ModalTitle(s.goToPage, s.pageOf(tab.currentPage + 1, pages.size))
+        ModalTitle(stringResource(Res.string.go_to_page), stringResource(Res.string.page_of, tab.currentPage + 1, pages.size))
         val target = goTo.toIntOrNull()?.takeIf { it in 1..pages.size }
         TextField(goTo, { goTo = it.filter(Char::isDigit).take(5) }, Modifier.fillMaxWidth(), placeholder = "1–${pages.size}", onSubmit = {
             target?.let { tab.scrollRequest = ScrollRequest.ToPage(it - 1); close() }
         })
         ModalActions {
-            Button(s.cancel, close)
-            Button(s.open, { target?.let { tab.scrollRequest = ScrollRequest.ToPage(it - 1) }; close() }, style = ButtonStyle.Primary, enabled = target != null)
+            Button(stringResource(Res.string.cancel), close)
+            Button(stringResource(Res.string.open), { target?.let { tab.scrollRequest = ScrollRequest.ToPage(it - 1) }; close() }, style = ButtonStyle.Primary, enabled = target != null)
         }
     }
 
@@ -354,13 +352,13 @@ fun PageDialogs(tab: EditorTab, doc: NotebookDocument, pdfTools: PdfTools) {
     val copyMove = dialog as? PageDialog.CopyMove
     val lib by AppGraph.library.state.collectAsState()
     Modal(copyMove != null, close, width = 420.dp) {
-        ModalTitle(if (copyMove?.move == true) s.moveToNotebook else s.copyToNotebook)
+        ModalTitle(if (copyMove?.move == true) stringResource(Res.string.move_to_notebook) else stringResource(Res.string.copy_to_notebook))
         val others = AppState.allTabs().filter { it !== tab && it.doc != null }
-        if (others.isEmpty()) Text(s.openAnotherNotebook, style = M.type.callout, color = M.colors.textSecondary)
+        if (others.isEmpty()) Text(stringResource(Res.string.open_another_notebook), style = M.type.callout, color = M.colors.textSecondary)
         Card(Modifier.fillMaxWidth().heightIn(max = 320.dp), color = M.colors.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
             LazyColumn {
                 items(others, key = { it.notebookId }) { other ->
-                    val title = lib.notebooks.firstOrNull { it.id == other.notebookId }?.title ?: s.untitled
+                    val title = lib.notebooks.firstOrNull { it.id == other.notebookId }?.title ?: stringResource(Res.string.untitled)
                     ListRow(title, icon = Lucide.FileText, onClick = {
                         val cm = copyMove ?: return@ListRow
                         copyPageTo(tab, doc, cm.index, other, other.doc ?: return@ListRow, cm.move)
@@ -370,6 +368,6 @@ fun PageDialogs(tab: EditorTab, doc: NotebookDocument, pdfTools: PdfTools) {
                 }
             }
         }
-        ModalActions { Button(s.cancel, close) }
+        ModalActions { Button(stringResource(Res.string.cancel), close) }
     }
 }

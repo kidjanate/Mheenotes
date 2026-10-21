@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.mheenotes.ui.App
 import com.mheenotes.ui.AppGraph
+import com.mheenotes.ui.res.import_failed
 import com.mheenotes.ui.AppState
 import com.mheenotes.ui.dev.Fixtures
 import com.mheenotes.ui.platform.Imports
@@ -51,7 +52,7 @@ class MainActivity : ComponentActivity() {
                 AppGraph.awaitLoaded()
                 val imported = Imports.importShared(uris, intent.type)
                 imported.firstOrNull()?.let { AppState.shared.open(it.id) }
-                    ?: android.widget.Toast.makeText(this@MainActivity, com.mheenotes.ui.i18n.strings().importFailed, android.widget.Toast.LENGTH_SHORT).show()
+                    ?: android.widget.Toast.makeText(this@MainActivity, org.jetbrains.compose.resources.getString(com.mheenotes.ui.res.Res.string.import_failed), android.widget.Toast.LENGTH_SHORT).show()
             }
             setIntent(Intent()) // do not import again on rotation or relaunch
             return

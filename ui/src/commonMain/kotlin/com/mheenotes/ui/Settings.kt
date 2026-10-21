@@ -9,6 +9,13 @@ import com.mheenotes.ui.design.ThemeMode
 /** UI language: follow the device, or a fixed choice inside the app. */
 enum class AppLanguage { System, English, Thai }
 
+/** Makes [language] the process locale, so string resources (and formatting) resolve in it. */
+expect fun applyAppLanguage(language: AppLanguage)
+
+/** Provides [language] to everything below, so every string resource re-resolves when it changes. */
+@androidx.compose.runtime.Composable
+expect fun ProvideAppLanguage(language: AppLanguage, content: @androidx.compose.runtime.Composable () -> Unit)
+
 enum class LibrarySort { Edited, Opened, Title, Created, Pages }
 
 /** User preferences, persisted as key/value rows in the library database. */
@@ -59,6 +66,7 @@ class Settings {
         lib.setting("language")?.let { v -> AppLanguage.entries.firstOrNull { it.name == v }?.let { language = it } }
         lib.setting("pressure")?.let { pressure = it == "1" }
         onboarded = lib.setting("onboarded") == "1"
+        applyAppLanguage(language)
     }
 
     private fun put(k: String, v: String) = library?.putSetting(k, v)
@@ -74,7 +82,7 @@ class Settings {
     fun updateDock(v: String) { toolbarDock = v; put("dock", v) }
     fun updateLowLatency(v: Boolean) { lowLatencyInk = v; put("lowLatency", v.s()) }
     fun updateAskInsert(v: Boolean) { askInsertPage = v; put("askInsert", v.s()) }
-    fun updateLanguage(v: AppLanguage) { language = v; put("language", v.name) }
+    fun updateLanguage(v: AppLanguage) { language = v; applyAppLanguage(v); put("language", v.name) }
     fun updatePressure(v: Boolean) { pressure = v; put("pressure", v.s()) }
     fun finishOnboarding() { onboarded = true; put("onboarded", "1") }
 }

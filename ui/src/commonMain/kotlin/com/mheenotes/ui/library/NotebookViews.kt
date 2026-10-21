@@ -1,5 +1,10 @@
 package com.mheenotes.ui.library
 
+import com.mheenotes.ui.res.*
+import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.getPluralString
+import org.jetbrains.compose.resources.pluralStringResource
 import com.composables.icons.lucide.AppWindow
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -61,8 +66,6 @@ import com.mheenotes.ui.design.PopoverSide
 import com.mheenotes.ui.design.Radii
 import com.mheenotes.ui.design.Text
 import com.mheenotes.ui.design.pressable
-import com.mheenotes.ui.i18n.S
-import com.mheenotes.ui.i18n.Strings
 import com.mheenotes.ui.platform.NotebookThumbnail
 
 class NotebookActions(
@@ -127,7 +130,7 @@ fun NotebookCard(
             Column(Modifier.weight(1f)) {
                 Text(n.title, style = M.type.calloutStrong, maxLines = 1)
                 Spacer(Modifier.height(2.dp))
-                Text(subtitle(n, trash, S), style = M.type.caption, color = c.textTertiary, maxLines = 1)
+                Text(subtitle(n, trash), style = M.type.caption, color = c.textTertiary, maxLines = 1)
             }
             if (!selecting) {
                 Box {
@@ -177,7 +180,7 @@ fun NotebookRow(
                         Icon(Lucide.Star, tint = Color(0xFFE7A02C), size = 13.dp)
                     }
                 }
-                Text(subtitle(n, trash, S), style = M.type.callout, color = c.textTertiary, maxLines = 1)
+                Text(subtitle(n, trash), style = M.type.callout, color = c.textTertiary, maxLines = 1)
             }
             if (!selecting) IconButton(Lucide.Ellipsis, { menu = true }, size = 32.dp, iconSize = 17.dp, tint = c.textTertiary)
         }
@@ -187,23 +190,22 @@ fun NotebookRow(
 
 @Composable
 private fun NotebookMenu(n: Notebook, trash: Boolean, expanded: Boolean, onDismiss: () -> Unit, a: NotebookActions) {
-    val s = S
     Popover(expanded, onDismiss, side = PopoverSide.Below) {
         if (trash) {
-            MenuItem(s.restore, icon = Lucide.ArchiveRestore) { onDismiss(); AppGraph.restore(listOf(n.id)) }
-            MenuItem(s.deleteForever, icon = Lucide.Trash2, danger = true) { onDismiss(); a.deleteForever(n) }
+            MenuItem(stringResource(Res.string.restore), icon = Lucide.ArchiveRestore) { onDismiss(); AppGraph.restore(listOf(n.id)) }
+            MenuItem(stringResource(Res.string.delete_forever), icon = Lucide.Trash2, danger = true) { onDismiss(); a.deleteForever(n) }
         } else {
-            MenuItem(s.openInNewWindow, icon = Lucide.AppWindow) { onDismiss(); a.openInNewWindow(n) }
-            MenuItem(s.rename, icon = Lucide.PenLine) { onDismiss(); a.rename(n) }
-            MenuItem(if (n.favorite) s.unfavorite else s.favorite, icon = if (n.favorite) Lucide.StarOff else Lucide.Star) {
+            MenuItem(stringResource(Res.string.open_in_new_window), icon = Lucide.AppWindow) { onDismiss(); a.openInNewWindow(n) }
+            MenuItem(stringResource(Res.string.rename), icon = Lucide.PenLine) { onDismiss(); a.rename(n) }
+            MenuItem(if (n.favorite) stringResource(Res.string.unfavorite) else stringResource(Res.string.favorite), icon = if (n.favorite) Lucide.StarOff else Lucide.Star) {
                 onDismiss(); AppGraph.setFavorite(listOf(n.id), !n.favorite)
             }
-            MenuItem(s.moveTo, icon = Lucide.FolderInput) { onDismiss(); a.move(n) }
-            MenuItem(s.duplicate, icon = Lucide.Copy) { onDismiss(); AppGraph.duplicate(n.id, "(2)") }
-            MenuItem(s.sharePdf, icon = Lucide.FileText) { onDismiss(); a.sharePdf(n) }
-            MenuItem(s.shareNotebook, icon = Lucide.Share2) { onDismiss(); a.export(n) }
+            MenuItem(stringResource(Res.string.move_to), icon = Lucide.FolderInput) { onDismiss(); a.move(n) }
+            MenuItem(stringResource(Res.string.duplicate), icon = Lucide.Copy) { onDismiss(); AppGraph.duplicate(n.id, "(2)") }
+            MenuItem(stringResource(Res.string.share_pdf), icon = Lucide.FileText) { onDismiss(); a.sharePdf(n) }
+            MenuItem(stringResource(Res.string.share_notebook), icon = Lucide.Share2) { onDismiss(); a.export(n) }
             MenuDivider()
-            MenuItem(s.moveToTrash, icon = Lucide.Trash2, danger = true) { onDismiss(); AppGraph.trash(listOf(n.id)) }
+            MenuItem(stringResource(Res.string.move_to_trash), icon = Lucide.Trash2, danger = true) { onDismiss(); AppGraph.trash(listOf(n.id)) }
         }
     }
 }
@@ -221,7 +223,6 @@ fun FolderTile(
     onDeleteForever: () -> Unit = {},
 ) {
     val c = M.colors
-    val s = S
     var menu by remember { mutableStateOf(false) }
     val drag = LibraryDrag.shared
     val hovered = drag.hovered == "grid:${f.id}" && (drag.item as? Dragged.FolderItem)?.id != f.id
@@ -246,7 +247,7 @@ fun FolderTile(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(f.name, style = M.type.calloutStrong, maxLines = 1)
-                Text(if (trashed) s.folderTrashed(count) else s.notebooksCount(count), style = M.type.caption, color = c.textTertiary, maxLines = 1)
+                Text(if (trashed) pluralStringResource(Res.plurals.folder_trashed, count, count) else pluralStringResource(Res.plurals.notebooks_count, count, count), style = M.type.caption, color = c.textTertiary, maxLines = 1)
             }
             if (trashed) {
                 IconButton(Lucide.ArchiveRestore, { AppGraph.restoreFolder(f.id) }, size = 32.dp, iconSize = 16.dp, tint = c.textSecondary)
@@ -254,28 +255,54 @@ fun FolderTile(
             }
         }
         Popover(menu, { menu = false }) {
-            MenuItem(s.rename, icon = Lucide.PenLine) { menu = false; onRename() }
-            MenuItem(s.moveToTrash, icon = Lucide.Trash2, danger = true) { menu = false; onDelete() }
+            MenuItem(stringResource(Res.string.rename), icon = Lucide.PenLine) { menu = false; onRename() }
+            MenuItem(stringResource(Res.string.move_to_trash), icon = Lucide.Trash2, danger = true) { menu = false; onDelete() }
         }
     }
 }
 
-fun subtitle(n: Notebook, trash: Boolean, s: Strings): String {
+@Composable
+fun subtitle(n: Notebook, trash: Boolean): String {
     if (trash) {
         val left = AppGraph.TRASH_DAYS - (nowMillis() - (n.trashedAt ?: 0)) / 86_400_000L
-        return s.deletedDaysLeft(left.coerceAtLeast(1))
+        return (left.coerceAtLeast(1)).let { d -> if (d <= 1) stringResource(Res.string.deletes_tomorrow) else stringResource(Res.string.deletes_in_days, d) }
     }
-    return "${relativeTime(n.updatedAt, s)} · ${s.pages(n.pageCount)}"
+    return "${relativeTime(n.updatedAt)} · ${pluralStringResource(Res.plurals.pages, n.pageCount, n.pageCount)}"
 }
 
-fun relativeTime(at: Long, s: Strings, now: Long = nowMillis()): String {
-    val d = (now - at).coerceAtLeast(0)
-    val min = d / 60_000
+private enum class Ago { JustNow, Minutes, Hours, Yesterday, Days }
+
+private fun ago(at: Long, now: Long): Pair<Ago, Long> {
+    val min = (now - at).coerceAtLeast(0) / 60_000
     return when {
-        min < 1 -> s.justNow
-        min < 60 -> s.minutesAgo(min)
-        min < 24 * 60 -> s.hoursAgo(min / 60)
-        min < 48 * 60 -> s.yesterday
-        else -> s.daysAgo(min / (24 * 60))
+        min < 1 -> Ago.JustNow to 0L
+        min < 60 -> Ago.Minutes to min
+        min < 24 * 60 -> Ago.Hours to min / 60
+        min < 48 * 60 -> Ago.Yesterday to 1L
+        else -> Ago.Days to min / (24 * 60)
+    }
+}
+
+@Composable
+fun relativeTime(at: Long, now: Long = nowMillis()): String {
+    val (kind, n) = ago(at, now)
+    return when (kind) {
+        Ago.JustNow -> stringResource(Res.string.just_now)
+        Ago.Minutes -> stringResource(Res.string.minutes_ago, n)
+        Ago.Hours -> pluralStringResource(Res.plurals.hours_ago, n.toInt(), n)
+        Ago.Yesterday -> stringResource(Res.string.yesterday)
+        Ago.Days -> stringResource(Res.string.days_ago, n)
+    }
+}
+
+/** [relativeTime] outside composition (widgets). */
+suspend fun loadRelativeTime(at: Long, now: Long = nowMillis()): String {
+    val (kind, n) = ago(at, now)
+    return when (kind) {
+        Ago.JustNow -> getString(Res.string.just_now)
+        Ago.Minutes -> getString(Res.string.minutes_ago, n)
+        Ago.Hours -> getPluralString(Res.plurals.hours_ago, n.toInt(), n)
+        Ago.Yesterday -> getString(Res.string.yesterday)
+        Ago.Days -> getString(Res.string.days_ago, n)
     }
 }
