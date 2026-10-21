@@ -31,6 +31,8 @@ No account, no ads, no network. Your notes stay on your tablet.
 - Low-latency ink drawn straight to the display, so the line stays under the nib
 - **Scribble over ink to erase it**, or use the eraser on whole strokes or just the part you touch
 - **Hold at the end of a stroke to snap it** into a clean line, ellipse, triangle or rectangle; lines snap to 45° steps
+- **Laser pointer** that glows while you present and fades a moment after you lift the pen
+- **Animated pen**: strokes loop like hand-drawn stop motion (boil, wave or bounce), with speed, rainbow or flicker colors and strength to taste
 - Smooth on huge pages: tens of thousands of strokes still scroll and zoom without hitches
 
 <img src="docs/media/scribble-erase.gif" width="100%" alt="Scribbling over a word erases it" />

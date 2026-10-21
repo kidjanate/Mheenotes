@@ -21,8 +21,8 @@ android {
         applicationId = "com.kidjanate.mheenotes"
         minSdk = 29
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0-alpha01"
+        versionCode = 2
+        versionName = "1.0.0-alpha02"
     }
 
     signingConfigs {
