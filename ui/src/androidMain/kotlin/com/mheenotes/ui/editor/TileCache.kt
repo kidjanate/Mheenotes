@@ -18,8 +18,11 @@ import kotlin.math.roundToInt
 
 const val TILE_PX = 512
 
-/** Zoom bucket: tiles at level L are rasterized at 2^L px per page unit. */
-fun levelFor(scale: Float): Int = floor(ln(scale.toDouble()) / ln(2.0) + 0.75).toInt()
+/**
+ * Zoom bucket: tiles at level L are rasterized at 2^L px per page unit. Always at or above the
+ * screen scale, so finished ink is only ever scaled down (sharp, and close to the live stroke).
+ */
+fun levelFor(scale: Float): Int = kotlin.math.ceil(ln(scale.toDouble()) / ln(2.0) - 0.05).toInt()
 
 fun levelScale(level: Int): Float = 2.0.pow(level).toFloat()
 

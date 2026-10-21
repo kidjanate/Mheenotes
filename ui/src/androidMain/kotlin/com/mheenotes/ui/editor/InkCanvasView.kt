@@ -272,6 +272,7 @@ class InkCanvasView(
         if (tiles.frame.get() % 60 == 0L) doc.retainOnly(keep + loading + pendingPages())
 
         drawOverlays(canvas, level)
+        armFrontClear()
         tiles.endFrame()
     }
 
@@ -803,14 +804,29 @@ class InkCanvasView(
         frontDrawn = n
     }
 
-    /** Clears the front buffer after the view has drawn the finished stroke itself. */
+    /**
+     * Clears the front buffer only once the canvas frame that draws the finished stroke has been
+     * handed to the compositor, plus a frame of margin. Clearing earlier makes the stroke blink
+     * out for a frame when the pen lifts.
+     */
     private fun scheduleFrontClear() {
         if (front == null) return
         frontClearPending = true
-        postOnAnimation {
-            postOnAnimation {
+        frontClearArmed = false
+        invalidate()
+    }
+
+    private var frontClearArmed = false
+
+    /** Called at the end of onDraw: the frame being recorded now contains the pending stroke. */
+    private fun armFrontClear() {
+        if (!frontClearPending || frontClearArmed || mode == Mode.Ink) return
+        frontClearArmed = true
+        viewTreeObserver.registerFrameCommitCallback {
+            postDelayed({
                 if (frontClearPending && mode != Mode.Ink) { front?.clear(); frontClearPending = false }
-            }
+                frontClearArmed = false
+            }, 34)
         }
     }
 
