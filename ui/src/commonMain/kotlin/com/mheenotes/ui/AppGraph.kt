@@ -29,6 +29,10 @@ object AppGraph {
     val settings = Settings()
 
     private var initialized = false
+    private val loaded = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+    /** Suspends until the library index is in memory (for widgets and other headless callers). */
+    suspend fun awaitLoaded() = loaded.await()
 
     fun init(root: String) {
         if (initialized) return
@@ -38,6 +42,7 @@ object AppGraph {
         scope.launch {
             library.load()
             settings.load(library)
+            loaded.complete(Unit)
             purgeOldTrash()
         }
     }

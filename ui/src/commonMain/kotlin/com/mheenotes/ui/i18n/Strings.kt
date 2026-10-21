@@ -161,6 +161,7 @@ open class Strings {
     open val languageHint = "Change the app language in Android Settings › Apps › Mheenotes › Language."
     open val about = "About"
     open val developer = "Developer"
+    open val inkActivity = "Ink this week"
     open val perfFixture = "Generate 1,000 test notebooks"
     open val denseFixture = "Generate a 20,000-stroke notebook"
 }
@@ -316,6 +317,7 @@ object Th : Strings() {
     override val languageHint = "เปลี่ยนภาษาของแอปได้ที่ การตั้งค่า Android › แอป › Mheenotes › ภาษา"
     override val about = "เกี่ยวกับ"
     override val developer = "นักพัฒนา"
+    override val inkActivity = "การเขียนสัปดาห์นี้"
     override val perfFixture = "สร้างสมุดโน้ตทดสอบ 1,000 เล่ม"
     override val denseFixture = "สร้างสมุดโน้ต 20,000 เส้น"
 }

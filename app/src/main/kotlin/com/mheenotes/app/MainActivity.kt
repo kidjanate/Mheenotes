@@ -22,8 +22,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        // Covers and the library index catch up whenever the app leaves the screen.
+        // Covers, the library index and widgets catch up whenever the app leaves the screen.
         AppState.shared.tabs.forEach { it.onLeave() }
+        AppGraph.scope.launch {
+            kotlinx.coroutines.delay(2500) // let cover rendering finish first
+            com.mheenotes.app.widget.refreshWidgets(applicationContext)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -43,6 +47,9 @@ class MainActivity : ComponentActivity() {
                 runCatching { LegacyImport.importFile(java.io.File(filesDir, path), null) }
                     .onSuccess { AppGraph.library.upsert(it) }.onFailure { it.printStackTrace() }
             }
+        }
+        intent.getStringExtra("openId")?.let { id ->
+            AppGraph.scope.launch { AppGraph.awaitLoaded(); if (AppGraph.library.notebook(id) != null) AppState.shared.open(id) }
         }
         intent.getStringExtra("open")?.let { title ->
             AppGraph.library.state.value.notebooks.filter { it.title == title }.maxByOrNull { it.openedAt }?.let { AppState.shared.open(it.id) }

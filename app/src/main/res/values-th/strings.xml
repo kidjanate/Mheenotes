@@ -1,0 +1,4 @@
+<resources>
+    <string name="widget_recent">สมุดโน้ตล่าสุด</string>
+    <string name="widget_activity">การเขียนในช่วง 7 วันที่ผ่านมา</string>
+</resources>

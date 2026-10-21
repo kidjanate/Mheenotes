@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Mheenotes</string>
+    <string name="widget_recent">Recent notebooks</string>
+    <string name="widget_activity">Ink written over the last 7 days</string>
 </resources>
