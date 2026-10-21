@@ -63,7 +63,6 @@ import com.mheenotes.ui.design.Toggle
 import com.mheenotes.ui.design.pressable
 import com.mheenotes.ui.i18n.S
 import com.mheenotes.ui.render.drawTemplate
-import com.mheenotes.ui.dev.Fixtures
 
 val PAPER_COLORS = listOf(PAPER_WHITE, 0xFFFBF6E9.toInt(), 0xFFEFF3F8.toInt(), 0xFF26272B.toInt())
 
@@ -229,16 +228,16 @@ fun SettingsModal(visible: Boolean, onDismiss: () -> Unit) {
         }
         Spacer(Modifier.height(22.dp))
         Text(s.language, style = M.type.calloutStrong, color = c.textSecondary)
-        Spacer(Modifier.height(6.dp))
-        Text(s.languageHint, style = M.type.callout, color = c.textTertiary)
-        if (Fixtures.enabled) {
-            Spacer(Modifier.height(22.dp))
-            Text(s.developer, style = M.type.calloutStrong, color = c.textSecondary)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(s.perfFixture, { Fixtures.library(1000); onDismiss() }, compact = true)
-                Button(s.denseFixture, { Fixtures.densePage(20_000); onDismiss() }, compact = true)
-            }
+        Spacer(Modifier.height(10.dp))
+        Segmented(com.mheenotes.ui.AppLanguage.entries, st.language, st::updateLanguage, Modifier.fillMaxWidth()) { o, sel ->
+            Text(
+                when (o) {
+                    com.mheenotes.ui.AppLanguage.System -> s.themeSystem
+                    com.mheenotes.ui.AppLanguage.English -> "English"
+                    com.mheenotes.ui.AppLanguage.Thai -> "ไทย"
+                },
+                style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary,
+            )
         }
         Spacer(Modifier.height(22.dp))
         Text(s.about, style = M.type.calloutStrong, color = c.textSecondary)

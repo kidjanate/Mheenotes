@@ -264,7 +264,7 @@ interface PdfTools {
     fun insertPages(afterIndex: Int)
 
     /** Pages (0-based notebook indices) whose PDF text contains [query], with match counts. Null when unsupported. */
-    suspend fun search(query: String): List<Pair<Int, Int>>?
+    suspend fun search(query: String): List<Pair<Int, Int>>
 }
 
 @Composable
@@ -370,7 +370,7 @@ fun PageDialogs(tab: EditorTab, doc: NotebookDocument, pdfTools: PdfTools) {
     // PDF text search
     val scope = rememberCoroutineScope()
     var query by remember(dialog) { mutableStateOf("") }
-    var results by remember(dialog) { mutableStateOf<List<Pair<Int, Int>>?>(emptyList()) }
+    var results by remember(dialog) { mutableStateOf<List<Pair<Int, Int>>>(emptyList()) }
     var searching by remember(dialog) { mutableStateOf(false) }
     Modal(dialog == PageDialog.PdfSearch, close, width = 480.dp) {
         ModalTitle(s.searchPdf)
@@ -380,11 +380,10 @@ fun PageDialogs(tab: EditorTab, doc: NotebookDocument, pdfTools: PdfTools) {
         Spacer(Modifier.height(12.dp))
         when {
             searching -> Spinner()
-            results == null -> Text(s.pdfSearchUnsupported, style = M.type.callout, color = M.colors.textSecondary)
-            results!!.isEmpty() && query.isNotBlank() -> Text(s.noMatches, style = M.type.callout, color = M.colors.textSecondary)
+            results.isEmpty() && query.isNotBlank() -> Text(s.noMatches, style = M.type.callout, color = M.colors.textSecondary)
             else -> Card(Modifier.fillMaxWidth().heightIn(max = 300.dp), color = M.colors.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
                 LazyColumn {
-                    items(results!!) { (page, count) ->
+                    items(results) { (page, count) ->
                         ListRow(s.pageOf(page + 1, pages.size), subtitle = "$count", onClick = { tab.scrollRequest = ScrollRequest.ToPage(page); close() })
                     }
                 }

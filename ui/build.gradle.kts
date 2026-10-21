@@ -27,6 +27,11 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.graphics.core)
+            // PDF text for search on every Android version. BouncyCastle is only needed for
+            // certificate-encrypted PDFs; leaving it out saves ~8 MB, and those files are skipped.
+            implementation(libs.pdfbox.android.get().toString()) {
+                exclude(group = "org.bouncycastle")
+            }
         }
     }
 }

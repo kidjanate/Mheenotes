@@ -44,18 +44,15 @@ import androidx.glance.text.TextStyle
 import com.mheenotes.app.MainActivity
 import com.mheenotes.core.model.Notebook
 import com.mheenotes.ui.AppGraph
-import com.mheenotes.ui.i18n.En
-import com.mheenotes.ui.i18n.Th
+import com.mheenotes.ui.i18n.strings
 import com.mheenotes.ui.library.relativeTime
 import java.io.File
-import java.util.Locale
 
 private val Bg = ColorProvider(day = Color(0xFFFFFFFF), night = Color(0xFF1B1B1F))
 private val Fg = ColorProvider(day = Color(0xFF1C1C1F), night = Color(0xFFF4F4F6))
 private val Muted = ColorProvider(day = Color(0xFF6B6B72), night = Color(0xFFA1A1A8))
 private val Fill = ColorProvider(day = Color(0xFFF4F4F6), night = Color(0xFF26262B))
 
-private fun strings() = if (Locale.getDefault().language == "th") Th else En
 
 private fun openIntent(context: Context, notebookId: String?) =
     Intent(context, MainActivity::class.java).apply {

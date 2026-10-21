@@ -100,7 +100,6 @@ open class Strings {
     open val insertPdfPages = "Insert PDF pages"
     open val searchPdf = "Search in PDF"
     open val noMatches = "No matches"
-    open val pdfSearchUnsupported = "PDF text search needs Android 15 or later"
     open val lock = "Lock"
     open val unlock = "Unlock"
     open val rotate90 = "Rotate 90°"
@@ -209,9 +208,7 @@ open class Strings {
     open val themeDark = "Dark"
     open val input = "Input"
     open val language = "Language"
-    open val languageHint = "Change the app language in Android Settings › Apps › Mheenotes › Language."
     open val about = "About"
-    open val developer = "Developer"
     open val inkActivity = "Ink this week"
     open val capture = "Capture"
     open val imageFormat = "Image"
@@ -228,8 +225,6 @@ open class Strings {
     open val savedToPhotos = "Saved to Photos"
     open val lowLatency = "Low-latency ink"
     open val lowLatencyHint = "Draws the pen stroke straight to the display. Turn off if ink flickers."
-    open val perfFixture = "Generate 1,000 test notebooks"
-    open val denseFixture = "Generate a 20,000-stroke notebook"
 }
 
 object En : Strings()
@@ -325,7 +320,6 @@ object Th : Strings() {
     override val insertPdfPages = "แทรกหน้าจาก PDF"
     override val searchPdf = "ค้นหาใน PDF"
     override val noMatches = "ไม่พบผลลัพธ์"
-    override val pdfSearchUnsupported = "การค้นหาข้อความใน PDF ต้องใช้ Android 15 ขึ้นไป"
     override val lock = "ล็อก"
     override val unlock = "ปลดล็อก"
     override val rotate90 = "หมุน 90°"
@@ -428,9 +422,7 @@ object Th : Strings() {
     override val themeDark = "มืด"
     override val input = "การป้อนข้อมูล"
     override val language = "ภาษา"
-    override val languageHint = "เปลี่ยนภาษาของแอปได้ที่ การตั้งค่า Android › แอป › Mheenotes › ภาษา"
     override val about = "เกี่ยวกับ"
-    override val developer = "นักพัฒนา"
     override val inkActivity = "การเขียนสัปดาห์นี้"
     override val capture = "จับภาพ"
     override val imageFormat = "รูปภาพ"
@@ -447,13 +439,15 @@ object Th : Strings() {
     override val savedToPhotos = "บันทึกลงรูปภาพแล้ว"
     override val lowLatency = "หมึกหน่วงต่ำ"
     override val lowLatencyHint = "วาดเส้นปากกาลงจอโดยตรง ปิดหากหมึกกะพริบ"
-    override val perfFixture = "สร้างสมุดโน้ตทดสอบ 1,000 เล่ม"
-    override val denseFixture = "สร้างสมุดโน้ต 20,000 เส้น"
 }
 
-/** Strings for the current locale, usable outside composition. */
-fun strings(): Strings = if (Locale.current.language == "th") Th else En
+/** Strings for the chosen app language (or the device's), usable outside composition. */
+fun strings(): Strings = when (com.mheenotes.ui.AppGraph.settings.language) {
+    com.mheenotes.ui.AppLanguage.English -> En
+    com.mheenotes.ui.AppLanguage.Thai -> Th
+    com.mheenotes.ui.AppLanguage.System -> if (Locale.current.language == "th") Th else En
+}
 
 val S: Strings
-    @Composable @ReadOnlyComposable
+    @Composable
     get() = strings()

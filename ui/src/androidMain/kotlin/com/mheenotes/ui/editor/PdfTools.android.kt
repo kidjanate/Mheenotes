@@ -39,7 +39,7 @@ actual fun rememberPdfTools(tab: EditorTab, doc: NotebookDocument): PdfTools {
         object : PdfTools {
             override fun insertPages(afterIndex: Int) { after = afterIndex; picker.launch(arrayOf("application/pdf")) }
 
-            override suspend fun search(query: String): List<Pair<Int, Int>>? = searchPdfText(tab, doc, query)
+            override suspend fun search(query: String): List<Pair<Int, Int>> = searchPdfText(tab, doc, query)
         }
     }
 }
@@ -65,32 +65,55 @@ private suspend fun insertPdf(tab: EditorTab, doc: NotebookDocument, uri: Uri, a
 }
 
 /**
- * Searches the text layer of imported PDF pages. Needs Android 15 (API 35) text extraction;
- * returns null on older systems so the UI can explain why.
+ * Searches the text layer of imported PDF pages, on any Android version. Page text is extracted
+ * once per PDF with PdfBox and cached next to the PDF, so later searches are instant.
  */
-private suspend fun searchPdfText(tab: EditorTab, doc: NotebookDocument, query: String): List<Pair<Int, Int>>? {
-    if (Build.VERSION.SDK_INT < 35) return null
+private suspend fun searchPdfText(tab: EditorTab, doc: NotebookDocument, query: String): List<Pair<Int, Int>> {
     val pages = doc.pages.value
     return withContext(Dispatchers.IO) {
+        val needle = Regex(Regex.escape(query), RegexOption.IGNORE_CASE)
         val out = ArrayList<Pair<Int, Int>>()
         val byAsset = pages.withIndex().filter { it.value.pdf != null }.groupBy { it.value.pdf!!.assetId }
         for ((assetId, entries) in byAsset) {
-            val file = File(AppGraph.files.asset(tab.notebookId, "$assetId.pdf"))
-            if (!file.exists()) continue
-            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-                PdfRenderer(pfd).use { r ->
-                    for ((index, page) in entries) {
-                        val pi = page.pdf!!.pageIndex
-                        if (pi !in 0 until r.pageCount) continue
-                        val text = r.openPage(pi).use { p -> p.textContents.joinToString(" ") { it.text } }
-                        val n = Regex(Regex.escape(query), RegexOption.IGNORE_CASE).findAll(text).count()
-                        if (n > 0) out += index to n
-                    }
-                }
+            val texts = PdfText.pages(File(AppGraph.files.asset(tab.notebookId, "$assetId.pdf"))) ?: continue
+            for ((index, page) in entries) {
+                val n = texts.getOrNull(page.pdf!!.pageIndex)?.let { needle.findAll(it).count() } ?: 0
+                if (n > 0) out += index to n
             }
         }
         out.sortedBy { it.first }
     }
+}
+
+/** Extracted PDF text, one string per page, cached in memory and in a sidecar file. */
+object PdfText {
+    private val memory = HashMap<String, List<String>>()
+    private const val PAGE_BREAK = '\u000C'
+
+    fun pages(pdf: File): List<String>? = synchronized(this) {
+        if (!pdf.exists()) return null
+        memory[pdf.path]?.let { return it }
+        val cache = File(pdf.path + ".txt")
+        val texts = if (cache.exists() && cache.lastModified() >= pdf.lastModified()) {
+            cache.readText().split(PAGE_BREAK)
+        } else {
+            extract(pdf)?.also { list -> runCatching { cache.writeText(list.joinToString(PAGE_BREAK.toString())) } }
+        } ?: return null
+        memory[pdf.path] = texts
+        texts
+    }
+
+    private fun extract(pdf: File): List<String>? = runCatching {
+        com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(AndroidContext.app)
+        com.tom_roush.pdfbox.pdmodel.PDDocument.load(pdf, com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly()).use { d ->
+            val stripper = com.tom_roush.pdfbox.text.PDFTextStripper()
+            List(d.numberOfPages) { i ->
+                stripper.startPage = i + 1
+                stripper.endPage = i + 1
+                runCatching { stripper.getText(d).replace(PAGE_BREAK, ' ') }.getOrDefault("")
+            }
+        }
+    }.onFailure { it.printStackTrace() }.getOrNull()
 }
 
 actual suspend fun loadImageAsset(notebookId: String, assetId: String, maxPixels: Int): androidx.compose.ui.graphics.ImageBitmap? =

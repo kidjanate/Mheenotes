@@ -474,6 +474,7 @@ val COMPONENTS = listOf(
     Component("AndroidX (Activity, Core, Lifecycle, Graphics, Glance, WorkManager, Room, SQLite, Startup)", "Google", "https://developer.android.com/jetpack/androidx", APACHE),
     Component("Guava ListenableFuture", "Google", "https://github.com/google/guava", APACHE),
     Component("JSpecify", "JSpecify authors", "https://jspecify.dev", APACHE),
+    Component("PdfBox-Android", "Tom Roush and the Apache PDFBox authors", "https://github.com/TomRoush/PdfBox-Android", APACHE),
     Component("SQLite", "SQLite authors", "https://sqlite.org", SQLITE),
     Component("Compose Icons (Lucide)", "Composable Horizons", "https://github.com/composablehorizons/composeicons", MIT_COMPOSEICONS),
     Component("Lucide icons", "Lucide contributors", "https://lucide.dev", ISC_LUCIDE),
