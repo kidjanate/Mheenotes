@@ -16,8 +16,9 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        // Separate ID so the rewrite installs next to the legacy com.mheenotes.app build.
-        applicationId = "com.mheenotes.next"
+        // Permanent once published: changing it makes a different app. Also differs from the
+        // legacy com.mheenotes.app, so both can be installed side by side.
+        applicationId = "com.kidjanate.mheenotes"
         minSdk = 29
         targetSdk = 37
         versionCode = 1

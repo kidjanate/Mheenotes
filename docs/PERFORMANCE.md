@@ -16,8 +16,8 @@ Other numbers:
 Reproduce (debug build for fixtures, release build for timing; same signing key):
 
 ```sh
-adb shell am start -n com.mheenotes.next/com.mheenotes.app.MainActivity --es fixture library
-adb shell am start -n com.mheenotes.next/com.mheenotes.app.MainActivity --es fixture dense
+adb shell am start -n com.kidjanate.mheenotes/com.mheenotes.app.MainActivity --es fixture library
+adb shell am start -n com.kidjanate.mheenotes/com.mheenotes.app.MainActivity --es fixture dense
 ```
 
 Not yet measured: pinch-zoom frame times (adb `input` cannot pinch), 300-page PDF scrolling, and pen-to-pixel latency (needs a high-speed camera).
