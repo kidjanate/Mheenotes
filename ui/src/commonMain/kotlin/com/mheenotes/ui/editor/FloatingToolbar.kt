@@ -243,8 +243,22 @@ private fun ToolOptions(k: ToolKind) {
                 Text(s.width, Modifier.weight(1f), style = M.type.caption, color = c.textSecondary)
                 Text(((Tools.widthOf(k) * 10).roundToInt() / 10f).toString(), style = M.type.caption, color = c.textTertiary)
             }
-            val presets = Tools.widthsOf(k)
-            Slider(Tools.widthOf(k), { Tools.setWidth(k, it) }, Modifier.fillMaxWidth(), range = presets.first() * 0.4f..presets.last() * 2f)
+            val defaults = Tools.widthsOf(k)
+            // Three presets: tap to switch, then the slider fine-tunes the chosen one.
+            Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Tools.presetsOf(k).forEachIndexed { i, w ->
+                    val active = Tools.activePreset[k] == i
+                    val maxW = defaults.last() * 2f
+                    Box(
+                        Modifier.size(40.dp).pressable(pressedScale = 0.88f) { Tools.selectPreset(k, i) }.clip(CircleShape)
+                            .background(if (active) c.accentSoft else c.fill),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(Modifier.size((4f + 20f * (w / maxW)).dp).clip(CircleShape).background(if (active) c.accent else c.text))
+                    }
+                }
+            }
+            Slider(Tools.widthOf(k), { Tools.setWidth(k, it) }, Modifier.fillMaxWidth(), range = defaults.first() * 0.4f..defaults.last() * 2f)
             if (k == ToolKind.Pen || k == ToolKind.Pencil || k == ToolKind.Highlighter) {
                 Spacer(Modifier.height(8.dp))
                 StrokePreview(k)

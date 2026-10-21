@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -111,5 +112,19 @@ fun ColorPicker(argb: Int, onChange: (Int) -> Unit, modifier: Modifier = Modifie
             Spacer(Modifier.width(12.dp))
             Box(Modifier.size(32.dp).clip(CircleShape).background(Color.hsv(h, s, v)).border(0.75.dp, c.separator, CircleShape))
         }
+        Spacer(Modifier.height(10.dp))
+        // Hex entry stays in sync with the square and strip; typing a valid code moves them.
+        val current = Color.hsv(h, s, v).toArgb() and 0xFFFFFF
+        var hex by remember { mutableStateOf(current.toString(16).padStart(6, '0').uppercase()) }
+        androidx.compose.runtime.LaunchedEffect(current) {
+            if (hex.toIntOrNull(16) != current) hex = current.toString(16).padStart(6, '0').uppercase()
+        }
+        TextField(hex, { input ->
+            hex = input.filter { it.isLetterOrDigit() }.take(6).uppercase()
+            if (hex.length == 6) hex.toIntOrNull(16)?.let { rgb ->
+                val (nh, ns, nv) = argbToHsv(rgb or 0xFF000000.toInt())
+                h = nh; s = ns; v = nv; emit()
+            }
+        }, Modifier.fillMaxWidth(), placeholder = "RRGGBB", leading = null)
     }
 }

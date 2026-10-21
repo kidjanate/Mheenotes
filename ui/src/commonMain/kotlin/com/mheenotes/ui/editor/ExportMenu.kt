@@ -1,5 +1,6 @@
 package com.mheenotes.ui.editor
 
+import com.composables.icons.lucide.Download
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -44,13 +45,33 @@ fun ExportModal(tab: EditorTab, visible: Boolean, onDismiss: () -> Unit) {
     var kind by remember { mutableStateOf(ExportKind.Pdf) }
     var range by remember { mutableStateOf(PageRange.All) }
     var custom by remember(visible) { mutableStateOf("1-${pages.size}") }
+    var fileName by remember(visible) { mutableStateOf(com.mheenotes.ui.AppGraph.library.notebook(tab.notebookId)?.title.orEmpty()) }
     val selected: List<Int>? = when {
         kind == ExportKind.Notebook || range == PageRange.All -> pages.indices.toList()
         range == PageRange.Current -> listOf(tab.currentPage.coerceIn(0, pages.lastIndex))
         else -> parsePageRange(custom, pages.size)
     }
+    val saver = rememberExportSaver { ok -> overlays.toast(if (ok) s.savedToFiles else s.exportFailed) }
+    fun run(save: Boolean) {
+        val chosen = selected ?: return
+        onDismiss()
+        tab.canvas?.commitSelection()
+        overlays.toast(s.exporting)
+        scope.launch {
+            val result = runCatching { Exporter.export(tab, kind, chosen, fileName.trim()) }.getOrElse { it.printStackTrace(); null }
+            when {
+                result == null -> overlays.toast(s.exportFailed)
+                save -> saver.save(result)
+                else -> Exporter.share(result)
+            }
+        }
+    }
     Modal(visible, onDismiss, width = 480.dp) {
         ModalTitle(s.export)
+        Text(s.fileName, style = M.type.calloutStrong, color = c.textSecondary)
+        Spacer(Modifier.height(8.dp))
+        TextField(fileName, { fileName = it.take(80) }, Modifier.fillMaxWidth(), placeholder = s.untitled, clearable = true)
+        Spacer(Modifier.height(16.dp))
         Segmented(ExportKind.entries, kind, { kind = it }, Modifier.fillMaxWidth()) { o, sel ->
             Text(
                 when (o) { ExportKind.Pdf -> "PDF"; ExportKind.Png -> s.imageFormat; ExportKind.Notebook -> s.exportNotebook },
@@ -83,21 +104,24 @@ fun ExportModal(tab: EditorTab, visible: Boolean, onDismiss: () -> Unit) {
         }
         ModalActions {
             Button(s.cancel, onDismiss)
-            Button(s.share, {
-                val chosen = selected ?: return@Button
-                onDismiss()
-                tab.canvas?.commitSelection()
-                overlays.toast(s.exporting)
-                scope.launch {
-                    val ok = runCatching { Exporter.exportAndShare(tab, kind, chosen) }.getOrElse { it.printStackTrace(); false }
-                    if (!ok) overlays.toast(s.exportFailed)
-                }
-            }, icon = Lucide.Share2, style = ButtonStyle.Primary, enabled = selected != null)
+            Button(s.saveToFiles, { run(save = true) }, icon = Lucide.Download, enabled = selected != null)
+            Button(s.share, { run(save = false) }, icon = Lucide.Share2, style = ButtonStyle.Primary, enabled = selected != null)
         }
     }
 }
 
-/** Writes an export file and opens the system share sheet. Platform-provided. */
+/** Files produced by an export (one, or one per page for images). */
+class ExportResult(val paths: List<String>, val mime: String)
+
+/** Writes export files and shares them. Platform-provided. */
 expect object Exporter {
-    suspend fun exportAndShare(tab: EditorTab, kind: ExportKind, pages: List<Int>): Boolean
+    suspend fun export(tab: EditorTab, kind: ExportKind, pages: List<Int>, name: String): ExportResult?
+    fun share(result: ExportResult)
 }
+
+interface ExportSaver {
+    fun save(result: ExportResult)
+}
+
+@Composable
+expect fun rememberExportSaver(onDone: (Boolean) -> Unit): ExportSaver

@@ -117,7 +117,21 @@ object Tools {
         else -> penWidth
     }
 
+    /** Three width presets per tool; the slider edits whichever preset is active. */
+    val widthPresets = androidx.compose.runtime.mutableStateMapOf<ToolKind, List<Float>>()
+    val activePreset = androidx.compose.runtime.mutableStateMapOf<ToolKind, Int>()
+
+    fun presetsOf(kind: ToolKind): List<Float> = widthPresets[kind] ?: widthsOf(kind)
+
+    fun selectPreset(kind: ToolKind, i: Int) {
+        activePreset[kind] = i
+        setWidth(kind, presetsOf(kind)[i])
+    }
+
     fun setWidth(kind: ToolKind, w: Float) {
+        activePreset[kind]?.let { i ->
+            widthPresets[kind] = presetsOf(kind).toMutableList().also { it[i] = w }
+        }
         when (kind) {
             ToolKind.Pen -> penWidth = w
             ToolKind.Pencil -> pencilWidth = w
@@ -160,6 +174,10 @@ object Tools {
         f("ew") { eraserWidth = it }; f("sw") { shapeWidth = it }; f("ts") { textSize = it }
         m["em"]?.let { v -> EraserMode.entries.firstOrNull { it.name == v }?.let { eraserMode = it } }
         m["sk"]?.let { v -> ShapeKind.entries.firstOrNull { it.name == v }?.let { shapeKind = it } }
+        for (k in listOf(ToolKind.Pen, ToolKind.Pencil, ToolKind.Highlighter, ToolKind.Eraser, ToolKind.Shape)) {
+            m["wp${k.ordinal}"]?.split(',')?.mapNotNull { it.toFloatOrNull() }?.takeIf { it.size == 3 }?.let { widthPresets[k] = it }
+            m["ap${k.ordinal}"]?.toIntOrNull()?.takeIf { it in 0..2 }?.let { activePreset[k] = it }
+        }
         m["tst"]?.split(',')?.let { p ->
             if (p.size == 5) textStyle = textStyle.copy(
                 bold = p[0] == "1", italic = p[1] == "1", underline = p[2] == "1",
@@ -181,6 +199,8 @@ object Tools {
             val t = textStyle
             fun b(v: Boolean) = if (v) "1" else "0"
             append("tst=${b(t.bold)},${b(t.italic)},${b(t.underline)},${t.align.ordinal},${t.font.ordinal}")
+            for ((k, v) in widthPresets) append(";wp${k.ordinal}=" + v.joinToString(","))
+            for ((k, v) in activePreset) append(";ap${k.ordinal}=$v")
         }
         AppGraph.settings.updateTools(s)
     }

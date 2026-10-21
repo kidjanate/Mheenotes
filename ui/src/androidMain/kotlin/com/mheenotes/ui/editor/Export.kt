@@ -16,6 +16,7 @@ import com.mheenotes.ui.AndroidContext
 import com.mheenotes.ui.AppGraph
 import com.mheenotes.ui.render.drawTemplate
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -23,16 +24,17 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 actual object Exporter {
-    actual suspend fun exportAndShare(tab: EditorTab, kind: ExportKind, pages: List<Int>): Boolean {
-        val doc = tab.doc ?: return false
-        val title = AppGraph.library.notebook(tab.notebookId)?.title?.ifBlank { null } ?: "Notebook"
-        when (kind) {
-            ExportKind.Pdf -> share(AndroidContext.app, exportPdf(tab.notebookId, doc, title, pages), "application/pdf")
-            ExportKind.Png -> shareAll(AndroidContext.app, pages.map { exportPng(tab.notebookId, doc, it, title) }, "image/png")
-            ExportKind.Notebook -> share(AndroidContext.app, NotebookArchive.write(tab.notebookId, title, doc), "application/octet-stream")
+    actual suspend fun export(tab: EditorTab, kind: ExportKind, pages: List<Int>, name: String): ExportResult? {
+        val doc = tab.doc ?: return null
+        val title = name.ifBlank { AppGraph.library.notebook(tab.notebookId)?.title?.ifBlank { null } ?: "Notebook" }
+        return when (kind) {
+            ExportKind.Pdf -> ExportResult(listOf(exportPdf(tab.notebookId, doc, title, pages).path), "application/pdf")
+            ExportKind.Png -> ExportResult(pages.map { exportPng(tab.notebookId, doc, it, title, single = pages.size == 1).path }, "image/png")
+            ExportKind.Notebook -> ExportResult(listOf(NotebookArchive.write(tab.notebookId, title, doc).path), "application/octet-stream")
         }
-        return true
     }
+
+    actual fun share(result: ExportResult) = shareAll(AndroidContext.app, result.paths.map(::File), result.mime)
 
     /** "Share as PDF" from the library: opens the notebook briefly if it is not open in a tab. */
     suspend fun sharePdfFromLibrary(notebookId: Id) {
@@ -88,11 +90,11 @@ actual object Exporter {
         }
     }
 
-    private suspend fun exportPng(notebookId: Id, doc: NotebookDocument, index: Int, title: String): File {
+    private suspend fun exportPng(notebookId: Id, doc: NotebookDocument, index: Int, title: String, single: Boolean): File {
         val page = doc.pages.value.getOrNull(index) ?: doc.pages.value.first()
         val bmp = renderPageBitmap(notebookId, doc, page, (page.width * 3).toInt())
         return withContext(Dispatchers.IO) {
-            val out = File(exportDir(), "${safeName(title)} p${index + 1}.png")
+            val out = File(exportDir(), if (single) "${safeName(title)}.png" else "${safeName(title)} p${index + 1}.png")
             FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
             bmp.recycle()
             out
@@ -142,6 +144,42 @@ object NotebookArchive {
                 }
             }
             out
+        }
+    }
+}
+
+/** Saves an export through the system "Save to" picker; several files are zipped into one. */
+@androidx.compose.runtime.Composable
+actual fun rememberExportSaver(onDone: (Boolean) -> Unit): ExportSaver {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val pending = androidx.compose.runtime.remember { arrayOfNulls<ExportResult>(1) }
+    val callback = androidx.compose.runtime.rememberUpdatedState(onDone)
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("*/*"),
+    ) { uri ->
+        val result = pending[0] ?: return@rememberLauncherForActivityResult
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    AndroidContext.app.contentResolver.openOutputStream(uri)!!.use { out ->
+                        if (result.paths.size == 1) File(result.paths.single()).inputStream().use { it.copyTo(out) }
+                        else ZipOutputStream(out).use { zip ->
+                            for (p in result.paths) { zip.putNextEntry(ZipEntry(File(p).name)); File(p).inputStream().use { it.copyTo(zip) }; zip.closeEntry() }
+                        }
+                    }
+                }.isSuccess
+            }
+            callback.value(ok)
+        }
+    }
+    return androidx.compose.runtime.remember {
+        object : ExportSaver {
+            override fun save(result: ExportResult) {
+                pending[0] = result
+                val first = File(result.paths.first())
+                launcher.launch(if (result.paths.size == 1) first.name else first.nameWithoutExtension.substringBeforeLast(" p") + ".zip")
+            }
         }
     }
 }
