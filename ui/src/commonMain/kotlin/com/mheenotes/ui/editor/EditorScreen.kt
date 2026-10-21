@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.ArrowDownToLine
 import com.composables.icons.lucide.ArrowUpToLine
+import com.composables.icons.lucide.Camera
 import com.composables.icons.lucide.ChevronLeft
 import com.composables.icons.lucide.ClipboardPaste
 import com.composables.icons.lucide.Copy
@@ -126,7 +127,11 @@ fun EditorScreen(app: AppState) {
                     }
                     Box(Modifier.weight(1f).fillMaxHeight()) {
                         InkCanvas(tab, doc, with(density) { topBarPx.toDp() }, Modifier.fillMaxSize())
-                        SelectionBar(tab, doc)
+                        var capture by remember { mutableStateOf<CaptureRequest?>(null) }
+                        val requestCapture: () -> Unit = { tab.captureTarget()?.let { (page, lasso) -> capture = CaptureRequest(page, lasso) } }
+                        SelectionBar(tab, doc, requestCapture)
+                        CaptureAreaBar(tab, requestCapture)
+                        CaptureModal(tab, doc, capture) { capture = null }
                         TextEditorOverlay(tab, doc)
                         FloatingToolbar(tab, doc, topBarPx)
                         PageIndicator(tab, doc, Modifier.align(Alignment.BottomEnd)) { rail = !rail }
@@ -272,7 +277,7 @@ fun paste(tab: EditorTab, doc: NotebookDocument) {
 // ---- Selection bar -------------------------------------------------------------------------
 
 @Composable
-private fun SelectionBar(tab: EditorTab, doc: NotebookDocument) {
+private fun SelectionBar(tab: EditorTab, doc: NotebookDocument, onCapture: () -> Unit) {
     val s = S
     val c = M.colors
     val sel = tab.selection
@@ -330,6 +335,7 @@ private fun SelectionBar(tab: EditorTab, doc: NotebookDocument) {
                             }
                         }
                     }
+                    IconButton(Lucide.Camera, onCapture)
                     IconButton(Lucide.ArrowUpToLine, { canvas?.replaceSelection { reSeq(it, doc.nextSeq()) } })
                     IconButton(Lucide.ArrowDownToLine, { canvas?.replaceSelection { reSeq(it, -doc.nextSeq()) } })
                     Spacer(Modifier.width(2.dp))

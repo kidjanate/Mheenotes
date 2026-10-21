@@ -118,8 +118,13 @@ actual fun InkCanvas(tab: EditorTab, doc: NotebookDocument, topInset: Dp, modifi
         }
         tab.scrollRequest = null
     }
-    LaunchedEffect(Tools.current) { if (Tools.current != ToolKind.Lasso) view.commitSelection() }
-    AndroidView({ container }, modifier, update = { view.invalidate() })
+    LaunchedEffect(Tools.current) {
+        if (Tools.current != ToolKind.Lasso) { view.commitSelection(); tab.captureArea = null; view.invalidate() }
+    }
+    AndroidView({ container }, modifier, update = {
+        tab.captureArea // repaint when the capture outline appears or goes away
+        view.invalidate()
+    })
 }
 
 // ---- Page thumbnails -----------------------------------------------------------------------

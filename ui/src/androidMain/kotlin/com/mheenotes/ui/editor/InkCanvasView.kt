@@ -362,7 +362,13 @@ class InkCanvasView(
             if (shape != null) drawShape(shape) else drawInkStroke(wet)
         }
         shapeDraft?.let { s -> pageSpace(canvas, wetPage ?: return@let) { drawShape(s) } }
-        lassoPoints?.let { pts -> if (wetPage != null && pts.size >= 4) pageSpace(canvas, wetPage!!) { drawLasso(pts) } }
+        lassoPoints?.let { pts -> if (wetPage != null && pts.size >= 6) pageSpace(canvas, wetPage!!) { drawLasso(pts) } }
+        tab.captureArea?.let { area ->
+            val pts = FloatList(area.lasso.size / 2)
+            var k = 0
+            while (k < area.lasso.size) { pts.add(area.lasso[k], area.lasso[k + 1], 0f); k += 2 }
+            pageSpace(canvas, area.pageId) { drawLasso(pts) }
+        }
         tab.selection?.let { sel -> pageSpace(canvas, sel.pageId) { drawSelection(sel) } }
         if (eraserAt != null && wetPage != null) pageSpace(canvas, wetPage!!) {
             val (x, y) = eraserAt!!
@@ -374,9 +380,11 @@ class InkCanvasView(
 
     private fun DrawScope.drawLasso(pts: FloatList) {
         val path = androidx.compose.ui.graphics.Path()
+        // Lasso samples are stored as x, y, 0 triples.
         path.moveTo(pts[0], pts[1])
-        var i = 2
-        while (i < pts.size) { path.lineTo(pts[i], pts[i + 1]); i += 2 }
+        var i = 3
+        while (i < pts.size) { path.lineTo(pts[i], pts[i + 1]); i += 3 }
+        path.close()
         val accent = Color(chrome.accent)
         drawPath(path, accent.copy(alpha = 0.08f))
         drawPath(path, accent, style = DrawStroke(1.6f * density / scale, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f * density / scale, 5f * density / scale))))
@@ -509,6 +517,7 @@ class InkCanvasView(
     }
 
     private fun onDown(e: MotionEvent) {
+        if (tab.captureArea != null) { tab.captureArea = null; invalidate() }
         if (tab.textEdit != null) {
             tab.finishText?.invoke()
             mode = Mode.Ignore
@@ -906,16 +915,17 @@ class InkCanvasView(
         if (!lasso.isUsable) return
         val content = doc.content(pageId) ?: return
         val items = content.snapshot.query(lasso.bounds).filter { lasso.selects(it) }
-        if (items.isEmpty()) return
-        select(pageId, items)
+        // Nothing to move: keep the area so it can still be captured as an image.
+        if (items.isEmpty()) { tab.captureArea = CaptureArea(pageId, xy); return }
+        select(pageId, items, xy)
     }
 
     /** Lifts [items] off the page into an editable selection. */
-    fun select(pageId: Id, items: List<Item>) {
+    fun select(pageId: Id, items: List<Item>, lasso: FloatArray? = null) {
         commitSelection()
         val bounds = items.map { it.bounds }.reduce { a, b -> a.union(b) }
         doc.preview(pageId, items, emptyList())
-        tab.selection = Selection(pageId, items, bounds)
+        tab.selection = Selection(pageId, items, bounds, lasso)
         invalidate()
     }
 
@@ -951,7 +961,8 @@ class InkCanvasView(
         doc.preview(sel.pageId, emptyList(), updated)
         doc.commit(sel.pageId, sel.items, updated)
         tab.selection = null
-        select(sel.pageId, updated)
+        val lasso = sel.lasso?.let { src -> FloatArray(src.size) { i -> val x = src[i - i % 2]; val y = src[i - i % 2 + 1]; if (i % 2 == 0) t.mapX(x, y) else t.mapY(x, y) } }
+        select(sel.pageId, updated, lasso)
     }
 
     fun currentSelectionItems(): List<Item> {

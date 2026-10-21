@@ -55,10 +55,19 @@ class PageLayout(val pages: List<Page>) {
 }
 
 /** Items lifted off the page for moving, scaling or rotating. */
-class Selection(val pageId: Id, val items: List<Item>, val bounds: Rect) {
+class Selection(
+    val pageId: Id,
+    val items: List<Item>,
+    val bounds: Rect,
+    /** The lasso that made this selection (x, y pairs in page units), for capturing the area. */
+    val lasso: FloatArray? = null,
+) {
     var transform by mutableStateOf(Similarity(bounds.centerX, bounds.centerY))
     val hasStrokesOnly: Boolean get() = items.all { it is com.mheenotes.core.model.Stroke }
 }
+
+/** A lassoed region with nothing selectable inside; it can still be captured as an image. */
+class CaptureArea(val pageId: Id, val lasso: FloatArray)
 
 /** A text box being typed into. [itemId] is null for a new one. */
 data class TextEdit(val pageId: Id, val itemId: Id?, val x: Float, val y: Float, val width: Float, val initial: String)
@@ -77,6 +86,7 @@ class EditorTab(val notebookId: Id) {
 
     var selection by mutableStateOf<Selection?>(null)
     var textEdit by mutableStateOf<TextEdit?>(null)
+    var captureArea by mutableStateOf<CaptureArea?>(null)
     /** Set while the pen is down, so chrome can fade out of the way. */
     var writing by mutableStateOf(false)
     /** Finishes an open text box; the canvas calls it when the user taps elsewhere. */
@@ -153,6 +163,34 @@ interface CanvasController {
     fun replaceSelection(transform: (Item) -> Item)
     fun selectionItems(): List<Item>
     fun select(pageId: Id, items: List<Item>)
+}
+
+/**
+ * Page and lasso polygon (page units) to capture: the moved selection's lasso, the selection's
+ * frame when it has no lasso, or a lassoed empty area.
+ */
+fun EditorTab.captureTarget(): Pair<Id, FloatArray>? {
+    selection?.let { sel ->
+        val t = sel.transform
+        val b = sel.bounds
+        val src = sel.lasso ?: floatArrayOf(b.left, b.top, b.right, b.top, b.right, b.bottom, b.left, b.bottom)
+        return sel.pageId to FloatArray(src.size) { i ->
+            val x = src[i - i % 2]; val y = src[i - i % 2 + 1]
+            if (i % 2 == 0) t.mapX(x, y) else t.mapY(x, y)
+        }
+    }
+    return captureArea?.let { it.pageId to it.lasso }
+}
+
+/** Screen bounds of a capture area, for placing its bar. */
+fun EditorTab.captureAreaScreenBounds(): Rect? {
+    val a = captureArea ?: return null
+    var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
+    var i = 0
+    while (i < a.lasso.size) {
+        l = minOf(l, a.lasso[i]); r = maxOf(r, a.lasso[i]); t = minOf(t, a.lasso[i + 1]); b = maxOf(b, a.lasso[i + 1]); i += 2
+    }
+    return Rect(viewport.screenX(a.pageId, l), viewport.screenY(a.pageId, t), viewport.screenX(a.pageId, r), viewport.screenY(a.pageId, b))
 }
 
 /** Screen-space bounding box of the selection, for placing its action bar. */
