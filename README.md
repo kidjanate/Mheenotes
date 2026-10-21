@@ -22,7 +22,7 @@ No account, no ads, no network. Your notes stay on your tablet.
 
 ### Ink that keeps up
 
-<!-- TODO(media): docs/media/handwriting.gif — pen writing on a lined page -->
+<img src="docs/media/handwriting.gif" width="100%" alt="Writing answers with a pen on a PDF page" />
 
 - Pen, pencil and highlighter with pressure, custom colors and width presets
 - Low-latency ink drawn straight to the display, so the line stays under the nib
