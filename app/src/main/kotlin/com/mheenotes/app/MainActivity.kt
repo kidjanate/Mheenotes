@@ -9,6 +9,8 @@ import com.mheenotes.ui.App
 import com.mheenotes.ui.AppGraph
 import com.mheenotes.ui.AppState
 import com.mheenotes.ui.dev.Fixtures
+import com.mheenotes.ui.platform.LegacyImport
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,8 +38,14 @@ class MainActivity : ComponentActivity() {
             "library" -> Fixtures.library(intent.getIntExtra("count", 1000))
             "dense" -> Fixtures.densePage(intent.getIntExtra("count", 20_000))
         }
+        if (Fixtures.enabled) intent.getStringExtra("importLegacy")?.let { path ->
+            AppGraph.scope.launch {
+                runCatching { LegacyImport.importFile(java.io.File(filesDir, path), null) }
+                    .onSuccess { AppGraph.library.upsert(it) }.onFailure { it.printStackTrace() }
+            }
+        }
         intent.getStringExtra("open")?.let { title ->
-            AppGraph.library.state.value.notebooks.firstOrNull { it.title == title }?.let { AppState.shared.open(it.id) }
+            AppGraph.library.state.value.notebooks.filter { it.title == title }.maxByOrNull { it.openedAt }?.let { AppState.shared.open(it.id) }
         }
         intent.removeExtra("fixture")
     }

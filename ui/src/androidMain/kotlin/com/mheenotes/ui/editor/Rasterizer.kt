@@ -58,7 +58,7 @@ class Rasterizer(context: Context, private val fonts: FontFamily?, private val b
         bitmap.eraseColor(page.backgroundArgb)
         page.pdf?.let { ref ->
             val m = Matrix().apply { setScale(scale, scale); postTranslate(-originX * scale, -originY * scale) }
-            PdfPages.render(notebookId, ref.assetId, ref.pageIndex, bitmap, m)
+            PdfPages.render(notebookId, ref.assetId, ref.pageIndex, bitmap, m, page.width)
         }
         val canvas = androidx.compose.ui.graphics.Canvas(android.graphics.Canvas(bitmap))
         val painter = painter(notebookId)
@@ -94,11 +94,15 @@ object PdfPages {
         }.getOrNull()?.also { docs[path] = it }
     }
 
-    fun render(notebookId: Id, assetId: Id, index: Int, bitmap: Bitmap, matrix: Matrix) {
+    /** Renders PDF page [index] scaled so its width fills [pageWidth] page units. */
+    fun render(notebookId: Id, assetId: Id, index: Int, bitmap: Bitmap, matrix: Matrix, pageWidth: Float) {
         val doc = open(path(notebookId, assetId)) ?: return
         synchronized(doc) {
             if (index !in 0 until doc.renderer.pageCount) return
-            doc.renderer.openPage(index).use { it.render(bitmap, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
+            doc.renderer.openPage(index).use { p ->
+                val m = Matrix(matrix).apply { preScale(pageWidth / p.width, pageWidth / p.width) }
+                p.render(bitmap, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            }
         }
     }
 

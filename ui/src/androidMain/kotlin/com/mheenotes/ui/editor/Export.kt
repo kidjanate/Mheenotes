@@ -62,7 +62,7 @@ actual object Exporter {
                         val k = 2f
                         val bmp = Bitmap.createBitmap((page.width * k).toInt(), (page.height * k).toInt(), Bitmap.Config.ARGB_8888)
                         bmp.eraseColor(page.backgroundArgb)
-                        PdfPages.render(notebookId, ref.assetId, ref.pageIndex, bmp, Matrix().apply { setScale(k, k) })
+                        PdfPages.render(notebookId, ref.assetId, ref.pageIndex, bmp, Matrix().apply { setScale(k, k) }, page.width)
                         canvas.save(); canvas.scale(1 / k, 1 / k); canvas.drawBitmap(bmp, 0f, 0f, null); canvas.restore()
                         bmp.recycle()
                     }
