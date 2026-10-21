@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
@@ -383,8 +384,9 @@ fun Slider(
     Box(
         modifier
             .height(28.dp)
+            // Measure up front so the thumb sits at the right spot before the first touch.
+            .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
             .pointerInput(range) {
-                widthPx = size.width.toFloat()
                 detectTapGestures { set(it.x); onChangeFinished() }
             }
             .pointerInput(range) {
