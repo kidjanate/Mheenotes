@@ -176,3 +176,27 @@ class AngleSnapTest {
         assertEquals(60f, s.snapRotation(60f))
     }
 }
+
+class FormatTest {
+    @Test
+    fun version1ItemsStillDecodeAndNewFieldsRoundTrip() {
+        // A version-1 text item: version byte, then the original fields only.
+        val w = com.mheenotes.core.store.ByteWriter()
+        w.byte(1); w.string("hi"); w.rect(Rect(0f, 0f, 10f, 5f)); w.float(12f); w.int(7); w.byte(1); w.float(0f)
+        val old = ItemCodec.decode("t", 1, ItemCodec.KIND_TEXT, w.toByteArray()) as com.mheenotes.core.model.TextItem
+        assertEquals("hi", old.text); assertTrue(old.bold); assertEquals(com.mheenotes.core.model.TextAlign.Start, old.align)
+        val styled = old.copy(italic = true, underline = true, align = com.mheenotes.core.model.TextAlign.End, font = com.mheenotes.core.model.FontKind.Mono)
+        assertEquals(styled, ItemCodec.decode("t", 1, ItemCodec.KIND_TEXT, ItemCodec.encode(styled)))
+        val img = com.mheenotes.core.model.ImageItem("i", 2, "a", Rect(0f, 0f, 4f, 4f), aspect = 1f, locked = true)
+        assertEquals(img, ItemCodec.decode("i", 2, ItemCodec.KIND_IMAGE, ItemCodec.encode(img)))
+    }
+
+    @Test
+    fun pageFieldsPersist() = runTest {
+        val files = AppFiles(kotlin.io.path.createTempDirectory("mn").toString())
+        val id = newId()
+        val page = Page(newId(), 1.0, 595f, 842f, com.mheenotes.core.model.Template.Cornell, bookmarked = true, lineArgb = 0x22FF0000, rotation = 90)
+        NotebookStore(id, files).apply { writePages(listOf(page), emptyList()); flush(); close() }
+        assertEquals(page, NotebookStore(id, files).let { s -> s.pages().single().also { s.close() } })
+    }
+}

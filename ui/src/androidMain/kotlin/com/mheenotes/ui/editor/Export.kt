@@ -68,13 +68,13 @@ actual object Exporter {
                         val k = 2f
                         val bmp = Bitmap.createBitmap((page.width * k).toInt(), (page.height * k).toInt(), Bitmap.Config.ARGB_8888)
                         bmp.eraseColor(page.backgroundArgb)
-                        PdfPages.render(notebookId, ref.assetId, ref.pageIndex, bmp, Matrix().apply { setScale(k, k) }, page.width)
+                        PdfPages.render(notebookId, ref.assetId, ref.pageIndex, bmp, Matrix().apply { setScale(k, k) }, page.width, page.height, page.rotation)
                         canvas.save(); canvas.scale(1 / k, 1 / k); canvas.drawBitmap(bmp, 0f, 0f, null); canvas.restore()
                         bmp.recycle()
                     }
                     val painter = r.painter(notebookId)
                     CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, androidx.compose.ui.graphics.Canvas(canvas), Size(page.width, page.height)) {
-                        if (page.pdf == null) drawTemplate(page.template, page.width, page.height, page.backgroundArgb, 2f)
+                        if (page.pdf == null) drawTemplate(page.template, page.width, page.height, page.backgroundArgb, 2f, page.lineArgb)
                         with(painter) { draw(contents[i], 4f) }
                     }
                     pdf.finishPage(p)

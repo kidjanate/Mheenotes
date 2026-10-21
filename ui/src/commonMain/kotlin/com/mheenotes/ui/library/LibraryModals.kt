@@ -139,7 +139,7 @@ private fun TemplateOption(t: Template, paper: Int, selected: Boolean, modifier:
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            when (t) { Template.Blank -> s.tplBlank; Template.Lined -> s.tplLined; Template.Grid -> s.tplGrid; Template.Dotted -> s.tplDotted },
+            com.mheenotes.ui.editor.templateLabel(t, s),
             style = M.type.caption, color = if (selected) c.accent else c.textSecondary,
         )
     }
@@ -218,6 +218,10 @@ fun SettingsModal(visible: Boolean, onDismiss: () -> Unit) {
                 ListRow(s.drawHoldShapes) { Toggle(st.holdToShape, st::updateHoldShape) }
                 Divider(Modifier.padding(start = 16.dp))
                 ListRow(s.lowLatency, subtitle = s.lowLatencyHint) { Toggle(st.lowLatencyInk, st::updateLowLatency) }
+                Divider(Modifier.padding(start = 16.dp))
+                ListRow(s.pressure) { Toggle(st.pressure, st::updatePressure) }
+                Divider(Modifier.padding(start = 16.dp))
+                ListRow(s.askInsertPage) { Toggle(st.askInsertPage, st::updateAskInsert) }
             }
         }
         Spacer(Modifier.height(22.dp))

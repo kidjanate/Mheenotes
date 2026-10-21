@@ -1,5 +1,13 @@
 package com.mheenotes.ui.editor
 
+import com.composables.icons.lucide.Bookmark
+import com.composables.icons.lucide.FileInput
+import com.composables.icons.lucide.Files
+import com.composables.icons.lucide.FolderInput
+import com.composables.icons.lucide.Hash
+import com.composables.icons.lucide.RotateCw
+import com.composables.icons.lucide.Ruler
+import com.composables.icons.lucide.Search
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -135,6 +143,9 @@ fun EditorScreen(app: AppState) {
                         SelectionBar(tab, doc, requestCapture)
                         CaptureAreaBar(tab, requestCapture)
                         CaptureModal(tab, doc, capture) { capture = null }
+                        val pdfTools = rememberPdfTools(tab, doc)
+                        androidx.compose.runtime.SideEffect { tab.pdfTools = pdfTools }
+                        PageDialogs(tab, doc, pdfTools)
                         TextEditorOverlay(tab, doc)
                         FloatingToolbar(tab, doc, topBarPx)
                         PageIndicator(tab, doc, Modifier.align(Alignment.BottomEnd)) { rail = !rail }
@@ -207,13 +218,17 @@ private fun TopBar(app: AppState, tab: EditorTab, rail: Boolean, onRail: () -> U
             IconButton(Lucide.Undo2, { tab.canvas?.commitSelection(); scope.launch { doc?.undo() } }, enabled = canUndo)
             IconButton(Lucide.Redo2, { scope.launch { doc?.redo() } }, enabled = canRedo)
             Spacer(Modifier.width(4.dp))
-            IconButton(Lucide.FilePlus, { doc?.let { addPageAfter(tab, it, tab.currentPage) } })
+            IconButton(Lucide.FilePlus, { doc?.let { requestAddPage(tab, it, tab.currentPage) } })
             IconButton(Lucide.Share2, { export = true })
             ExportModal(tab, export) { export = false }
             Box {
                 IconButton(Lucide.Ellipsis, { more = true })
                 Popover(more, { more = false }, align = Alignment.End) {
                     MenuItem(s.resetZoom, icon = Lucide.Maximize) { more = false; tab.scrollRequest = ScrollRequest.FitWidth }
+                    MenuItem(s.goToPage, icon = Lucide.Hash) { more = false; tab.pageDialog = PageDialog.GoTo }
+                    if (doc?.pages?.value?.any { it.pdf != null } == true) {
+                        MenuItem(s.searchPdf, icon = Lucide.Search) { more = false; tab.pageDialog = PageDialog.PdfSearch }
+                    }
                     if (ItemClipboard.items.isNotEmpty()) MenuItem(s.paste, icon = Lucide.ClipboardPaste) { more = false; doc?.let { paste(tab, it) } }
                     MenuDivider()
                     PageMenuItems(tab, doc, tab.currentPage) { more = false }
@@ -245,10 +260,24 @@ private fun TabPill(title: String, active: Boolean, closable: Boolean, onClick: 
 fun PageMenuItems(tab: EditorTab, doc: NotebookDocument?, index: Int, dismiss: () -> Unit) {
     val s = S
     doc ?: return
-    MenuItem(s.insertPageBefore, icon = Lucide.ArrowUpToLine) { dismiss(); addPageAfter(tab, doc, index - 1) }
-    MenuItem(s.insertPageAfter, icon = Lucide.ArrowDownToLine) { dismiss(); addPageAfter(tab, doc, index) }
+    val page = doc.pages.value.getOrNull(index)
+    MenuItem(s.insertPageBefore, icon = Lucide.ArrowUpToLine) { dismiss(); requestAddPage(tab, doc, index - 1) }
+    MenuItem(s.insertPageAfter, icon = Lucide.ArrowDownToLine) { dismiss(); requestAddPage(tab, doc, index) }
+    MenuItem(s.insertPdfPages, icon = Lucide.FileInput) { dismiss(); tab.pdfTools?.insertPages(index) }
     MenuItem(s.duplicatePage, icon = Lucide.CopyPlus) { dismiss(); duplicatePage(tab, doc, index) }
+    MenuDivider()
+    MenuItem(s.pageSettings, icon = Lucide.Ruler) { dismiss(); tab.pageDialog = PageDialog.Settings(index) }
+    MenuItem(s.bookmark, icon = Lucide.Bookmark, trailing = if (page?.bookmarked == true) "✓" else null) { dismiss(); toggleBookmark(doc, index) }
+    MenuItem(s.rotatePage, icon = Lucide.RotateCw) { dismiss(); rotatePage(tab, doc, index) }
+    MenuItem(s.copyToNotebook, icon = Lucide.Files) { dismiss(); tab.pageDialog = PageDialog.CopyMove(index, move = false) }
+    MenuItem(s.moveToNotebook, icon = Lucide.FolderInput) { dismiss(); tab.pageDialog = PageDialog.CopyMove(index, move = true) }
+    MenuDivider()
     if (doc.pages.value.size > 1) MenuItem(s.deletePage, icon = Lucide.Trash2, danger = true) { dismiss(); deletePage(tab, doc, index) }
+}
+
+/** Adds a page after [index]: asks for paper first unless the user turned that off. */
+fun requestAddPage(tab: EditorTab, doc: NotebookDocument, index: Int) {
+    if (AppGraph.settings.askInsertPage) tab.pageDialog = PageDialog.Insert(index) else addPageAfter(tab, doc, index)
 }
 
 fun addPageAfter(tab: EditorTab, doc: NotebookDocument, index: Int) {

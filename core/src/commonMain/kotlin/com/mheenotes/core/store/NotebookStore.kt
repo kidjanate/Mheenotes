@@ -22,20 +22,29 @@ private val NOTEBOOK_SCHEMA = listOf(
     "CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY, mime TEXT NOT NULL, file TEXT NOT NULL)",
 )
 
+private val NOTEBOOK_MIGRATIONS = listOf(
+    "ALTER TABLE pages ADD COLUMN bookmarked INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE pages ADD COLUMN line_argb INTEGER",
+    "ALTER TABLE pages ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0",
+)
+
 /** Persistence for one notebook: `notebooks/<id>/notebook.db` plus its `assets/` folder. */
 class NotebookStore(val notebookId: Id, val files: AppFiles) {
     init {
         AppFiles.mkdirs(files.assetsDir(notebookId))
     }
 
-    private val db = Db(files.notebookDb(notebookId), NOTEBOOK_SCHEMA)
+    private val db = Db(files.notebookDb(notebookId), NOTEBOOK_SCHEMA, NOTEBOOK_MIGRATIONS)
 
     suspend fun pages(): List<Page> = db.run {
-        query("SELECT id,ord,width,height,template,background,pdf_asset,pdf_index FROM pages WHERE deleted=0 ORDER BY ord") {
+        query("SELECT id,ord,width,height,template,background,pdf_asset,pdf_index,bookmarked,line_argb,rotation FROM pages WHERE deleted=0 ORDER BY ord") {
             Page(
                 it.getText(0), it.getDouble(1), it.getDouble(2).toFloat(), it.getDouble(3).toFloat(),
-                Template.entries[it.getLong(4).toInt()], it.getLong(5).toInt(),
+                Template.entries.getOrElse(it.getLong(4).toInt()) { Template.Blank }, it.getLong(5).toInt(),
                 it.textOrNull(6)?.let { a -> PdfRef(a, it.getLong(7).toInt()) },
+                bookmarked = it.getLong(8) == 1L,
+                lineArgb = it.longOrNull(9)?.toInt(),
+                rotation = it.getLong(10).toInt(),
             )
         }
     }
@@ -97,8 +106,9 @@ class NotebookStore(val notebookId: Id, val files: AppFiles) {
     }
 
     private fun androidx.sqlite.SQLiteConnection.upsertPage(p: Page, now: Long) = exec(
-        "INSERT OR REPLACE INTO pages VALUES(?,?,?,?,?,?,?,?,0,?)",
+        "INSERT OR REPLACE INTO pages(id,ord,width,height,template,background,pdf_asset,pdf_index,deleted,updated_at,bookmarked,line_argb,rotation) VALUES(?,?,?,?,?,?,?,?,0,?,?,?,?)",
         p.id, p.ord, p.width, p.height, p.template.ordinal, p.backgroundArgb, p.pdf?.assetId, p.pdf?.pageIndex, now,
+        p.bookmarked, p.lineArgb, p.rotation,
     )
 
     fun putMeta(key: String, value: String) = db.post { exec("INSERT OR REPLACE INTO meta VALUES(?,?)", key, value) }

@@ -8,10 +8,13 @@ import com.mheenotes.core.model.ShapeKind
 import com.mheenotes.core.model.Stroke
 import com.mheenotes.core.model.TextItem
 import com.mheenotes.core.model.Tool
+import com.mheenotes.core.model.TextAlign
+import com.mheenotes.core.model.FontKind
 
 /** Compact little-endian binary encoding of page items. Version byte first for future changes. */
 object ItemCodec {
-    private const val VERSION: Int = 1
+    /** Version 2 added image lock and text styling; version 1 items still decode. */
+    private const val VERSION: Int = 2
     const val KIND_STROKE = 1
     const val KIND_IMAGE = 2
     const val KIND_TEXT = 3
@@ -35,10 +38,12 @@ object ItemCodec {
             }
             is ImageItem -> {
                 w.string(item.assetId); w.rect(item.frame); w.float(item.rotation); w.rect(item.crop); w.float(item.aspect)
+                w.byte(if (item.locked) 1 else 0)
             }
             is TextItem -> {
                 w.string(item.text); w.rect(item.frame); w.float(item.fontSize); w.int(item.argb)
                 w.byte(if (item.bold) 1 else 0); w.float(item.rotation)
+                w.byte(if (item.italic) 1 else 0); w.byte(if (item.underline) 1 else 0); w.byte(item.align.ordinal); w.byte(item.font.ordinal)
             }
             is ShapeItem -> {
                 w.byte(item.kind.ordinal); w.rect(item.frame); w.int(item.argb); w.float(item.strokeWidth)
@@ -50,7 +55,8 @@ object ItemCodec {
 
     fun decode(id: String, seq: Long, kind: Int, data: ByteArray): Item {
         val r = ByteReader(data)
-        check(r.byte() == VERSION) { "Unsupported item version" }
+        val version = r.byte()
+        check(version in 1..VERSION) { "Unsupported item version $version" }
         return when (kind) {
             KIND_STROKE -> {
                 val tool = Tool.entries[r.byte()]
@@ -58,8 +64,16 @@ object ItemCodec {
                 val n = r.int()
                 Stroke(id, seq, tool, argb, width, FloatArray(n) { r.float() })
             }
-            KIND_IMAGE -> ImageItem(id, seq, r.string(), r.rect(), r.float(), r.rect(), r.float())
-            KIND_TEXT -> TextItem(id, seq, r.string(), r.rect(), r.float(), r.int(), r.byte() == 1, r.float())
+            KIND_IMAGE -> {
+                val img = ImageItem(id, seq, r.string(), r.rect(), r.float(), r.rect(), r.float())
+                if (version >= 2) img.copy(locked = r.byte() == 1) else img
+            }
+            KIND_TEXT -> {
+                val t = TextItem(id, seq, r.string(), r.rect(), r.float(), r.int(), r.byte() == 1, r.float())
+                if (version >= 2) {
+                    t.copy(italic = r.byte() == 1, underline = r.byte() == 1, align = TextAlign.entries[r.byte()], font = FontKind.entries[r.byte()])
+                } else t
+            }
             KIND_SHAPE -> {
                 val k = ShapeKind.entries[r.byte()]
                 val frame = r.rect(); val argb = r.int(); val sw = r.float()

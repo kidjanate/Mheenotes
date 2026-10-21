@@ -1,5 +1,7 @@
 package com.mheenotes.ui.editor
 
+import com.composables.icons.lucide.Bookmark
+import com.composables.icons.lucide.Files
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -16,7 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -64,9 +66,13 @@ fun PageRail(tab: EditorTab, doc: NotebookDocument, modifier: Modifier) {
         val visible = list.layoutInfo.visibleItemsInfo.map { it.index }
         if (tab.currentPage !in visible) list.animateScrollToItem(tab.currentPage.coerceAtLeast(0))
     }
+    val shown = if (tab.bookmarksOnly) pages.withIndex().filter { it.value.bookmarked } else pages.withIndex().toList()
     Column(modifier.width(176.dp).fillMaxHeight().background(c.surface)) {
-        LazyColumn(Modifier.weight(1f), state = list, contentPadding = PaddingValues(vertical = 16.dp)) {
-            itemsIndexed(pages, key = { _, p -> p.id }) { i, page ->
+        com.mheenotes.ui.design.Segmented(listOf(false, true), tab.bookmarksOnly, { tab.bookmarksOnly = it }, Modifier.fillMaxWidth().padding(10.dp)) { o, sel ->
+            com.mheenotes.ui.design.Icon(if (o) Lucide.Bookmark else Lucide.Files, tint = if (sel) c.text else c.textSecondary, size = 16.dp)
+        }
+        LazyColumn(Modifier.weight(1f), state = list, contentPadding = PaddingValues(vertical = 8.dp)) {
+            items(shown, key = { it.value.id }) { (i, page) ->
                 val dragging = i == dragIndex
                 val lift by animateFloatAsState(if (dragging) 1.06f else 1f, Motion.bouncy(), label = "lift")
                 Box(
@@ -74,7 +80,9 @@ fun PageRail(tab: EditorTab, doc: NotebookDocument, modifier: Modifier) {
                         .zIndex(if (dragging) 1f else 0f)
                         .graphicsLayer { translationY = if (dragging) dragOffset else 0f; scaleX = lift; scaleY = lift }
                         .then(if (dragging) Modifier else Modifier.animateItem())
-                        .pointerInput(pages) {
+                        .pointerInput(pages, tab.bookmarksOnly) {
+                            // Reordering only makes sense on the full list.
+                            if (tab.bookmarksOnly) return@pointerInput
                             detectDragGesturesAfterLongPress(
                                 onDragStart = { dragIndex = i; dragOffset = 0f; itemHeight = size.height.toFloat() },
                                 onDragEnd = {
@@ -93,7 +101,7 @@ fun PageRail(tab: EditorTab, doc: NotebookDocument, modifier: Modifier) {
         }
         Divider()
         Box(Modifier.fillMaxWidth().padding(10.dp), contentAlignment = Alignment.Center) {
-            IconButton(Lucide.Plus, { addPageAfter(tab, doc, pages.lastIndex) }, tint = c.textSecondary)
+            IconButton(Lucide.Plus, { requestAddPage(tab, doc, pages.lastIndex) }, tint = c.textSecondary)
         }
     }
 }
@@ -113,7 +121,12 @@ private fun RailItem(tab: EditorTab, doc: NotebookDocument, page: Page, index: I
                     .shadow(3.dp, RoundedCornerShape(6.dp), ambientColor = c.shadow, spotColor = c.shadow)
                     .clip(RoundedCornerShape(6.dp))
                     .border(border, if (current) c.accent else c.separator, RoundedCornerShape(6.dp)),
-            ) { PageThumbnail(tab, doc, page, Modifier.fillMaxWidth().aspectRatio(page.width / page.height)) }
+            ) {
+                PageThumbnail(tab, doc, page, Modifier.fillMaxWidth().aspectRatio(page.width / page.height))
+                if (page.bookmarked) {
+                    com.mheenotes.ui.design.Icon(Lucide.Bookmark, Modifier.align(Alignment.TopEnd).padding(4.dp), tint = c.accent, size = 16.dp)
+                }
+            }
             Popover(menu, { menu = false }, side = PopoverSide.End) { PageMenuItems(tab, doc, index) { menu = false } }
         }
         Spacer(Modifier.height(6.dp))

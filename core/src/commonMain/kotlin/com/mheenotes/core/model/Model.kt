@@ -38,7 +38,8 @@ data class Notebook(
     val thumbVersion: Long = 0,
 )
 
-enum class Template { Blank, Lined, Grid, Dotted }
+// New entries go at the end: ordinals are stored.
+enum class Template { Blank, Lined, Grid, Dotted, Cornell, MusicStaff }
 
 /** Page units are PDF points (1/72 inch), so imported PDFs map 1:1. */
 data class PageSize(val width: Float, val height: Float) {
@@ -47,7 +48,12 @@ data class PageSize(val width: Float, val height: Float) {
         val A5 = PageSize(420f, 595f)
         val Letter = PageSize(612f, 792f)
         val Square = PageSize(700f, 700f)
+        val A3 = PageSize(842f, 1191f)
+        val Wide = PageSize(960f, 540f)
     }
+
+    fun landscape() = if (width >= height) this else PageSize(height, width)
+    fun portrait() = if (height >= width) this else PageSize(height, width)
 }
 
 data class PdfRef(val assetId: Id, val pageIndex: Int)
@@ -61,13 +67,22 @@ data class Page(
     val template: Template = Template.Blank,
     val backgroundArgb: Int = PAPER_WHITE,
     val pdf: PdfRef? = null,
+    val bookmarked: Boolean = false,
+    /** Template line color; null uses the default derived from the paper. */
+    val lineArgb: Int? = null,
+    /** Clockwise rotation of the PDF background in degrees (0, 90, 180, 270). */
+    val rotation: Int = 0,
 )
 
 const val PAPER_WHITE: Int = 0xFFFFFFFF.toInt()
 
 enum class Tool { Pen, Pencil, Highlighter }
 
-enum class ShapeKind { Line, Arrow, Rectangle, Ellipse, Triangle }
+enum class ShapeKind { Line, Arrow, Rectangle, Ellipse, Triangle, RoundedRectangle }
+
+enum class TextAlign { Start, Center, End }
+
+enum class FontKind { Sans, Serif, Mono }
 
 /** Everything placed on a page. Items are immutable; edits replace them. */
 sealed interface Item {
@@ -110,6 +125,8 @@ data class ImageItem(
     /** Normalized crop window of the source image. */
     val crop: Rect = Rect(0f, 0f, 1f, 1f),
     val aspect: Float,
+    /** Locked images ignore taps and lasso moves until unlocked. */
+    val locked: Boolean = false,
 ) : Item {
     override val bounds: Rect get() = frame.rotatedBounds(rotation)
 }
@@ -124,6 +141,10 @@ data class TextItem(
     val argb: Int,
     val bold: Boolean = false,
     val rotation: Float = 0f,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+    val align: TextAlign = TextAlign.Start,
+    val font: FontKind = FontKind.Sans,
 ) : Item {
     override val bounds: Rect get() = frame.rotatedBounds(rotation)
 }

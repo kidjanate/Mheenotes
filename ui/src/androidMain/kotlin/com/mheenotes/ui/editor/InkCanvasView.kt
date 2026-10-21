@@ -586,7 +586,8 @@ class InkCanvasView(
     }
 
     private fun pressureOf(e: MotionEvent, idx: Int, h: Int): Float {
-        if (!isStylus(e, idx)) return 0.55f
+        // Without pressure the pen draws at a steady, slightly-below-full width.
+        if (!isStylus(e, idx) || !AppGraph.settings.pressure) return 0.55f
         val p = if (h < 0) e.getPressure(idx) else e.getHistoricalPressure(idx, h)
         return p.coerceIn(0.02f, 1f)
     }

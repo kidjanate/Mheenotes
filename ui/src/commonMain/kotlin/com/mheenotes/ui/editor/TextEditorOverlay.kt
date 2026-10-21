@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusProperties
+import com.mheenotes.ui.render.textStyleFor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
@@ -52,31 +54,36 @@ fun TextEditorOverlay(tab: EditorTab, doc: NotebookDocument) {
     val edit = tab.textEdit ?: return
     val existing = edit.itemId?.let { id -> doc.content(edit.pageId)?.get(id) as? TextItem }
     var value by remember(edit) { mutableStateOf(edit.initial) }
+    // Style prototype: the existing box's style, or the last style used for new text.
+    var style by remember(edit) {
+        mutableStateOf(existing ?: Tools.textStyle.copy(fontSize = Tools.textSize, argb = Tools.textColor))
+    }
     val focus = remember(edit) { FocusRequester() }
     val density = LocalDensity.current
     val resolver = LocalFontFamilyResolver.current
     val pageMeasurer = remember(resolver) { TextMeasurer(resolver, Density(1f), LayoutDirection.Ltr, 4) }
     val fonts = M.fonts
-    val fontSize = existing?.fontSize ?: Tools.textSize
-    val argb = existing?.argb ?: Tools.textColor
-    val bold = existing?.bold ?: false
     var hadFocus by remember(edit) { mutableStateOf(false) }
+
+    fun measure(text: String): Float {
+        val layout = pageMeasurer.measure(text, textStyleFor(style, fonts.regular, fonts.bold), constraints = Constraints.fixedWidth(max(1, edit.width.toInt())))
+        return max(layout.size.height.toFloat(), style.fontSize * 1.3f)
+    }
 
     fun commit() {
         if (tab.textEdit != edit) return
         tab.textEdit = null
         val text = value.trimEnd()
+        Tools.textStyle = style; Tools.textSize = style.fontSize; Tools.textColor = style.argb; Tools.save()
+        val frame = Rect(edit.x, edit.y, edit.x + edit.width, edit.y + measure(text))
         if (existing != null) {
-            if (text == existing.text) { doc.preview(edit.pageId, emptyList(), listOf(existing)); return }
+            val updated = style.copy(id = existing.id, seq = existing.seq, text = text, frame = frame, rotation = existing.rotation)
+            if (updated == existing) { doc.preview(edit.pageId, emptyList(), listOf(existing)); return }
             if (text.isEmpty()) { doc.commit(edit.pageId, listOf(existing), emptyList()); return }
-            val h = measure(pageMeasurer, text, fontSize, edit.width, fonts.forWeight(if (bold) FontWeight.Bold else FontWeight.Normal))
-            val updated = existing.copy(text = text, frame = Rect(edit.x, edit.y, edit.x + edit.width, edit.y + h))
             doc.preview(edit.pageId, emptyList(), listOf(updated))
             doc.commit(edit.pageId, listOf(existing), listOf(updated))
         } else if (text.isNotEmpty()) {
-            val h = measure(pageMeasurer, text, fontSize, edit.width, fonts.regular)
-            val item = TextItem(newId(), doc.nextSeq(), text, Rect(edit.x, edit.y, edit.x + edit.width, edit.y + h), fontSize, argb)
-            doc.edit(edit.pageId, emptyList(), listOf(item))
+            doc.edit(edit.pageId, emptyList(), listOf(style.copy(id = newId(), seq = doc.nextSeq(), text = text, frame = frame, rotation = 0f)))
         }
     }
 
@@ -91,13 +98,10 @@ fun TextEditorOverlay(tab: EditorTab, doc: NotebookDocument) {
     val v = tab.viewport
     Box(Modifier.fillMaxSize()) {
         val scale = v.scale
-        val px = with(density) { (fontSize * scale).toSp() }
+        val px = with(density) { (style.fontSize * scale).toSp() }
         BasicTextField(
             value, { value = it },
-            textStyle = TextStyle(
-                color = Color(argb), fontSize = px, fontFamily = if (bold) fonts.bold else fonts.regular,
-                fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
-            ),
+            textStyle = textStyleFor(style, fonts.regular, fonts.bold, px),
             cursorBrush = SolidColor(M.colors.accent),
             modifier = Modifier
                 .offset { IntOffset(v.screenX(edit.pageId, edit.x).roundToInt(), v.screenY(edit.pageId, edit.y).roundToInt()) }
@@ -107,10 +111,13 @@ fun TextEditorOverlay(tab: EditorTab, doc: NotebookDocument) {
                 .focusRequester(focus)
                 .onFocusChanged { if (it.isFocused) hadFocus = true else if (hadFocus) commit() },
         )
+        // Style bar floats just above the box; tapping it keeps focus in the text.
+        com.mheenotes.ui.design.Card(
+            Modifier.offset {
+                val y = v.screenY(edit.pageId, edit.y) - 150.dp.toPx()
+                IntOffset(v.screenX(edit.pageId, edit.x).roundToInt().coerceAtLeast(8), y.roundToInt().coerceAtLeast(8))
+            }.focusProperties { canFocus = false },
+            color = M.colors.elevated, elevation = 12.dp,
+        ) { TextStyleControls(style, { style = it }) }
     }
-}
-
-private fun measure(m: TextMeasurer, text: String, fontSize: Float, width: Float, family: androidx.compose.ui.text.font.FontFamily): Float {
-    val layout = m.measure(text, TextStyle(fontSize = fontSize.sp, fontFamily = family), constraints = Constraints(maxWidth = max(1, width.toInt())))
-    return max(layout.size.height.toFloat(), fontSize * 1.3f)
 }

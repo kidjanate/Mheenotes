@@ -48,9 +48,9 @@ fun templateLineColor(paperArgb: Int): Color {
 private fun Color.luminance(): Float = 0.2126f * red + 0.7152f * green + 0.0722f * blue
 
 /** Draws page ruling in page units. Call inside a scope already transformed to page space. */
-fun DrawScope.drawTemplate(t: Template, width: Float, height: Float, paperArgb: Int, pxPerUnit: Float = 1f) {
+fun DrawScope.drawTemplate(t: Template, width: Float, height: Float, paperArgb: Int, pxPerUnit: Float = 1f, lineArgb: Int? = null) {
     if (t == Template.Blank) return
-    val color = templateLineColor(paperArgb)
+    val color = lineArgb?.let { Color(it) } ?: templateLineColor(paperArgb)
     // Keep lines at least one device pixel wide at any zoom.
     val hair = max(0.6f, 1f / pxPerUnit)
     when (t) {
@@ -77,6 +77,27 @@ fun DrawScope.drawTemplate(t: Template, width: Float, height: Float, paperArgb: 
                 var x = GRID_SPACING
                 while (x < width) { drawCircle(dot, r, Offset(x, y)); x += GRID_SPACING }
                 y += GRID_SPACING
+            }
+        }
+        Template.Cornell -> {
+            // Cue column on the left, summary band at the bottom, ruled note area.
+            val cue = width * 0.28f
+            val summary = height * 0.78f
+            var y = LINE_SPACING * 3
+            while (y < summary - 4f) { drawLine(color, Offset(cue, y), Offset(width, y), hair); y += LINE_SPACING }
+            val strong = color.copy(alpha = (color.alpha * 2.2f).coerceAtMost(1f))
+            drawLine(strong, Offset(cue, LINE_SPACING * 2), Offset(cue, summary), hair * 1.5f)
+            drawLine(strong, Offset(0f, summary), Offset(width, summary), hair * 1.5f)
+            drawLine(strong, Offset(0f, LINE_SPACING * 2), Offset(width, LINE_SPACING * 2), hair * 1.5f)
+        }
+        Template.MusicStaff -> {
+            // Five-line staves with a gap between systems.
+            val step = 7f
+            val system = step * 4 + 34f
+            var top = 60f
+            while (top + step * 4 < height - 40f) {
+                for (k in 0..4) drawLine(color, Offset(36f, top + k * step), Offset(width - 36f, top + k * step), hair)
+                top += system
             }
         }
         Template.Blank -> Unit
@@ -135,12 +156,8 @@ class ItemPainter(
         rotate(item.rotation, Offset(item.frame.centerX, item.frame.centerY)) {
             val layout = tm.measure(
                 item.text,
-                TextStyle(
-                    color = Color(item.argb), fontSize = item.fontSize.sp,
-                    fontFamily = if (item.bold) boldFonts ?: fonts else fonts,
-                    fontWeight = if (item.bold) FontWeight.Bold else FontWeight.Normal,
-                ),
-                constraints = Constraints(maxWidth = max(1, item.frame.width.toInt())),
+                textStyleFor(item, fonts, boldFonts),
+                constraints = Constraints.fixedWidth(max(1, item.frame.width.toInt())),
             )
             drawText(layout, topLeft = Offset(item.frame.left, item.frame.top))
         }
@@ -216,9 +233,32 @@ fun DrawScope.drawShape(s: ShapeItem) {
     }
 }
 
+/** Text style for a text item, shared by page rendering and the live editor. */
+fun textStyleFor(item: TextItem, fonts: FontFamily?, boldFonts: FontFamily?, sizeOverride: androidx.compose.ui.unit.TextUnit? = null): TextStyle = TextStyle(
+    color = Color(item.argb),
+    fontSize = sizeOverride ?: item.fontSize.sp,
+    fontFamily = when (item.font) {
+        com.mheenotes.core.model.FontKind.Sans -> if (item.bold) boldFonts ?: fonts else fonts
+        com.mheenotes.core.model.FontKind.Serif -> FontFamily.Serif
+        com.mheenotes.core.model.FontKind.Mono -> FontFamily.Monospace
+    },
+    fontWeight = if (item.bold) FontWeight.Bold else FontWeight.Normal,
+    fontStyle = if (item.italic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
+    textDecoration = if (item.underline) androidx.compose.ui.text.style.TextDecoration.Underline else null,
+    textAlign = when (item.align) {
+        com.mheenotes.core.model.TextAlign.Start -> androidx.compose.ui.text.style.TextAlign.Start
+        com.mheenotes.core.model.TextAlign.Center -> androidx.compose.ui.text.style.TextAlign.Center
+        com.mheenotes.core.model.TextAlign.End -> androidx.compose.ui.text.style.TextAlign.End
+    },
+)
+
 fun shapePath(kind: ShapeKind, l: Float, t: Float, r: Float, b: Float): Path = Path().apply {
     when (kind) {
         ShapeKind.Rectangle -> addRect(androidx.compose.ui.geometry.Rect(l, t, r, b))
+        ShapeKind.RoundedRectangle -> {
+            val rad = minOf(r - l, b - t) * 0.18f
+            addRoundRect(androidx.compose.ui.geometry.RoundRect(l, t, r, b, rad, rad))
+        }
         ShapeKind.Ellipse -> addOval(androidx.compose.ui.geometry.Rect(l, t, r, b))
         ShapeKind.Triangle -> { moveTo((l + r) / 2, t); lineTo(r, b); lineTo(l, b); close() }
         else -> { moveTo(l, t); lineTo(r, b) }

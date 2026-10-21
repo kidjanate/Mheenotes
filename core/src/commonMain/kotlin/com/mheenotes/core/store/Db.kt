@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
  * or [post] and executes strictly in submission order, so the UI never waits on disk and
  * writes can never reorder.
  */
-class Db(path: String, schema: List<String>) {
+class Db(path: String, schema: List<String>, migrations: List<String> = emptyList()) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val queue = Channel<suspend () -> Unit>(Channel.UNLIMITED)
     private lateinit var conn: SQLiteConnection
@@ -36,6 +36,12 @@ class Db(path: String, schema: List<String>) {
                 conn.query("PRAGMA journal_mode=WAL") { }
                 conn.execSQL("PRAGMA synchronous=NORMAL")
                 for (sql in schema) conn.execSQL(sql)
+                // Migration i brings user_version from i to i + 1; each runs once.
+                val version = conn.query("PRAGMA user_version") { it.getLong(0).toInt() }.first()
+                for (i in version until migrations.size) {
+                    conn.transaction { execSQL(migrations[i]) }
+                    conn.execSQL("PRAGMA user_version=${i + 1}")
+                }
             } catch (t: Throwable) {
                 openError = t
                 onError(t)

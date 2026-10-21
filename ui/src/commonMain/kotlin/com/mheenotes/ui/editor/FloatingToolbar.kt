@@ -57,6 +57,7 @@ import com.composables.icons.lucide.PenLine
 import com.composables.icons.lucide.Pencil
 import com.composables.icons.lucide.Shapes
 import com.composables.icons.lucide.Square
+import com.composables.icons.lucide.Squircle
 import com.composables.icons.lucide.Triangle
 import com.composables.icons.lucide.Type
 import com.mheenotes.core.doc.NotebookDocument
@@ -214,6 +215,7 @@ private fun ToolOptions(k: ToolKind) {
                     when (o) {
                         ShapeKind.Line -> Lucide.Minus; ShapeKind.Arrow -> Lucide.ArrowUpRight; ShapeKind.Rectangle -> Lucide.Square
                         ShapeKind.Ellipse -> Lucide.Circle; ShapeKind.Triangle -> Lucide.Triangle
+                        ShapeKind.RoundedRectangle -> Lucide.Squircle
                     },
                     tint = if (sel) c.text else c.textSecondary, size = 17.dp,
                 )

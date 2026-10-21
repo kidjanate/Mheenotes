@@ -87,6 +87,10 @@ class EditorTab(val notebookId: Id) {
     var selection by mutableStateOf<Selection?>(null)
     var textEdit by mutableStateOf<TextEdit?>(null)
     var captureArea by mutableStateOf<CaptureArea?>(null)
+    var pageDialog by mutableStateOf<PageDialog?>(null)
+    var pdfTools: PdfTools? = null
+    /** Rail filter: show only bookmarked pages. */
+    var bookmarksOnly by mutableStateOf(false)
     /** Set while the pen is down, so chrome can fade out of the way. */
     var writing by mutableStateOf(false)
     /** Finishes an open text box; the canvas calls it when the user taps elsewhere. */

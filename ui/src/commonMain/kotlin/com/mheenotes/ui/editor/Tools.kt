@@ -46,6 +46,10 @@ object Tools {
     var eraserWidth by mutableFloatStateOf(ERASER_WIDTHS[1])
     var shapeWidth by mutableFloatStateOf(PEN_WIDTHS[1])
     var textSize by mutableFloatStateOf(16f)
+    /** Style for new text boxes; the last style used becomes the next default. */
+    var textStyle by mutableStateOf(
+        com.mheenotes.core.model.TextItem("", 0, "", com.mheenotes.core.geometry.Rect.Empty, 16f, INK_COLORS[0]),
+    )
 
     /** User-made colors, most recent first. */
     val customColors = androidx.compose.runtime.mutableStateListOf<Int>()
@@ -156,6 +160,13 @@ object Tools {
         f("ew") { eraserWidth = it }; f("sw") { shapeWidth = it }; f("ts") { textSize = it }
         m["em"]?.let { v -> EraserMode.entries.firstOrNull { it.name == v }?.let { eraserMode = it } }
         m["sk"]?.let { v -> ShapeKind.entries.firstOrNull { it.name == v }?.let { shapeKind = it } }
+        m["tst"]?.split(',')?.let { p ->
+            if (p.size == 5) textStyle = textStyle.copy(
+                bold = p[0] == "1", italic = p[1] == "1", underline = p[2] == "1",
+                align = com.mheenotes.core.model.TextAlign.entries.getOrElse(p[3].toIntOrNull() ?: 0) { com.mheenotes.core.model.TextAlign.Start },
+                font = com.mheenotes.core.model.FontKind.entries.getOrElse(p[4].toIntOrNull() ?: 0) { com.mheenotes.core.model.FontKind.Sans },
+            )
+        }
         m["cc"]?.split(',')?.mapNotNull { it.toLongOrNull()?.toInt() }?.let { customColors.clear(); customColors.addAll(it) }
         if (current == ToolKind.Hand) current = ToolKind.Pen
     }
@@ -166,7 +177,10 @@ object Tools {
             append("hc=${highlighterColor.toLong() and 0xffffffffL};sc=${shapeColor.toLong() and 0xffffffffL};tc=${textColor.toLong() and 0xffffffffL};")
             append("pw=$penWidth;nw=$pencilWidth;hw=$highlighterWidth;ew=$eraserWidth;sw=$shapeWidth;ts=$textSize;")
             append("em=${eraserMode.name};sk=${shapeKind.name};")
-            append("cc=" + customColors.joinToString(",") { (it.toLong() and 0xffffffffL).toString() })
+            append("cc=" + customColors.joinToString(",") { (it.toLong() and 0xffffffffL).toString() } + ";")
+            val t = textStyle
+            fun b(v: Boolean) = if (v) "1" else "0"
+            append("tst=${b(t.bold)},${b(t.italic)},${b(t.underline)},${t.align.ordinal},${t.font.ordinal}")
         }
         AppGraph.settings.updateTools(s)
     }

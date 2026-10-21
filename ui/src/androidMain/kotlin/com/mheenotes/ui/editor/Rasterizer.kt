@@ -58,7 +58,7 @@ class Rasterizer(context: Context, private val fonts: FontFamily?, private val b
         bitmap.eraseColor(page.backgroundArgb)
         page.pdf?.let { ref ->
             val m = Matrix().apply { setScale(scale, scale); postTranslate(-originX * scale, -originY * scale) }
-            PdfPages.render(notebookId, ref.assetId, ref.pageIndex, bitmap, m, page.width)
+            PdfPages.render(notebookId, ref.assetId, ref.pageIndex, bitmap, m, page.width, page.height, page.rotation)
         }
         val canvas = androidx.compose.ui.graphics.Canvas(android.graphics.Canvas(bitmap))
         val painter = painter(notebookId)
@@ -67,7 +67,7 @@ class Rasterizer(context: Context, private val fonts: FontFamily?, private val b
                 scale(scale, scale, Offset.Zero)
                 translate(-originX, -originY)
             }) {
-                if (page.pdf == null) drawTemplate(page.template, page.width, page.height, page.backgroundArgb, scale)
+                if (page.pdf == null) drawTemplate(page.template, page.width, page.height, page.backgroundArgb, scale, page.lineArgb)
                 with(painter) { draw(items, scale) }
             }
         }
@@ -94,13 +94,27 @@ object PdfPages {
         }.getOrNull()?.also { docs[path] = it }
     }
 
-    /** Renders PDF page [index] scaled so its width fills [pageWidth] page units. */
-    fun render(notebookId: Id, assetId: Id, index: Int, bitmap: Bitmap, matrix: Matrix, pageWidth: Float) {
+    /**
+     * Renders PDF page [index] rotated clockwise by [rotation] and scaled to fill the page, then
+     * mapped through [matrix] (page units to bitmap pixels).
+     */
+    fun render(notebookId: Id, assetId: Id, index: Int, bitmap: Bitmap, matrix: Matrix, pageWidth: Float, pageHeight: Float, rotation: Int = 0) {
         val doc = open(path(notebookId, assetId)) ?: return
         synchronized(doc) {
             if (index !in 0 until doc.renderer.pageCount) return
             doc.renderer.openPage(index).use { p ->
-                val m = Matrix(matrix).apply { preScale(pageWidth / p.width, pageWidth / p.width) }
+                val r = ((rotation % 360) + 360) % 360
+                val k = pageWidth / (if (r % 180 == 0) p.width else p.height)
+                val m = Matrix().apply {
+                    setScale(k, k)
+                    postRotate(r.toFloat())
+                    when (r) {
+                        90 -> postTranslate(pageWidth, 0f)
+                        180 -> postTranslate(pageWidth, pageHeight)
+                        270 -> postTranslate(0f, pageHeight)
+                    }
+                    postConcat(matrix)
+                }
                 p.render(bitmap, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
             }
         }
