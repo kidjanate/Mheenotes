@@ -87,12 +87,15 @@ actual fun NotebookThumbnail(n: Notebook, modifier: Modifier) {
         bmp = ThumbCache.load(n.id, n.thumbVersion)
         if (bmp != null) alpha.animateTo(1f, Motion.fade())
     }
-    Box(modifier.background(Color.White)) {
+    // Portrait pages fill the cover from the top; landscape pages (slides) are shown whole, centred.
+    val landscape = bmp?.let { it.width > it.height } == true
+    Box(modifier.background(if (landscape) com.mheenotes.ui.design.M.colors.desk else Color.White)) {
         bmp?.let {
             Image(
                 it, null,
                 Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha.value },
-                contentScale = ContentScale.Crop, alignment = Alignment.TopCenter,
+                contentScale = if (landscape) ContentScale.Fit else ContentScale.Crop,
+                alignment = if (landscape) Alignment.Center else Alignment.TopCenter,
             )
         }
     }
