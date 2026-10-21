@@ -292,7 +292,7 @@ private fun SelectionBar(tab: EditorTab, doc: NotebookDocument) {
                     .offset {
                         val b = tab.selectionScreenBounds() ?: return@offset IntOffset.Zero
                         val x = (b.centerX - w / 2).roundToInt().coerceIn(16, (maxW - w - 16).coerceAtLeast(16))
-                        val above = b.top - 64.dp.toPx()
+                        val above = b.top - 64.dp.toPx() - 40.dp.toPx() // clear the rotate handle
                         val y = if (above > 80.dp.toPx()) above else b.bottom + 16.dp.toPx()
                         IntOffset(x, y.roundToInt())
                     },

@@ -264,16 +264,23 @@ private fun StrokePreview(k: ToolKind) {
     }
 }
 
-/** Last-used colors for the active ink tool, one tap away. */
+/**
+ * Quick colors for the active tool. Always present (dimmed when the tool has no color) so the
+ * toolbar never changes width and buttons never shift under the finger.
+ */
 @Composable
 private fun QuickColors(vertical: Boolean) {
     val k = Tools.current
-    if (k != ToolKind.Pen && k != ToolKind.Pencil && k != ToolKind.Highlighter && k != ToolKind.Shape && k != ToolKind.Text) return
+    val enabled = k == ToolKind.Pen || k == ToolKind.Pencil || k == ToolKind.Highlighter || k == ToolKind.Shape || k == ToolKind.Text
     val palette = (if (k == ToolKind.Highlighter) HIGHLIGHT_COLORS else INK_COLORS).take(3)
+    val alpha by animateFloatAsState(if (enabled) 1f else 0.25f, Motion.fade(), label = "qc")
     val content: @Composable () -> Unit = {
-        palette.forEach { col -> ColorDot(Color(col or 0xFF000000.toInt()), Tools.colorOf(k) == col, { Tools.setColor(k, col) }, size = 34.dp) }
+        palette.forEach { col ->
+            ColorDot(Color(col or 0xFF000000.toInt()), enabled && Tools.colorOf(k) == col, { if (enabled) Tools.setColor(k, col) }, size = 34.dp)
+        }
     }
-    if (vertical) Column { content() } else Row { content() }
+    val m = Modifier.graphicsLayer { this.alpha = alpha }
+    if (vertical) Column(m) { content() } else Row(m) { content() }
 }
 
 @Composable
