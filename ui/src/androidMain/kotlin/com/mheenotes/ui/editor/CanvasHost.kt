@@ -85,18 +85,27 @@ actual fun InkCanvas(tab: EditorTab, doc: NotebookDocument, topInset: Dp, modifi
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val multiWindow = remember(configuration) { (context as? android.app.Activity)?.isInMultiWindowMode == true }
     val lowLatency = AppGraph.settings.lowLatencyInk && !multiWindow
-    val container = remember(view, lowLatency) {
+    // One container for the view's lifetime: AndroidView keeps the first view its factory made,
+    // so switching low latency on or off only adds or removes the front surface inside it.
+    val container = remember(view) {
         android.widget.FrameLayout(context).apply {
             (view.parent as? android.view.ViewGroup)?.removeView(view)
             addView(view)
-            if (lowLatency) {
-                // Not clickable, so touches fall through to the canvas underneath.
-                val surface = android.view.SurfaceView(context)
-                addView(surface)
-                view.front = runCatching { FrontInk(surface) }.getOrNull()
-            } else {
+        }
+    }
+    DisposableEffect(container, lowLatency) {
+        if (lowLatency) {
+            // Not clickable, so touches fall through to the canvas underneath.
+            val surface = android.view.SurfaceView(context)
+            container.addView(surface)
+            view.front = runCatching { FrontInk(surface) }.getOrNull()
+            onDispose {
                 view.front?.release(); view.front = null
+                container.removeView(surface)
+                view.invalidate()
             }
+        } else {
+            onDispose { }
         }
     }
     DisposableEffect(view) {
@@ -212,7 +221,7 @@ actual fun ImageInsertButton(tab: EditorTab, doc: NotebookDocument) {
 suspend fun insertImage(tab: EditorTab, doc: NotebookDocument, uri: Uri) {
     val page = doc.pages.value.getOrNull(tab.currentPage) ?: return
     val assetId = newId()
-    val size = withContext(Dispatchers.IO) { copyImageAsset(tab.notebookId, assetId, uri) } ?: return
+    val size = withContext(Dispatchers.IO) { runCatching { copyImageAsset(tab.notebookId, assetId, uri) }.onFailure { it.printStackTrace() }.getOrNull() } ?: return
     val (w, h) = size
     val aspect = w.toFloat() / h
     val fw = min(page.width * 0.6f, w.toFloat())
@@ -234,7 +243,8 @@ suspend fun insertImage(tab: EditorTab, doc: NotebookDocument, uri: Uri) {
 private fun copyImageAsset(notebookId: Id, assetId: Id, uri: Uri): Pair<Int, Int>? {
     val resolver = AndroidContext.app.contentResolver
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
+    // A bounds-only decode always returns null, so success is judged by the size it filled in.
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
     if (bounds.outWidth <= 0) return null
     var sample = 1
     while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 2560) sample *= 2

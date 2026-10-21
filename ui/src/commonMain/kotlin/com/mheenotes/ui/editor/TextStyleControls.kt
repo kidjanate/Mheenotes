@@ -39,7 +39,8 @@ import kotlin.math.roundToInt
 @Composable
 fun TextStyleControls(style: TextItem, onChange: (TextItem) -> Unit, modifier: Modifier = Modifier) {
     val c = M.colors
-    Column(modifier.padding(8.dp)) {
+    // Fixed width: the font picker fills its width, so without a bound a floating card would span the screen.
+    Column(modifier.width(340.dp).padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(Lucide.Bold, { onChange(style.copy(bold = !style.bold)) }, selected = style.bold, size = 36.dp, iconSize = 17.dp)
             IconButton(Lucide.Italic, { onChange(style.copy(italic = !style.italic)) }, selected = style.italic, size = 36.dp, iconSize = 17.dp)
