@@ -54,7 +54,7 @@ import java.io.FileOutputStream
 import kotlin.math.max
 import kotlin.math.min
 
-private fun rasterizer(fonts: com.mheenotes.ui.design.AppFonts): Rasterizer =
+fun rasterizer(fonts: com.mheenotes.ui.design.AppFonts): Rasterizer =
     Rasterizer.shared ?: Rasterizer(AndroidContext.app, fonts.regular, fonts.bold).also { Rasterizer.shared = it }
 
 @Composable

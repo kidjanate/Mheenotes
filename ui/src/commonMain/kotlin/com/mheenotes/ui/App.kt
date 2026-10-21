@@ -67,6 +67,7 @@ class AppState {
 @Composable
 fun App(state: AppState = remember { AppState.shared }) {
     MheenotesTheme(AppGraph.settings.theme) {
+        SystemBars(M.colors.isDark)
         OverlayHost {
             Box(Modifier.fillMaxSize().background(M.colors.background)) {
                 val lib by AppGraph.library.state.collectAsState()
@@ -94,3 +95,7 @@ fun App(state: AppState = remember { AppState.shared }) {
         }
     }
 }
+
+/** Keeps status/navigation bar icons readable for the app theme (not just the system one). */
+@Composable
+expect fun SystemBars(dark: Boolean)
