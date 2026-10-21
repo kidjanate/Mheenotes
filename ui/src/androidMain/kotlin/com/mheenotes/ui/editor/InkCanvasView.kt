@@ -318,7 +318,7 @@ class InkCanvasView(
         for (ty0 in TileCache.rangeFor(t, b, span)) for (tx0 in TileCache.rangeFor(l, r, span)) {
             if (tx0 < 0 || ty0 < 0) continue
             val tile = tiles.getOrCreate(TileKey(page.id, level, tx0, ty0))
-            if (tile.bitmap == null || !tile.fresh) tiles.request(tile, page, content, priority + ty0)
+            if (tile.fresh || !tiles.full) tiles.request(tile, page, content, priority + ty0) // keeps fresh ones warm
         }
     }
 

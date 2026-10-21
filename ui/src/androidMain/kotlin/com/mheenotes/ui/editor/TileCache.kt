@@ -37,6 +37,9 @@ class Tile(val key: TileKey) {
     @Volatile var epoch = 0
     @Volatile var renderedEpoch = -1
     @Volatile var queued = false
+    /** The pending render and its priority; a more urgent request supersedes it. */
+    @Volatile var job: Any? = null
+    var queuedPriority = 0f
     /** Frame in which the tile was last needed; stale jobs are skipped. */
     @Volatile var wantedFrame = 0L
     var lastDrawn = 0L
@@ -76,7 +79,8 @@ class TileCache(
 
         override fun run() {
             val t = tile
-            if (closed || t.wantedFrame < frame.get() - 3) { t.queued = false; return }
+            if (t.job !== this) return // superseded by a more urgent request
+            if (closed || t.wantedFrame < frame.get() - 3) { t.queued = false; t.job = null; return }
             val epoch = t.epoch
             val bmp = obtain()
             val span = tileSpan(t.key.level)
@@ -87,7 +91,7 @@ class TileCache(
                 e.printStackTrace()
             }
             main.post {
-                t.queued = false
+                if (t.job === this) { t.queued = false; t.job = null }
                 if (closed) { recycle(bmp); return@post }
                 t.bitmap?.let { retire(it) }
                 t.bitmap = bmp
@@ -100,6 +104,10 @@ class TileCache(
 
     private val jobSeq = AtomicLong(0)
 
+    /** At the memory budget: prefetching ahead of the view would only evict what is on screen. */
+    var full = false
+        private set
+
     fun get(key: TileKey): Tile? = tiles[key]
 
     fun getOrCreate(key: TileKey): Tile = tiles.getOrPut(key) { Tile(key) }
@@ -107,9 +115,14 @@ class TileCache(
     /** Queues [tile] if it is missing or stale. Lower [priority] renders sooner. */
     fun request(tile: Tile, page: Page, content: PageContent, priority: Float) {
         tile.wantedFrame = frame.get()
-        if (tile.fresh || tile.queued) return
+        if (tile.fresh) return
+        // A tile queued as a low-priority prefetch must not wait behind other prefetches once it is on screen.
+        if (tile.queued && priority >= tile.queuedPriority - 5e5f) return
         tile.queued = true
-        pool.execute(Job(tile, page, content, priority, jobSeq.incrementAndGet()))
+        tile.queuedPriority = priority
+        val job = Job(tile, page, content, priority, jobSeq.incrementAndGet())
+        tile.job = job
+        pool.execute(job)
     }
 
     /** Marks tiles touching [area] (page units) stale; they keep showing until re-rendered. */
@@ -131,11 +144,15 @@ class TileCache(
         val f = frame.incrementAndGet()
         while (retired.isNotEmpty() && retired.first().first < f - 2) recycle(retired.removeFirst().second)
         val withBitmaps = tiles.values.count { it.bitmap != null }
+        full = withBitmaps >= budget
         if (withBitmaps > budget) {
-            val victims = tiles.values.filter { it.bitmap != null && it.lastDrawn < f - 1 }
-                .sortedBy { it.lastDrawn }
+            // Recency counts prefetch requests too: a tile rendered ahead of the scroll but not yet drawn
+            // must not be the first thing evicted, or it is re-rendered and evicted again forever.
+            val victims = tiles.values.filter { it.bitmap != null && maxOf(it.lastDrawn, it.wantedFrame) < f - 1 }
+                .sortedBy { maxOf(it.lastDrawn, it.wantedFrame) }
                 .take(withBitmaps - budget)
             for (t in victims) {
+                if (t.queued) continue
                 tiles.remove(t.key)
                 t.bitmap?.let { retire(it) }
                 t.bitmap = null
