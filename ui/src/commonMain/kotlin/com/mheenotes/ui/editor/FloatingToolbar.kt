@@ -58,11 +58,14 @@ import com.composables.icons.lucide.Minus
 import com.composables.icons.lucide.PenLine
 import com.composables.icons.lucide.Pencil
 import com.composables.icons.lucide.Shapes
+import com.composables.icons.lucide.Clapperboard
+import com.composables.icons.lucide.Sparkle
 import com.composables.icons.lucide.Square
 import com.composables.icons.lucide.Squircle
 import com.composables.icons.lucide.Triangle
 import com.composables.icons.lucide.Type
 import com.mheenotes.core.doc.NotebookDocument
+import com.mheenotes.ui.render.drawAnimatedStroke
 import com.mheenotes.core.model.ShapeKind
 import com.mheenotes.ui.AppGraph
 import com.mheenotes.ui.design.Card
@@ -97,6 +100,8 @@ private fun toolIcon(k: ToolKind): ImageVector = when (k) {
     ToolKind.Shape -> Lucide.Shapes
     ToolKind.Text -> Lucide.Type
     ToolKind.Hand -> Lucide.Hand
+    ToolKind.Laser -> Lucide.Sparkle
+    ToolKind.Animated -> Lucide.Clapperboard
 }
 
 /**
@@ -123,7 +128,7 @@ fun FloatingToolbar(tab: EditorTab, doc: NotebookDocument, topInsetPx: Int) {
         var dragging by remember { mutableStateOf(false) }
         // A side dock that no longer fits (short window) falls back to the top edge. The length
         // is computed from the content, not measured, so the choice cannot oscillate.
-        val sideLength = with(density) { (TOOL_BUTTON * 8 + 24.dp * 3 + 36.dp).roundToPx() }
+        val sideLength = with(density) { (TOOL_BUTTON * 10 + 24.dp * 3 + 36.dp).roundToPx() }
         val sideFits = area.height - topInsetPx - margin * 2 >= sideLength
         val effective = if ((dock == Dock.Left || dock == Dock.Right) && !sideFits) Dock.Top else dock
         LaunchedEffect(effective, size, area, topInsetPx) {
@@ -166,7 +171,7 @@ fun FloatingToolbar(tab: EditorTab, doc: NotebookDocument, topInsetPx: Int) {
                 Box(grip.size(if (vertical) 30.dp else 16.dp, if (vertical) 16.dp else 30.dp), contentAlignment = Alignment.Center) {
                     Icon(Lucide.GripVertical, Modifier.graphicsLayer { rotationZ = if (vertical) 90f else 0f }, tint = M.colors.textTertiary, size = 12.dp)
                 }
-                listOf(ToolKind.Pen, ToolKind.Pencil, ToolKind.Highlighter, ToolKind.Eraser, ToolKind.Lasso, ToolKind.Shape, ToolKind.Text).forEach { k ->
+                listOf(ToolKind.Pen, ToolKind.Pencil, ToolKind.Highlighter, ToolKind.Laser, ToolKind.Animated, ToolKind.Eraser, ToolKind.Lasso, ToolKind.Shape, ToolKind.Text).forEach { k ->
                     ToolButton(k, if (vertical) (if (effective == Dock.Right) PopoverSide.Start else PopoverSide.End) else if (effective == Dock.Bottom) PopoverSide.Above else PopoverSide.Below, tab)
                 }
                 ImageInsertButton(tab, doc)
@@ -193,7 +198,7 @@ private fun ToolButton(k: ToolKind, side: PopoverSide, tab: EditorTab) {
             selected = selected,
             size = TOOL_BUTTON,
             iconSize = TOOL_ICON,
-            tint = if (selected && (k == ToolKind.Pen || k == ToolKind.Pencil || k == ToolKind.Highlighter)) Color(Tools.colorOf(k) or 0xFF000000.toInt()) else null,
+            tint = if (selected && (Tools.inkTool(k) != null || k == ToolKind.Laser)) Color(Tools.colorOf(k) or 0xFF000000.toInt()) else null,
         )
         Popover(options, { options = false }, side = side, width = 300.dp) { ToolOptions(k) }
     }
@@ -226,7 +231,7 @@ private fun ToolOptions(k: ToolKind) {
         if (k != ToolKind.Eraser && k != ToolKind.Lasso) {
             Text(stringResource(Res.string.color), style = M.type.caption, color = c.textSecondary)
             Spacer(Modifier.height(8.dp))
-            val palette = if (k == ToolKind.Highlighter) HIGHLIGHT_COLORS else INK_COLORS
+            val palette = when (k) { ToolKind.Highlighter -> HIGHLIGHT_COLORS; ToolKind.Laser -> LASER_COLORS; else -> INK_COLORS }
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 palette.forEach { col ->
                     ColorDot(Color(col or 0xFF000000.toInt()), Tools.colorOf(k) == col, { Tools.setColor(k, col) }, size = 32.dp)
@@ -235,7 +240,13 @@ private fun ToolOptions(k: ToolKind) {
             CustomColors(k)
             Spacer(Modifier.height(14.dp))
         }
-        if (k == ToolKind.Text) {
+        if (k == ToolKind.Animated) {
+            MotionOptions()
+            Spacer(Modifier.height(14.dp))
+        }
+        if (k == ToolKind.Laser) {
+            Text(stringResource(Res.string.laser_hint), style = M.type.caption, color = c.textTertiary)
+        } else if (k == ToolKind.Text) {
             Text(stringResource(Res.string.font_size), style = M.type.caption, color = c.textSecondary)
             Slider(Tools.textSize, { Tools.textSize = it }, Modifier.fillMaxWidth(), range = 8f..48f, onChangeFinished = { Tools.save() })
         } else if (k != ToolKind.Lasso) {
@@ -259,7 +270,7 @@ private fun ToolOptions(k: ToolKind) {
                 }
             }
             Slider(Tools.widthOf(k), { Tools.setWidth(k, it) }, Modifier.fillMaxWidth(), range = defaults.first() * 0.4f..defaults.last() * 2f)
-            if (k == ToolKind.Pen || k == ToolKind.Pencil || k == ToolKind.Highlighter) {
+            if (Tools.inkTool(k) != null) {
                 Spacer(Modifier.height(8.dp))
                 StrokePreview(k)
             }
@@ -332,6 +343,10 @@ private fun StrokePreview(k: ToolKind) {
     val tool = Tools.inkTool(k) ?: return
     val color = Tools.colorOf(k)
     val width = Tools.widthOf(k)
+    // The animated pen previews its motion live.
+    val s0 = if (tool == com.mheenotes.core.model.Tool.Animated) androidx.compose.runtime.produceState(0L) {
+        while (true) androidx.compose.runtime.withFrameMillis { value = it }
+    } else null
     Canvas(Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(10.dp)).background(Color.White)) {
         val n = 40
         val pts = FloatArray(n * 3) { i ->
@@ -342,9 +357,10 @@ private fun StrokePreview(k: ToolKind) {
                 else -> 0.2f + 0.8f * kotlin.math.sin(t * 3.14f)
             }
         }
-        val s = com.mheenotes.core.model.Stroke("p", 0, tool, color, width, pts)
+        val s = com.mheenotes.core.model.Stroke("p", 0, tool, color, width, pts, if (s0 != null) Tools.inkMotion.pack() else 0)
         scale(2.2f, 2.2f, Offset.Zero) {
-            with(com.mheenotes.ui.render.ItemPainter(null, null)) { draw(listOf(s), 2.2f) }
+            if (s0 != null) drawAnimatedStroke(s, s0.value)
+            else with(com.mheenotes.ui.render.ItemPainter(null, null)) { draw(listOf(s), 2.2f) }
         }
     }
 }
@@ -356,8 +372,8 @@ private fun StrokePreview(k: ToolKind) {
 @Composable
 private fun QuickColors(vertical: Boolean) {
     val k = Tools.current
-    val enabled = k == ToolKind.Pen || k == ToolKind.Pencil || k == ToolKind.Highlighter || k == ToolKind.Shape || k == ToolKind.Text
-    val palette = (if (k == ToolKind.Highlighter) HIGHLIGHT_COLORS else INK_COLORS).take(3)
+    val enabled = Tools.inkTool(k) != null || k == ToolKind.Laser || k == ToolKind.Shape || k == ToolKind.Text
+    val palette = when (k) { ToolKind.Highlighter -> HIGHLIGHT_COLORS; ToolKind.Laser -> LASER_COLORS; else -> INK_COLORS }.take(3)
     val alpha by animateFloatAsState(if (enabled) 1f else 0.25f, Motion.fade(), label = "qc")
     val content: @Composable () -> Unit = {
         palette.forEach { col ->
@@ -366,6 +382,43 @@ private fun QuickColors(vertical: Boolean) {
     }
     val m = Modifier.graphicsLayer { this.alpha = alpha }
     if (vertical) Column(m) { content() } else Row(m) { content() }
+}
+
+/** Motion, speed, color effect and strength for the animated pen. */
+@Composable
+private fun MotionOptions() {
+    val c = M.colors
+    val m = Tools.inkMotion
+    fun set(v: com.mheenotes.core.model.InkMotion) { Tools.inkMotion = v; Tools.save() }
+    @Composable
+    fun Choice(label: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+        Text(label, style = M.type.caption, color = c.textSecondary)
+        Spacer(Modifier.height(6.dp))
+        Segmented(options.indices.toList(), selected, onSelect, Modifier.fillMaxWidth()) { i, sel ->
+            Text(options[i], style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary, maxLines = 1)
+        }
+        Spacer(Modifier.height(10.dp))
+    }
+    Choice(
+        stringResource(Res.string.motion),
+        listOf(stringResource(Res.string.motion_boil), stringResource(Res.string.motion_wave), stringResource(Res.string.motion_bounce)),
+        m.motion,
+    ) { set(m.copy(motion = it)) }
+    Choice(
+        stringResource(Res.string.speed),
+        listOf(stringResource(Res.string.speed_slow), stringResource(Res.string.speed_normal), stringResource(Res.string.speed_fast)),
+        m.speed.coerceAtMost(2),
+    ) { set(m.copy(speed = it)) }
+    Choice(
+        stringResource(Res.string.color_effect),
+        listOf(stringResource(Res.string.effect_solid), stringResource(Res.string.effect_rainbow), stringResource(Res.string.effect_flicker)),
+        m.color,
+    ) { set(m.copy(color = it)) }
+    Choice(
+        stringResource(Res.string.strength),
+        listOf(stringResource(Res.string.strength_subtle), stringResource(Res.string.strength_medium), stringResource(Res.string.strength_wild)),
+        m.strength.coerceAtMost(2),
+    ) { set(m.copy(strength = it)) }
 }
 
 /** Toolbar button and icon sizes (30% smaller than the first version). */

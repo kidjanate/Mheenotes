@@ -16,7 +16,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -96,7 +99,10 @@ fun TextEditorOverlay(tab: EditorTab, doc: NotebookDocument) {
     androidx.compose.runtime.SideEffect { tab.finishText = ::commit }
 
     val v = tab.viewport
-    Box(Modifier.fillMaxSize()) {
+    var barSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    var areaSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    Box(Modifier.fillMaxSize().onSizeChanged { areaSize = it }) {
         val scale = v.scale
         val px = with(density) { (style.fontSize * scale).toSp() }
         BasicTextField(
@@ -111,13 +117,28 @@ fun TextEditorOverlay(tab: EditorTab, doc: NotebookDocument) {
                 .focusRequester(focus)
                 .onFocusChanged { if (it.isFocused) hadFocus = true else if (hadFocus) commit() },
         )
-        // Style bar floats just above the box; tapping it keeps focus in the text.
+        // Style bar floats just above the box, or below it when the top bar and toolbar leave no
+        // room; it always stays on screen. Tapping it keeps focus in the text.
         com.mheenotes.ui.design.Card(
-            Modifier.offset {
-                val y = v.screenY(edit.pageId, edit.y) - 150.dp.toPx()
-                IntOffset(v.screenX(edit.pageId, edit.x).roundToInt().coerceAtLeast(8), y.roundToInt().coerceAtLeast(8))
+            Modifier.onSizeChanged { barSize = it }.offset {
+                val gap = 10.dp.toPx()
+                val boxTop = v.screenY(edit.pageId, edit.y)
+                val above = boxTop - barSize.height - gap
+                val below = boxTop + style.fontSize * v.scale * 1.4f + gap
+                val bottomLimit = areaSize.height - imeBottom - gap
+                val y = when {
+                    above >= TEXT_BAR_CLEAR.toPx() -> above
+                    below + barSize.height <= bottomLimit -> below
+                    // Neither fits cleanly: covering the toolbar beats hiding behind the keyboard.
+                    else -> above.coerceAtLeast(gap)
+                }
+                val maxX = (areaSize.width - barSize.width - gap).coerceAtLeast(gap)
+                IntOffset(v.screenX(edit.pageId, edit.x).coerceIn(gap, maxX).roundToInt(), y.roundToInt())
             }.focusProperties { canFocus = false },
             color = M.colors.elevated, elevation = 12.dp,
         ) { TextStyleControls(style, { style = it }) }
     }
 }
+
+/** Space the top bar and floating toolbar take; the style bar goes below the box when it would overlap them. */
+private val TEXT_BAR_CLEAR = 150.dp

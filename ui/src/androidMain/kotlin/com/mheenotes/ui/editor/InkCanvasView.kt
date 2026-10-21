@@ -18,6 +18,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
@@ -46,6 +47,9 @@ import com.mheenotes.core.model.Tool
 import com.mheenotes.core.model.newId
 import com.mheenotes.ui.AppGraph
 import com.mheenotes.ui.render.drawInkStroke
+import com.mheenotes.ui.render.animReach
+import com.mheenotes.ui.render.animDelayToNextFrame
+import com.mheenotes.ui.render.drawAnimatedStroke
 import com.mheenotes.ui.render.drawShape
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -285,7 +289,10 @@ class InkCanvasView(
         if (tiles.frame.get() % 60 == 0L) doc.retainOnly(keep + loading + pendingPages())
 
         drawSearchHits(canvas, first, last)
+        drawAnimated(canvas, first, last, vLeft, vTop, vRight, vBottom)
         drawOverlays(canvas, level)
+        drawMorph(canvas)
+        drawLaser(canvas)
         armFrontClear()
         tiles.endFrame()
     }
@@ -404,7 +411,7 @@ class InkCanvasView(
         val wet = wetStroke
         if (wet != null && wetPage != null && !(frontActive && mode == Mode.Ink)) pageSpace(canvas, wetPage!!) {
             val shape = snappedShape
-            if (shape != null) drawShape(shape) else drawInkStroke(wet)
+            if (shape == null) drawInkStroke(wet) else if (morph == null) drawShape(shape)
         }
         shapeDraft?.let { s -> pageSpace(canvas, wetPage ?: return@let) { drawShape(s) } }
         lassoPoints?.let { pts -> if (wetPage != null && pts.size >= 6) pageSpace(canvas, wetPage!!) { drawLasso(pts) } }
@@ -510,7 +517,7 @@ class InkCanvasView(
 
     // ---- Input ----------------------------------------------------------------------------
 
-    private enum class Mode { None, Ink, Erase, Lasso, Shape, SelMove, SelScale, SelRotate, Text, Pan, Pinch, Ignore }
+    private enum class Mode { None, Ink, Erase, Lasso, Shape, SelMove, SelScale, SelRotate, Text, Pan, Pinch, Ignore, Laser }
 
     private var mode = Mode.None
     private var activePointer = -1
@@ -522,6 +529,7 @@ class InkCanvasView(
     private var wetColor = 0
     private var wetWidth = 1f
     private var wetStroke: Stroke? = null
+    private var wetAnim = 0
     private val smoother = InkSmoother(0.32f)
     private var lastSampleX = 0f
     private var lastSampleY = 0f
@@ -614,11 +622,12 @@ class InkCanvasView(
         // Ink never waits for page data; it is saved once the page finishes loading.
         if (doc.content(page.id) == null) {
             ensureLoaded(page.id)
-            if (!(Tools.isInk && !eraserEnd)) { mode = Mode.Ignore; return }
+            if (!((Tools.isInk || Tools.current == ToolKind.Laser) && !eraserEnd)) { mode = Mode.Ignore; return }
         }
         wetPage = page.id
         when {
             eraserEnd || Tools.current == ToolKind.Eraser -> { mode = Mode.Erase; erasedOriginals.clear(); erasedAdded.clear(); lastSampleX = x; lastSampleY = y; eraseAt(x, y, x, y) }
+            Tools.current == ToolKind.Laser -> startLaser(x, y)
             Tools.isInk -> startInk(e, x, y)
             Tools.current == ToolKind.Lasso -> { mode = Mode.Lasso; lassoPoints = FloatList().also { it.add(x, y, 0f) } }
             Tools.current == ToolKind.Shape -> { mode = Mode.Shape; shapeStart = x to y }
@@ -634,6 +643,8 @@ class InkCanvasView(
         wetTool = Tools.inkTool() ?: Tool.Pen
         wetColor = Tools.colorOf(Tools.current)
         wetWidth = Tools.widthOf(Tools.current)
+        wetAnim = if (wetTool == Tool.Animated) Tools.inkMotion.pack() else 0
+        flushMorph()
         wetPoints = FloatList(128)
         smoother.reset()
         snappedShape = null
@@ -661,13 +672,15 @@ class InkCanvasView(
     }
 
     private val holdCheck = Runnable {
-        if (mode != Mode.Ink || snappedShape != null || !AppGraph.settings.holdToShape || wetTool == Tool.Highlighter) return@Runnable
+        if (mode != Mode.Ink || snappedShape != null || !AppGraph.settings.holdToShape || wetTool == Tool.Highlighter || wetTool == Tool.Animated) return@Runnable
         if (SystemClock.uptimeMillis() - lastMoveAt < HOLD_MS - 20) { scheduleHoldCheck(); return@Runnable }
         val pts = wetPoints.toArray()
         // A scribble that pauses at the end is an erase gesture, not a shape.
         if (ScribbleDetector.isScribble(pts)) return@Runnable
         val rec = ShapeRecognizer.recognize(pts) ?: return@Runnable
-        snappedShape = ShapeItem(newId(), 0, rec.kind, rec.frame, wetColor, max(wetWidth, 1f))
+        val shape = ShapeItem(newId(), 0, rec.kind, rec.frame, wetColor, max(wetWidth, 1f))
+        snappedShape = shape
+        morph = wetPage?.let { buildMorph(it, pts, shape) }
         front?.clear()
         performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
         invalidate()
@@ -683,6 +696,7 @@ class InkCanvasView(
         when (mode) {
             Mode.Pan, Mode.None -> startPinch(e)
             Mode.Ink -> if (!isStylus(e, 0)) { cancelWet(); startPinch(e) }
+            Mode.Laser -> if (!isStylus(e, 0)) { laser.removeLastOrNull(); startPinch(e) }
             Mode.Ignore -> if (!isStylus(e, e.actionIndex) && SystemClock.uptimeMillis() >= stylusNearUntil) startPinch(e)
             else -> Unit
         }
@@ -719,6 +733,19 @@ class InkCanvasView(
                     holdX = x; holdY = y
                     lastMoveAt = SystemClock.uptimeMillis()
                     scheduleHoldCheck()
+                }
+                invalidate()
+            }
+            Mode.Laser -> {
+                val idx = e.findPointerIndex(activePointer).takeIf { it >= 0 } ?: return
+                val stroke = laser.lastOrNull() ?: return
+                val pi = layout.indexOf(stroke.pageId)
+                for (h in 0..e.historySize) {
+                    val sx = if (h < e.historySize) e.getHistoricalX(idx, h) else e.getX(idx)
+                    val sy = if (h < e.historySize) e.getHistoricalY(idx, h) else e.getY(idx)
+                    val (_, x, y) = toPage(sx, sy, pi)
+                    val n = stroke.pts.size
+                    if (hypot(x - stroke.pts[n - 3], y - stroke.pts[n - 2]) * scale > 1.2f * density) stroke.pts.add(x, y, 0f)
                 }
                 invalidate()
             }
@@ -776,6 +803,7 @@ class InkCanvasView(
         val tapped = !multiTapMoved && e.eventTime - multiTapStart < 260
         when (mode) {
             Mode.Ink -> if (cancelled) cancelWet() else finishInk()
+            Mode.Laser -> { laserFadeAt = SystemClock.uptimeMillis() + LASER_HOLD_MS; invalidate() }
             Mode.Erase -> finishErase()
             Mode.Lasso -> if (tapped && !cancelled) { lassoPoints = null; tapSelect(e, includeInk = true) } else finishLasso()
             Mode.Shape -> finishShape()
@@ -893,7 +921,7 @@ class InkCanvasView(
     private fun cancelWet() {
         removeCallbacks(holdCheck)
         front?.clear()
-        wetStroke = null; snappedShape = null
+        wetStroke = null; snappedShape = null; morph = null
         mode = Mode.None
         invalidate()
     }
@@ -907,9 +935,14 @@ class InkCanvasView(
         snappedShape = null
         if (pts.isEmpty()) return
         if (shape != null) {
-            val item = shape.copy(seq = doc.nextSeq())
-            doc.edit(pageId, emptyList(), listOf(item))
-            pending += pageId to item
+            val commit = {
+                val item = shape.copy(seq = doc.nextSeq())
+                doc.edit(pageId, emptyList(), listOf(item))
+                pending += pageId to item
+                invalidate()
+            }
+            // Let the spring finish before the shape lands on the page, or it would pop in under it.
+            if (morph != null) morphCommit = commit else commit()
             return
         }
         if (AppGraph.settings.scribbleErase && wetTool != Tool.Highlighter && ScribbleDetector.isScribble(pts)) {
@@ -923,7 +956,9 @@ class InkCanvasView(
                 return
             }
         }
-        val stroke = Stroke(newId(), doc.nextSeq(), wetTool, wetColor, wetWidth, pts)
+        val stroke = Stroke(newId(), doc.nextSeq(), wetTool, wetColor, wetWidth, pts, wetAnim)
+        // Animated strokes are drawn live from the page every frame, never from tiles.
+        val track = !stroke.isAnimated
         if (doc.content(pageId) == null) {
             // Keep it on screen until the page loads, then record it.
             pendingUnloaded += pageId to stroke
@@ -931,13 +966,13 @@ class InkCanvasView(
                 doc.load(pageId)
                 pendingUnloaded.remove(pageId to stroke)
                 doc.edit(pageId, emptyList(), listOf(stroke))
-                pending += pageId to stroke
+                if (track) pending += pageId to stroke
                 invalidate()
             }
             return
         }
         doc.edit(pageId, emptyList(), listOf(stroke))
-        pending += pageId to stroke
+        if (track) pending += pageId to stroke
     }
 
     private fun eraseAt(x0: Float, y0: Float, x1: Float, y1: Float) {
@@ -1153,6 +1188,208 @@ class InkCanvasView(
         select(pageId, listOf(hit))
     }
 
+    // ---- Animated ink ---------------------------------------------------------------------
+
+    /** Animated strokes per page, rebuilt only when the page changes. */
+    private val animatedCache = HashMap<Id, Pair<Long, List<Stroke>>>()
+    private val animTick = Runnable { invalidate() }
+
+    private fun animatedOn(pageId: Id): List<Stroke> {
+        val snap = doc.content(pageId)?.snapshot ?: return emptyList()
+        animatedCache[pageId]?.let { (v, list) -> if (v == snap.version) return list }
+        val list = snap.items.filterIsInstance<Stroke>().filter { it.isAnimated }
+        animatedCache[pageId] = snap.version to list
+        return list
+    }
+
+    /** Draws visible animated strokes for this moment and schedules a redraw for their next frame. */
+    private fun drawAnimated(canvas: Canvas, first: Int, last: Int, vLeft: Float, vTop: Float, vRight: Float, vBottom: Float) {
+        val now = SystemClock.uptimeMillis()
+        var next = Long.MAX_VALUE
+        for (i in first..last) {
+            val page = layout.pages[i]
+            val strokes = animatedOn(page.id).takeIf { it.isNotEmpty() } ?: continue
+            val view = Rect(vLeft - layout.left(i), vTop - layout.tops[i], vRight - layout.left(i), vBottom - layout.tops[i])
+            pageSpace(canvas, page.id) {
+                for (s in strokes) {
+                    if (!s.bounds.outset(animReach(s)).intersects(view)) continue
+                    drawAnimatedStroke(s, now)
+                    next = min(next, animDelayToNextFrame(s, now))
+                }
+            }
+        }
+        removeCallbacks(animTick)
+        if (next != Long.MAX_VALUE) postDelayed(animTick, next.coerceAtLeast(1))
+    }
+
+    // ---- Shape snap spring -----------------------------------------------------------------
+
+    /** A stroke springing into its recognised shape: matching point lists, morphed over time. */
+    private class Morph(val pageId: Id, val from: FloatArray, val to: FloatArray, val start: Long, val argb: Int, val width: Float) {
+        /** Centre of the target shape, which the stretch scales around. */
+        val cx = (0 until to.size / 2).sumOf { to[it * 2].toDouble() }.toFloat() / (to.size / 2)
+        val cy = (0 until to.size / 2).sumOf { to[it * 2 + 1].toDouble() }.toFloat() / (to.size / 2)
+    }
+
+    private var morph: Morph? = null
+    /** Saves the shape once the spring has settled, if the pen lifted before that. */
+    private var morphCommit: (() -> Unit)? = null
+    /** The settled shape is being saved; keep drawing the morph until it is on the page. */
+    private var morphSaving = false
+    private val morphPath = androidx.compose.ui.graphics.Path()
+
+    private fun flushMorph() {
+        morph = null
+        morphCommit?.let { morphCommit = null; it() }
+    }
+
+    private fun buildMorph(pageId: Id, stroke: FloatArray, shape: ShapeItem): Morph {
+        val n = 72
+        val from = resample(stroke, n)
+        val f = shape.frame
+        val to = FloatArray(n * 2)
+        if (shape.kind == ShapeKind.Line || shape.kind == ShapeKind.Arrow) {
+            for (i in 0 until n) {
+                val t = i / (n - 1f)
+                to[i * 2] = f.left + (f.right - f.left) * t
+                to[i * 2 + 1] = f.top + (f.bottom - f.top) * t
+            }
+        } else {
+            // Closed outline, sampled evenly, then turned and started so it lines up with the stroke.
+            val r = f.normalized()
+            val path = com.mheenotes.ui.render.shapePath(shape.kind, r.left, r.top, r.right, r.bottom)
+            val measure = android.graphics.PathMeasure(path.asAndroidPath(), true)
+            val len = measure.length
+            val loop = n - 1
+            val ring = FloatArray(loop * 2)
+            val pos = FloatArray(2)
+            for (i in 0 until loop) {
+                measure.getPosTan(len * i / loop, pos, null)
+                ring[i * 2] = pos[0]; ring[i * 2 + 1] = pos[1]
+            }
+            var best = Float.MAX_VALUE; var bestK = 0; var bestDir = 1
+            for (dir in intArrayOf(1, -1)) for (k in 0 until loop) {
+                var d = 0f
+                var i = 0
+                while (i < n) {
+                    val j = ((k + dir * i) % loop + loop) % loop
+                    d += hypot(from[i * 2] - ring[j * 2], from[i * 2 + 1] - ring[j * 2 + 1])
+                    i += 4
+                }
+                if (d < best) { best = d; bestK = k; bestDir = dir }
+            }
+            for (i in 0 until n) {
+                val j = ((bestK + bestDir * i) % loop + loop) % loop
+                to[i * 2] = ring[j * 2]; to[i * 2 + 1] = ring[j * 2 + 1]
+            }
+        }
+        return Morph(pageId, from, to, SystemClock.uptimeMillis(), shape.argb, shape.strokeWidth)
+    }
+
+    /** [n] points evenly spaced along a stroke's x, y, pressure samples, as x, y pairs. */
+    private fun resample(p: FloatArray, n: Int): FloatArray {
+        val count = p.size / 3
+        val out = FloatArray(n * 2)
+        if (count == 0) return out
+        val cum = FloatArray(count)
+        for (i in 1 until count) cum[i] = cum[i - 1] + hypot(p[i * 3] - p[i * 3 - 3], p[i * 3 + 1] - p[i * 3 - 2])
+        val total = cum[count - 1]
+        var j = 0
+        for (i in 0 until n) {
+            val d = total * i / (n - 1f)
+            while (j < count - 2 && cum[j + 1] < d) j++
+            val seg = (cum[(j + 1).coerceAtMost(count - 1)] - cum[j]).takeIf { it > 1e-5f } ?: 1f
+            val t = ((d - cum[j]) / seg).coerceIn(0f, 1f)
+            val a = j * 3; val b = (j + 1).coerceAtMost(count - 1) * 3
+            out[i * 2] = p[a] + (p[b] - p[a]) * t
+            out[i * 2 + 1] = p[a + 1] + (p[b + 1] - p[a + 1]) * t
+        }
+        return out
+    }
+
+    /** Under-damped spring from 0 to 1: overshoots, swings back, settles, like a rope pulled taut. */
+    private fun spring(t: Float): Float {
+        if (t <= 0f) return 0f
+        val zeta = 0.4f
+        val omega = 14.5f
+        val wd = omega * kotlin.math.sqrt(1 - zeta * zeta)
+        return 1 - kotlin.math.exp(-zeta * omega * t) * (kotlin.math.cos(wd * t) + zeta * omega / wd * kotlin.math.sin(wd * t))
+    }
+
+    private fun drawMorph(canvas: Canvas) {
+        val m = morph ?: return
+        val total = MORPH_MS + MORPH_LAG_MS
+        val elapsed = (SystemClock.uptimeMillis() - m.start).coerceAtMost(total)
+        val n = m.from.size / 2
+        morphPath.reset()
+        for (i in 0 until n) {
+            // The end under the pen leads; the tail follows a little later.
+            val lag = (1f - i / (n - 1f)) * MORPH_LAG_MS
+            val t = ((elapsed - lag) / 1000f).coerceAtLeast(0f)
+            val k = spring(t)
+            // A stretch past full size that recoils, so even a near-perfect stroke visibly twangs.
+            val stretch = 1f + 0.07f * kotlin.math.exp(-5f * t) * kotlin.math.sin(17f * t)
+            val x = m.cx + (m.from[i * 2] + (m.to[i * 2] - m.from[i * 2]) * k - m.cx) * stretch
+            val y = m.cy + (m.from[i * 2 + 1] + (m.to[i * 2 + 1] - m.from[i * 2 + 1]) * k - m.cy) * stretch
+            if (i == 0) morphPath.moveTo(x, y) else morphPath.lineTo(x, y)
+        }
+        pageSpace(canvas, m.pageId) {
+            drawPath(morphPath, Color(m.argb), style = DrawStroke(m.width, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        }
+        if (elapsed < total) { postInvalidateOnAnimation(); return }
+        // Settled. This frame already shows the final pose; the shape takes over from the next one.
+        if (morphSaving) return
+        val commit = morphCommit
+        if (commit == null) { morph = null; invalidate(); return }
+        morphCommit = null
+        morphSaving = true
+        post { commit(); morphSaving = false; morph = null; invalidate() }
+    }
+
+    // ---- Laser pointer ---------------------------------------------------------------------
+
+    /** A glowing pointer line: never saved, and gone a moment after the pen lifts. */
+    private class LaserStroke(val pageId: Id, val pts: FloatList = FloatList())
+
+    private val laser = ArrayList<LaserStroke>()
+    private var laserFadeAt = Long.MAX_VALUE
+    private val laserPath = androidx.compose.ui.graphics.Path()
+
+    private fun startLaser(x: Float, y: Float) {
+        mode = Mode.Laser
+        val pageId = wetPage ?: return
+        laser += LaserStroke(pageId).also { it.pts.add(x, y, 0f) }
+        laserFadeAt = Long.MAX_VALUE
+    }
+
+    private fun drawLaser(canvas: Canvas) {
+        if (laser.isEmpty()) return
+        val now = SystemClock.uptimeMillis()
+        val alpha = if (now < laserFadeAt) 1f else 1f - (now - laserFadeAt).toFloat() / LASER_FADE_MS
+        if (alpha <= 0f) { laser.clear(); return }
+        val dp = density / scale
+        val c = Color(Tools.laserColor)
+        for (s in laser) {
+            val p = s.pts
+            laserPath.reset()
+            laserPath.moveTo(p[0], p[1])
+            var i = 3
+            while (i < p.size) { laserPath.lineTo(p[i], p[i + 1]); i += 3 }
+            if (p.size == 3) laserPath.lineTo(p[0] + 0.01f, p[1])
+            pageSpace(canvas, s.pageId) {
+                // Wide faint layers fake the glow; a white core keeps it bright like a real laser.
+                for ((w, a) in LASER_LAYERS) {
+                    drawPath(laserPath, c.copy(alpha = a * alpha), style = DrawStroke(w * dp, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                }
+                drawPath(laserPath, Color.White.copy(alpha = 0.9f * alpha), style = DrawStroke(1.8f * dp, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            }
+        }
+        when {
+            now >= laserFadeAt -> postInvalidateOnAnimation()
+            mode != Mode.Laser -> postInvalidateDelayed(laserFadeAt - now)
+        }
+    }
+
     private fun textTap(e: MotionEvent) {
         val (pi, x, y) = toPage(e.x, e.y)
         if (pi < 0 || x < 0 || y < 0 || x > layout.pages[pi].width || y > layout.pages[pi].height) return
@@ -1162,6 +1399,8 @@ class InkCanvasView(
     }
 
     fun release() {
+        flushMorph()
+        removeCallbacks(animTick)
         front?.release()
         front = null
         doc.onContent = { _, _, _ -> }
@@ -1173,6 +1412,12 @@ class InkCanvasView(
         const val MIN_ZOOM = 0.35f
         const val MAX_ZOOM = 8f
         const val HOLD_MS = 800L
+        /** How long a snapped stroke springs into its shape, and how far behind the pen its tail lags. */
+        const val MORPH_MS = 620L
+        const val MORPH_LAG_MS = 110L
+        /** How long the laser stays after the pen lifts, then how long it takes to fade. */
+        const val LASER_HOLD_MS = 1100L
+        const val LASER_FADE_MS = 450L
 
     }
 }
@@ -1181,6 +1426,9 @@ private fun FloatArray.minX(): Float { var m = Float.MAX_VALUE; var i = 0; while
 private fun FloatArray.maxX(): Float { var m = -Float.MAX_VALUE; var i = 0; while (i < size) { m = max(m, this[i]); i += 3 }; return m }
 private fun FloatArray.minY(): Float { var m = Float.MAX_VALUE; var i = 1; while (i < size) { m = min(m, this[i]); i += 3 }; return m }
 private fun FloatArray.maxY(): Float { var m = -Float.MAX_VALUE; var i = 1; while (i < size) { m = max(m, this[i]); i += 3 }; return m }
+
+/** Laser glow layers: width in dp and opacity, widest first. */
+private val LASER_LAYERS = listOf(18f to 0.12f, 10f to 0.26f, 5f to 0.95f)
 
 private val HIT = Color(0x66FFD60A)
 private val HIT_CURRENT = Color(0x80FF9F0A)

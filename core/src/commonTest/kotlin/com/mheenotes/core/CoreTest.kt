@@ -193,6 +193,25 @@ class FormatTest {
     }
 
     @Test
+    fun animatedStrokesKeepTheirMotionAndOldStrokesStillDecode() {
+        // A version-2 stroke has no animation field.
+        val w = com.mheenotes.core.store.ByteWriter()
+        w.byte(2); w.byte(Tool.Pen.ordinal); w.int(7); w.float(2f); w.int(3); w.float(1f); w.float(2f); w.float(0.5f)
+        val old = ItemCodec.decode("s", 1, ItemCodec.KIND_STROKE, w.toByteArray()) as Stroke
+        assertEquals(0, old.anim); assertEquals(Tool.Pen, old.tool)
+
+        val motion = com.mheenotes.core.model.InkMotion(motion = 2, speed = 3, color = 1, strength = 2)
+        assertEquals(motion, com.mheenotes.core.model.InkMotion.unpack(motion.pack()))
+        val s = line(0f, 0f, 100f, 0f, tool = Tool.Animated).let { Stroke(it.id, it.seq, it.tool, it.argb, it.width, it.points, motion.pack()) }
+        val back = ItemCodec.decode(s.id, s.seq, ItemCodec.KIND_STROKE, ItemCodec.encode(s)) as Stroke
+        assertTrue(back.isAnimated); assertEquals(motion.pack(), back.anim)
+        // Erasing a piece out of it, or moving it, keeps the animation.
+        val pieces = StrokeGeometry.eraseCircle(s, 50f, 0f, 5f) { 9 }
+        assertTrue(pieces != null && pieces.isNotEmpty() && pieces.all { it.anim == s.anim && it.isAnimated })
+        assertEquals(s.anim, StrokeGeometry.transform(s, com.mheenotes.core.geometry.Similarity(0f, 0f, scale = 2f, dx = 3f, dy = 4f)).anim)
+    }
+
+    @Test
     fun pageFieldsPersist() = runTest {
         val files = AppFiles(kotlin.io.path.createTempDirectory("mn").toString())
         val id = newId()

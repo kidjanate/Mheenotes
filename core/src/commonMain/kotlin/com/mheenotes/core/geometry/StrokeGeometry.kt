@@ -15,7 +15,7 @@ object StrokeGeometry {
         val p = pressure.coerceIn(0f, 1f)
         val half = width / 2f
         return when (tool) {
-            Tool.Pen -> half * (0.28f + 0.72f * p.pow(0.8f))
+            Tool.Pen, Tool.Animated -> half * (0.28f + 0.72f * p.pow(0.8f))
             Tool.Pencil -> half * (0.55f + 0.45f * p)
             Tool.Highlighter -> half
         }
@@ -87,7 +87,7 @@ object StrokeGeometry {
             return dist(p[a], p[a + 1], cx, cy) <= r + radius(s.tool, s.width, p[a + 2]) * 0.5f
         }
         fun flush() {
-            if (current.size >= 3) pieces += Stroke(newId(), nextSeq(), s.tool, s.argb, s.width, current.toArray())
+            if (current.size >= 3) pieces += Stroke(newId(), nextSeq(), s.tool, s.argb, s.width, current.toArray(), s.anim)
             current = FloatList()
         }
         for (i in 0 until n) {
@@ -122,7 +122,7 @@ object StrokeGeometry {
             out[i + 2] = src[i + 2]
             i += 3
         }
-        return Stroke(s.id, seq, s.tool, s.argb, s.width * t.scale, out)
+        return Stroke(s.id, seq, s.tool, s.argb, s.width * t.scale, out, s.anim)
     }
 
     /**

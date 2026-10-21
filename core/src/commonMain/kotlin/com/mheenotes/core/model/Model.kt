@@ -76,7 +76,30 @@ data class Page(
 
 const val PAPER_WHITE: Int = 0xFFFFFFFF.toInt()
 
-enum class Tool { Pen, Pencil, Highlighter }
+// New entries go at the end: ordinals are stored.
+enum class Tool { Pen, Pencil, Highlighter, Animated }
+
+/**
+ * Looping stop-motion settings for [Tool.Animated] strokes, packed into one int so the stroke
+ * stays a flat record. Each field is 0..3.
+ */
+data class InkMotion(val motion: Int = 0, val speed: Int = 1, val color: Int = 0, val strength: Int = 1) {
+    fun pack(): Int = (motion and 3) or ((speed and 3) shl 2) or ((color and 3) shl 4) or ((strength and 3) shl 6)
+
+    companion object {
+        /** Motion styles. */
+        const val BOIL = 0
+        const val WAVE = 1
+        const val BOUNCE = 2
+
+        /** Color effects. */
+        const val SOLID = 0
+        const val RAINBOW = 1
+        const val FLICKER = 2
+
+        fun unpack(v: Int) = InkMotion(v and 3, (v shr 2) and 3, (v shr 4) and 3, (v shr 6) and 3)
+    }
+}
 
 enum class ShapeKind { Line, Arrow, Rectangle, Ellipse, Triangle, RoundedRectangle }
 
@@ -102,8 +125,11 @@ class Stroke(
     val argb: Int,
     val width: Float,
     val points: FloatArray,
+    /** Packed [InkMotion] for animated strokes; 0 otherwise. */
+    val anim: Int = 0,
 ) : Item {
     val pointCount: Int get() = points.size / 3
+    val isAnimated: Boolean get() = tool == Tool.Animated
     override val bounds: Rect by lazy { com.mheenotes.core.geometry.StrokeGeometry.bounds(this) }
 
     fun copy(
@@ -112,7 +138,7 @@ class Stroke(
         argb: Int = this.argb,
         width: Float = this.width,
         points: FloatArray = this.points,
-    ) = Stroke(id, seq, tool, argb, width, points)
+    ) = Stroke(id, seq, tool, argb, width, points, anim)
 }
 
 data class ImageItem(

@@ -13,8 +13,8 @@ import com.mheenotes.core.model.FontKind
 
 /** Compact little-endian binary encoding of page items. Version byte first for future changes. */
 object ItemCodec {
-    /** Version 2 added image lock and text styling; version 1 items still decode. */
-    private const val VERSION: Int = 2
+    /** Version 2 added image lock and text styling, version 3 stroke animation; older items still decode. */
+    private const val VERSION: Int = 3
     const val KIND_STROKE = 1
     const val KIND_IMAGE = 2
     const val KIND_TEXT = 3
@@ -35,6 +35,7 @@ object ItemCodec {
                 w.byte(item.tool.ordinal); w.int(item.argb); w.float(item.width)
                 w.int(item.points.size)
                 for (f in item.points) w.float(f)
+                w.int(item.anim)
             }
             is ImageItem -> {
                 w.string(item.assetId); w.rect(item.frame); w.float(item.rotation); w.rect(item.crop); w.float(item.aspect)
@@ -62,7 +63,8 @@ object ItemCodec {
                 val tool = Tool.entries[r.byte()]
                 val argb = r.int(); val width = r.float()
                 val n = r.int()
-                Stroke(id, seq, tool, argb, width, FloatArray(n) { r.float() })
+                val points = FloatArray(n) { r.float() }
+                Stroke(id, seq, tool, argb, width, points, if (version >= 3) r.int() else 0)
             }
             KIND_IMAGE -> {
                 val img = ImageItem(id, seq, r.string(), r.rect(), r.float(), r.rect(), r.float())

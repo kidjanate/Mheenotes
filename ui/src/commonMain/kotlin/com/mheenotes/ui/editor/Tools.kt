@@ -9,7 +9,8 @@ import com.mheenotes.core.model.ShapeKind
 import com.mheenotes.core.model.Tool
 import com.mheenotes.ui.AppGraph
 
-enum class ToolKind { Pen, Pencil, Highlighter, Eraser, Lasso, Text, Shape, Hand }
+// Stored by name, so new tools can go anywhere.
+enum class ToolKind { Pen, Pencil, Highlighter, Eraser, Lasso, Text, Shape, Hand, Laser, Animated }
 
 enum class EraserMode { Whole, Partial }
 
@@ -24,6 +25,10 @@ val PEN_WIDTHS = listOf(1.0f, 1.8f, 3.0f)
 val PENCIL_WIDTHS = listOf(0.9f, 1.5f, 2.6f)
 val HIGHLIGHT_WIDTHS = listOf(10f, 16f, 24f)
 val ERASER_WIDTHS = listOf(6f, 14f, 30f)
+val ANIMATED_WIDTHS = listOf(1.8f, 3f, 5f)
+
+/** Laser pointer colors: bright enough to glow on paper and on dark PDFs. */
+val LASER_COLORS = listOf(0xFFFF3B30, 0xFF34C759, 0xFF0A84FF).map { it.toInt() }
 
 /**
  * Current tool and per-tool settings, shared by every tab. Persisted as a compact string so
@@ -39,6 +44,11 @@ object Tools {
     var highlighterColor by mutableIntStateOf(HIGHLIGHT_COLORS[0])
     var shapeColor by mutableIntStateOf(INK_COLORS[1])
     var textColor by mutableIntStateOf(INK_COLORS[0])
+    var laserColor by mutableIntStateOf(LASER_COLORS[0])
+    var animatedColor by mutableIntStateOf(INK_COLORS[1])
+    var animatedWidth by mutableFloatStateOf(ANIMATED_WIDTHS[1])
+    /** Motion for new animated strokes. */
+    var inkMotion by mutableStateOf(com.mheenotes.core.model.InkMotion())
 
     var penWidth by mutableFloatStateOf(PEN_WIDTHS[1])
     var pencilWidth by mutableFloatStateOf(PENCIL_WIDTHS[1])
@@ -78,12 +88,13 @@ object Tools {
     var shapeKind by mutableStateOf(ShapeKind.Rectangle)
     var shapeFill by mutableStateOf(false)
 
-    val isInk: Boolean get() = current == ToolKind.Pen || current == ToolKind.Pencil || current == ToolKind.Highlighter
+    val isInk: Boolean get() = current == ToolKind.Pen || current == ToolKind.Pencil || current == ToolKind.Highlighter || current == ToolKind.Animated
 
     fun inkTool(kind: ToolKind = current): Tool? = when (kind) {
         ToolKind.Pen -> Tool.Pen
         ToolKind.Pencil -> Tool.Pencil
         ToolKind.Highlighter -> Tool.Highlighter
+        ToolKind.Animated -> Tool.Animated
         else -> null
     }
 
@@ -93,6 +104,8 @@ object Tools {
         ToolKind.Highlighter -> highlighterColor
         ToolKind.Shape -> shapeColor
         ToolKind.Text -> textColor
+        ToolKind.Laser -> laserColor
+        ToolKind.Animated -> animatedColor
         else -> penColor
     }
 
@@ -103,6 +116,8 @@ object Tools {
             ToolKind.Highlighter -> highlighterColor = argb
             ToolKind.Shape -> shapeColor = argb
             ToolKind.Text -> textColor = argb
+            ToolKind.Laser -> laserColor = argb
+            ToolKind.Animated -> animatedColor = argb
             else -> return
         }
         save()
@@ -114,6 +129,7 @@ object Tools {
         ToolKind.Highlighter -> highlighterWidth
         ToolKind.Eraser -> eraserWidth
         ToolKind.Shape -> shapeWidth
+        ToolKind.Animated -> animatedWidth
         else -> penWidth
     }
 
@@ -138,6 +154,7 @@ object Tools {
             ToolKind.Highlighter -> highlighterWidth = w
             ToolKind.Eraser -> eraserWidth = w
             ToolKind.Shape -> shapeWidth = w
+            ToolKind.Animated -> animatedWidth = w
             else -> return
         }
         save()
@@ -147,11 +164,12 @@ object Tools {
         ToolKind.Pencil -> PENCIL_WIDTHS
         ToolKind.Highlighter -> HIGHLIGHT_WIDTHS
         ToolKind.Eraser -> ERASER_WIDTHS
+        ToolKind.Animated -> ANIMATED_WIDTHS
         else -> PEN_WIDTHS
     }
 
     fun select(kind: ToolKind) {
-        if (kind == ToolKind.Pen || kind == ToolKind.Pencil || kind == ToolKind.Highlighter) previousInk = kind
+        if (kind == ToolKind.Pen || kind == ToolKind.Pencil || kind == ToolKind.Highlighter || kind == ToolKind.Animated) previousInk = kind
         current = kind
         save()
     }
@@ -170,11 +188,13 @@ object Tools {
         m["tool"]?.let { v -> ToolKind.entries.firstOrNull { it.name == v }?.let { current = it } }
         i("pc") { penColor = it }; i("nc") { pencilColor = it }; i("hc") { highlighterColor = it }
         i("sc") { shapeColor = it }; i("tc") { textColor = it }
+        i("lc") { laserColor = it }; i("ac") { animatedColor = it }; f("aw") { animatedWidth = it }
+        i("am") { inkMotion = com.mheenotes.core.model.InkMotion.unpack(it) }
         f("pw") { penWidth = it }; f("nw") { pencilWidth = it }; f("hw") { highlighterWidth = it }
         f("ew") { eraserWidth = it }; f("sw") { shapeWidth = it }; f("ts") { textSize = it }
         m["em"]?.let { v -> EraserMode.entries.firstOrNull { it.name == v }?.let { eraserMode = it } }
         m["sk"]?.let { v -> ShapeKind.entries.firstOrNull { it.name == v }?.let { shapeKind = it } }
-        for (k in listOf(ToolKind.Pen, ToolKind.Pencil, ToolKind.Highlighter, ToolKind.Eraser, ToolKind.Shape)) {
+        for (k in listOf(ToolKind.Pen, ToolKind.Pencil, ToolKind.Highlighter, ToolKind.Eraser, ToolKind.Shape, ToolKind.Animated)) {
             m["wp${k.ordinal}"]?.split(',')?.mapNotNull { it.toFloatOrNull() }?.takeIf { it.size == 3 }?.let { widthPresets[k] = it }
             m["ap${k.ordinal}"]?.toIntOrNull()?.takeIf { it in 0..2 }?.let { activePreset[k] = it }
         }
@@ -195,6 +215,7 @@ object Tools {
             append("hc=${highlighterColor.toLong() and 0xffffffffL};sc=${shapeColor.toLong() and 0xffffffffL};tc=${textColor.toLong() and 0xffffffffL};")
             append("pw=$penWidth;nw=$pencilWidth;hw=$highlighterWidth;ew=$eraserWidth;sw=$shapeWidth;ts=$textSize;")
             append("em=${eraserMode.name};sk=${shapeKind.name};")
+            append("lc=${laserColor.toLong() and 0xffffffffL};ac=${animatedColor.toLong() and 0xffffffffL};aw=$animatedWidth;am=${inkMotion.pack()};")
             append("cc=" + customColors.joinToString(",") { (it.toLong() and 0xffffffffL).toString() } + ";")
             val t = textStyle
             fun b(v: Boolean) = if (v) "1" else "0"

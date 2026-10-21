@@ -250,4 +250,21 @@
     <string name="render_memory_low">Low</string>
     <string name="render_memory_balanced">Balanced</string>
     <string name="render_memory_high">High</string>
+    <string name="laser_hint">Glows while you point, then fades a moment after you lift the pen. Nothing is saved.</string>
+    <string name="motion">Motion</string>
+    <string name="motion_boil">Boil</string>
+    <string name="motion_wave">Wave</string>
+    <string name="motion_bounce">Bounce</string>
+    <string name="speed">Speed</string>
+    <string name="speed_slow">Slow</string>
+    <string name="speed_normal">Normal</string>
+    <string name="speed_fast">Fast</string>
+    <string name="color_effect">Color effect</string>
+    <string name="effect_solid">Solid</string>
+    <string name="effect_rainbow">Rainbow</string>
+    <string name="effect_flicker">Flicker</string>
+    <string name="strength">Strength</string>
+    <string name="strength_subtle">Subtle</string>
+    <string name="strength_medium">Medium</string>
+    <string name="strength_wild">Wild</string>
 </resources>

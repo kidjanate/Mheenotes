@@ -239,4 +239,21 @@
     <string name="render_memory_low">ต่ำ</string>
     <string name="render_memory_balanced">สมดุล</string>
     <string name="render_memory_high">สูง</string>
+    <string name="laser_hint">เรืองแสงระหว่างชี้ แล้วค่อยๆ จางหายหลังยกปากกา ไม่ถูกบันทึก</string>
+    <string name="motion">การเคลื่อนไหว</string>
+    <string name="motion_boil">สั่นไหว</string>
+    <string name="motion_wave">คลื่น</string>
+    <string name="motion_bounce">เด้ง</string>
+    <string name="speed">ความเร็ว</string>
+    <string name="speed_slow">ช้า</string>
+    <string name="speed_normal">ปกติ</string>
+    <string name="speed_fast">เร็ว</string>
+    <string name="color_effect">เอฟเฟกต์สี</string>
+    <string name="effect_solid">สีเดียว</string>
+    <string name="effect_rainbow">สีรุ้ง</string>
+    <string name="effect_flicker">กะพริบ</string>
+    <string name="strength">ความแรง</string>
+    <string name="strength_subtle">เบา</string>
+    <string name="strength_medium">กลาง</string>
+    <string name="strength_wild">จัดเต็ม</string>
 </resources>

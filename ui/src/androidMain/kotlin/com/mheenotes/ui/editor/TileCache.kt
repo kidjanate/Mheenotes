@@ -7,6 +7,7 @@ import com.mheenotes.core.doc.PageContent
 import com.mheenotes.core.geometry.Rect
 import com.mheenotes.core.model.Id
 import com.mheenotes.core.model.Page
+import com.mheenotes.core.model.Stroke
 import com.mheenotes.ui.AppGraph
 import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -91,7 +92,11 @@ class TileCache(
             val span = tileSpan(t.key.level)
             val area = t.rect()
             try {
-                rasterizer.render(bmp, notebookId, page, content.snapshot.query(area.outset(span * 0.01f)), levelScale(t.key.level), area.left, area.top)
+                // Animated strokes move every frame, so the canvas draws them live instead.
+                val items = content.snapshot.query(area.outset(span * 0.01f)).let { all ->
+                    if (all.any { it is Stroke && it.isAnimated }) all.filterNot { it is Stroke && it.isAnimated } else all
+                }
+                rasterizer.render(bmp, notebookId, page, items, levelScale(t.key.level), area.left, area.top)
             } catch (e: Throwable) {
                 e.printStackTrace()
             }
