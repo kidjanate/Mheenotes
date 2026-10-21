@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.ArchiveRestore
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Ellipsis
+import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Folder
 import com.composables.icons.lucide.FolderInput
 import com.composables.icons.lucide.Lucide
@@ -69,6 +70,7 @@ class NotebookActions(
     val move: (Notebook) -> Unit,
     val deleteForever: (Notebook) -> Unit,
     val export: (Notebook) -> Unit,
+    val sharePdf: (Notebook) -> Unit,
 )
 
 /** Cover aspect for the grid. Thumbnails letterbox inside it. */
@@ -193,7 +195,8 @@ private fun NotebookMenu(n: Notebook, trash: Boolean, expanded: Boolean, onDismi
             }
             MenuItem(s.moveTo, icon = Lucide.FolderInput) { onDismiss(); a.move(n) }
             MenuItem(s.duplicate, icon = Lucide.Copy) { onDismiss(); AppGraph.duplicate(n.id, "(2)") }
-            MenuItem(s.share, icon = Lucide.Share2) { onDismiss(); a.export(n) }
+            MenuItem(s.sharePdf, icon = Lucide.FileText) { onDismiss(); a.sharePdf(n) }
+            MenuItem(s.shareNotebook, icon = Lucide.Share2) { onDismiss(); a.export(n) }
             MenuDivider()
             MenuItem(s.moveToTrash, icon = Lucide.Trash2, danger = true) { onDismiss(); AppGraph.trash(listOf(n.id)) }
         }

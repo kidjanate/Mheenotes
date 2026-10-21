@@ -47,6 +47,17 @@ object Tools {
     var shapeWidth by mutableFloatStateOf(PEN_WIDTHS[1])
     var textSize by mutableFloatStateOf(16f)
 
+    /** User-made colors, most recent first. */
+    val customColors = androidx.compose.runtime.mutableStateListOf<Int>()
+
+    fun addCustomColor(argb: Int) {
+        val opaque = argb or 0xFF000000.toInt()
+        customColors.remove(opaque)
+        customColors.add(0, opaque)
+        while (customColors.size > 8) customColors.removeAt(customColors.lastIndex)
+        save()
+    }
+
     var eraserMode by mutableStateOf(EraserMode.Whole)
     var shapeKind by mutableStateOf(ShapeKind.Rectangle)
     var shapeFill by mutableStateOf(false)
@@ -133,6 +144,7 @@ object Tools {
         f("ew") { eraserWidth = it }; f("sw") { shapeWidth = it }; f("ts") { textSize = it }
         m["em"]?.let { v -> EraserMode.entries.firstOrNull { it.name == v }?.let { eraserMode = it } }
         m["sk"]?.let { v -> ShapeKind.entries.firstOrNull { it.name == v }?.let { shapeKind = it } }
+        m["cc"]?.split(',')?.mapNotNull { it.toLongOrNull()?.toInt() }?.let { customColors.clear(); customColors.addAll(it) }
         if (current == ToolKind.Hand) current = ToolKind.Pen
     }
 
@@ -141,7 +153,8 @@ object Tools {
             append("tool=${current.name};pc=${penColor.toLong() and 0xffffffffL};nc=${pencilColor.toLong() and 0xffffffffL};")
             append("hc=${highlighterColor.toLong() and 0xffffffffL};sc=${shapeColor.toLong() and 0xffffffffL};tc=${textColor.toLong() and 0xffffffffL};")
             append("pw=$penWidth;nw=$pencilWidth;hw=$highlighterWidth;ew=$eraserWidth;sw=$shapeWidth;ts=$textSize;")
-            append("em=${eraserMode.name};sk=${shapeKind.name}")
+            append("em=${eraserMode.name};sk=${shapeKind.name};")
+            append("cc=" + customColors.joinToString(",") { (it.toLong() and 0xffffffffL).toString() })
         }
         AppGraph.settings.updateTools(s)
     }

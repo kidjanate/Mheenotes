@@ -134,6 +134,8 @@ class InkCanvasView(
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        // A resized window must never show a stale low-latency frame on top.
+        front?.clear()
         val zoom = if (initialized) scale / fitScale else tab.zoom
         val topDoc = if (initialized) (chrome.topInset - ty) / scale else tab.scrollY
         computeFit()
@@ -598,7 +600,10 @@ class InkCanvasView(
     private val holdCheck = Runnable {
         if (mode != Mode.Ink || snappedShape != null || !AppGraph.settings.holdToShape || wetTool == Tool.Highlighter) return@Runnable
         if (SystemClock.uptimeMillis() - lastMoveAt < HOLD_MS - 20) { scheduleHoldCheck(); return@Runnable }
-        val rec = ShapeRecognizer.recognize(wetPoints.toArray()) ?: return@Runnable
+        val pts = wetPoints.toArray()
+        // A scribble that pauses at the end is an erase gesture, not a shape.
+        if (ScribbleDetector.isScribble(pts)) return@Runnable
+        val rec = ShapeRecognizer.recognize(pts) ?: return@Runnable
         snappedShape = ShapeItem(newId(), 0, rec.kind, rec.frame, wetColor, max(wetWidth, 1f))
         front?.clear()
         performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
@@ -647,7 +652,7 @@ class InkCanvasView(
                 val before = wetPoints.size
                 addSample(x, y, pressureOf(e, idx, -1))
                 sendFront()
-                if (wetPoints.size != before && hypot(x - holdX, y - holdY) * scale > 3 * density) {
+                if (wetPoints.size != before && hypot(x - holdX, y - holdY) * scale > 2 * density) {
                     holdX = x; holdY = y
                     lastMoveAt = SystemClock.uptimeMillis()
                     scheduleHoldCheck()
@@ -707,7 +712,7 @@ class InkCanvasView(
         when (mode) {
             Mode.Ink -> if (cancelled) cancelWet() else finishInk()
             Mode.Erase -> finishErase()
-            Mode.Lasso -> finishLasso()
+            Mode.Lasso -> if (tapped && !cancelled) { lassoPoints = null; tapSelect(e, includeInk = true) } else finishLasso()
             Mode.Shape -> finishShape()
             Mode.Text -> if (!cancelled) textTap(e)
             Mode.SelMove, Mode.SelScale, Mode.SelRotate -> Unit
@@ -726,7 +731,11 @@ class InkCanvasView(
                     }
                 }
                 if (tapped && multiTapMaxPointers == 1) {
-                    if (tab.selection != null) commitSelection() else if (Tools.current == ToolKind.Text) textTap(e)
+                    when {
+                        tab.selection != null -> commitSelection()
+                        Tools.current == ToolKind.Text -> textTap(e)
+                        else -> tapSelect(e, includeInk = false)
+                    }
                 }
             }
             Mode.Pinch -> Unit
@@ -916,7 +925,7 @@ class InkCanvasView(
         val content = doc.content(pageId) ?: return
         val items = content.snapshot.query(lasso.bounds).filter { lasso.selects(it) }
         // Nothing to move: keep the area so it can still be captured as an image.
-        if (items.isEmpty()) { tab.captureArea = CaptureArea(pageId, xy); return }
+        if (items.isEmpty()) { tab.captureArea = CaptureArea(pageId, boundingRect(xy)); return }
         select(pageId, items, xy)
     }
 
@@ -1025,6 +1034,26 @@ class InkCanvasView(
         pending += pageId to item
     }
 
+    /**
+     * Tapping an image, text box or shape selects it, so it can be moved or resized without
+     * lassoing. With the lasso tool, a tap also picks a single stroke.
+     */
+    private fun tapSelect(e: MotionEvent, includeInk: Boolean) {
+        val (pi, x, y) = toPage(e.x, e.y)
+        if (pi < 0) return
+        val pageId = layout.pages[pi].id
+        val r = 10 * density / scale
+        val hit = doc.content(pageId)?.snapshot?.query(Rect.around(x, y, r))?.lastOrNull { item ->
+            when (item) {
+                is Stroke -> includeInk && StrokeGeometry.hits(item, x, y, r)
+                is ShapeItem -> shapeHit(item, x, y, r)
+                else -> item.bounds.contains(x, y)
+            }
+        } ?: return
+        if (Tools.current != ToolKind.Lasso) Tools.select(ToolKind.Lasso)
+        select(pageId, listOf(hit))
+    }
+
     private fun textTap(e: MotionEvent) {
         val (pi, x, y) = toPage(e.x, e.y)
         if (pi < 0 || x < 0 || y < 0 || x > layout.pages[pi].width || y > layout.pages[pi].height) return
@@ -1044,7 +1073,7 @@ class InkCanvasView(
     companion object {
         const val MIN_ZOOM = 0.35f
         const val MAX_ZOOM = 8f
-        const val HOLD_MS = 550L
+        const val HOLD_MS = 800L
 
     }
 }

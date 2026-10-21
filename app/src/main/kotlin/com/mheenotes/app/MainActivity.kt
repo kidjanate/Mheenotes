@@ -9,6 +9,7 @@ import com.mheenotes.ui.App
 import com.mheenotes.ui.AppGraph
 import com.mheenotes.ui.AppState
 import com.mheenotes.ui.dev.Fixtures
+import com.mheenotes.ui.platform.Imports
 import com.mheenotes.ui.platform.LegacyImport
 import kotlinx.coroutines.launch
 
@@ -30,6 +31,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Suppress("DEPRECATION")
+    private fun sharedUris(intent: Intent): List<android.net.Uri> = when (intent.action) {
+        Intent.ACTION_SEND -> listOfNotNull(intent.getParcelableExtra(Intent.EXTRA_STREAM) as? android.net.Uri)
+        Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM).orEmpty()
+        Intent.ACTION_VIEW -> listOfNotNull(intent.data)
+        else -> emptyList()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handle(intent)
@@ -37,6 +46,16 @@ class MainActivity : ComponentActivity() {
 
     private fun handle(intent: Intent?) {
         intent ?: return
+        sharedUris(intent).takeIf { it.isNotEmpty() }?.let { uris ->
+            AppGraph.scope.launch {
+                AppGraph.awaitLoaded()
+                val imported = Imports.importShared(uris, intent.type)
+                imported.firstOrNull()?.let { AppState.shared.open(it.id) }
+                    ?: android.widget.Toast.makeText(this@MainActivity, com.mheenotes.ui.i18n.strings().importFailed, android.widget.Toast.LENGTH_SHORT).show()
+            }
+            setIntent(Intent()) // do not import again on rotation or relaunch
+            return
+        }
         // Debug-only hooks for performance runs: `am start --es fixture library|dense`.
         if (Fixtures.enabled) when (intent.getStringExtra("fixture")) {
             "library" -> Fixtures.library(intent.getIntExtra("count", 1000))

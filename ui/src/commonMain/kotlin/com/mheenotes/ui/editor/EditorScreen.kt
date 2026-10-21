@@ -46,6 +46,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -161,10 +164,43 @@ private fun TopBar(app: AppState, tab: EditorTab, rail: Boolean, onRail: () -> U
             IconButton(Lucide.ChevronLeft, { app.backToLibrary() })
             IconButton(Lucide.PanelLeft, onRail, selected = rail)
             Spacer(Modifier.width(6.dp))
+            // Long-press a tab and drag sideways to reorder; neighbours swap as it passes them.
+            val widths = remember { mutableMapOf<String, Int>() }
+            var dragId by remember { mutableStateOf<String?>(null) }
+            var dragX by remember { mutableStateOf(0f) }
             Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 app.tabs.forEach { t ->
-                    val title = lib.notebooks.firstOrNull { it.id == t.notebookId }?.title ?: s.untitled
-                    TabPill(title, t.notebookId == app.activeTabId, app.tabs.size > 1, { tab.canvas?.commitSelection(); app.activeTabId = t.notebookId }) { app.closeTab(t.notebookId) }
+                    key(t.notebookId) {
+                        val title = lib.notebooks.firstOrNull { it.id == t.notebookId }?.title ?: s.untitled
+                        val dragging = dragId == t.notebookId
+                        Box(
+                            Modifier
+                                .onSizeChanged { widths[t.notebookId] = it.width }
+                                .zIndex(if (dragging) 1f else 0f)
+                                .graphicsLayer { translationX = if (dragging) dragX else 0f; scaleX = if (dragging) 1.04f else 1f; scaleY = scaleX }
+                                .pointerInput(t.notebookId) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { dragId = t.notebookId; dragX = 0f },
+                                        onDragEnd = { dragId = null; dragX = 0f },
+                                        onDragCancel = { dragId = null; dragX = 0f },
+                                    ) { change, amount ->
+                                        change.consume()
+                                        dragX += amount.x
+                                        val i = app.tabs.indexOfFirst { it.notebookId == t.notebookId }
+                                        val gap = 6.dp.toPx()
+                                        val next = app.tabs.getOrNull(i + 1)
+                                        val prev = app.tabs.getOrNull(i - 1)
+                                        if (next != null && dragX > (widths[next.notebookId] ?: 0) / 2f) {
+                                            app.tabs.add(i + 1, app.tabs.removeAt(i)); dragX -= (widths[next.notebookId] ?: 0) + gap
+                                        } else if (prev != null && dragX < -(widths[prev.notebookId] ?: 0) / 2f) {
+                                            app.tabs.add(i - 1, app.tabs.removeAt(i)); dragX += (widths[prev.notebookId] ?: 0) + gap
+                                        }
+                                    }
+                                },
+                        ) {
+                            TabPill(title, t.notebookId == app.activeTabId, app.tabs.size > 1, { tab.canvas?.commitSelection(); app.activeTabId = t.notebookId }) { app.closeTab(t.notebookId) }
+                        }
+                    }
                 }
             }
             Spacer(Modifier.width(6.dp))
@@ -172,10 +208,8 @@ private fun TopBar(app: AppState, tab: EditorTab, rail: Boolean, onRail: () -> U
             IconButton(Lucide.Redo2, { scope.launch { doc?.redo() } }, enabled = canRedo)
             Spacer(Modifier.width(4.dp))
             IconButton(Lucide.FilePlus, { doc?.let { addPageAfter(tab, it, tab.currentPage) } })
-            Box {
-                IconButton(Lucide.Share2, { export = true })
-                ExportPopover(tab, export) { export = false }
-            }
+            IconButton(Lucide.Share2, { export = true })
+            ExportModal(tab, export) { export = false }
             Box {
                 IconButton(Lucide.Ellipsis, { more = true })
                 Popover(more, { more = false }, align = Alignment.End) {

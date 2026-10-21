@@ -1,44 +1,103 @@
 package com.mheenotes.ui.editor
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import com.composables.icons.lucide.FileImage
-import com.composables.icons.lucide.FileText
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.NotebookPen
+import com.composables.icons.lucide.Share2
+import com.mheenotes.ui.design.Button
+import com.mheenotes.ui.design.ButtonStyle
 import com.mheenotes.ui.design.LocalOverlays
-import com.mheenotes.ui.design.MenuItem
-import com.mheenotes.ui.design.MenuLabel
-import com.mheenotes.ui.design.Popover
+import com.mheenotes.ui.design.M
+import com.mheenotes.ui.design.Modal
+import com.mheenotes.ui.design.ModalActions
+import com.mheenotes.ui.design.ModalTitle
+import com.mheenotes.ui.design.Segmented
+import com.mheenotes.ui.design.Text
+import com.mheenotes.ui.design.TextField
 import com.mheenotes.ui.i18n.S
+import com.mheenotes.core.doc.parsePageRange
 import kotlinx.coroutines.launch
-import androidx.compose.ui.Alignment
 
-enum class ExportKind { Pdf, PagePng, Notebook }
+enum class ExportKind { Pdf, Png, Notebook }
+
+enum class PageRange { All, Current, Custom }
 
 @Composable
-fun ExportPopover(tab: EditorTab, expanded: Boolean, onDismiss: () -> Unit) {
+fun ExportModal(tab: EditorTab, visible: Boolean, onDismiss: () -> Unit) {
     val s = S
+    val c = M.colors
     val scope = rememberCoroutineScope()
     val overlays = LocalOverlays.current
-    fun run(kind: ExportKind) {
-        onDismiss()
-        tab.canvas?.commitSelection()
-        overlays.toast(s.exporting)
-        scope.launch {
-            val ok = runCatching { Exporter.exportAndShare(tab, kind) }.getOrElse { it.printStackTrace(); false }
-            if (!ok) overlays.toast(s.exportFailed)
-        }
+    val pages by (tab.doc?.pages ?: return).collectAsState()
+    var kind by remember { mutableStateOf(ExportKind.Pdf) }
+    var range by remember { mutableStateOf(PageRange.All) }
+    var custom by remember(visible) { mutableStateOf("1-${pages.size}") }
+    val selected: List<Int>? = when {
+        kind == ExportKind.Notebook || range == PageRange.All -> pages.indices.toList()
+        range == PageRange.Current -> listOf(tab.currentPage.coerceIn(0, pages.lastIndex))
+        else -> parsePageRange(custom, pages.size)
     }
-    Popover(expanded, onDismiss, align = Alignment.End) {
-        MenuLabel(s.export)
-        MenuItem(s.exportPdf, icon = Lucide.FileText) { run(ExportKind.Pdf) }
-        MenuItem(s.exportPng, icon = Lucide.FileImage) { run(ExportKind.PagePng) }
-        MenuItem(s.exportNotebook, icon = Lucide.NotebookPen) { run(ExportKind.Notebook) }
+    Modal(visible, onDismiss, width = 480.dp) {
+        ModalTitle(s.export)
+        Segmented(ExportKind.entries, kind, { kind = it }, Modifier.fillMaxWidth()) { o, sel ->
+            Text(
+                when (o) { ExportKind.Pdf -> "PDF"; ExportKind.Png -> s.imageFormat; ExportKind.Notebook -> s.exportNotebook },
+                style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary, maxLines = 1,
+            )
+        }
+        AnimatedVisibility(kind != ExportKind.Notebook) {
+            Column {
+                Spacer(Modifier.height(20.dp))
+                Text(s.pages_, style = M.type.calloutStrong, color = c.textSecondary)
+                Spacer(Modifier.height(8.dp))
+                Segmented(PageRange.entries, range, { range = it }, Modifier.fillMaxWidth()) { o, sel ->
+                    Text(
+                        when (o) { PageRange.All -> s.exportAll; PageRange.Current -> s.exportCurrent; PageRange.Custom -> s.exportRange },
+                        style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary, maxLines = 1,
+                    )
+                }
+                AnimatedVisibility(range == PageRange.Custom) {
+                    Column {
+                        Spacer(Modifier.height(10.dp))
+                        TextField(custom, { custom = it }, Modifier.fillMaxWidth(), placeholder = "1-3, 5")
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            if (selected == null) s.rangeInvalid else s.pages(selected.size),
+                            style = M.type.caption, color = if (selected == null) c.danger else c.textTertiary,
+                        )
+                    }
+                }
+            }
+        }
+        ModalActions {
+            Button(s.cancel, onDismiss)
+            Button(s.share, {
+                val chosen = selected ?: return@Button
+                onDismiss()
+                tab.canvas?.commitSelection()
+                overlays.toast(s.exporting)
+                scope.launch {
+                    val ok = runCatching { Exporter.exportAndShare(tab, kind, chosen) }.getOrElse { it.printStackTrace(); false }
+                    if (!ok) overlays.toast(s.exportFailed)
+                }
+            }, icon = Lucide.Share2, style = ButtonStyle.Primary, enabled = selected != null)
+        }
     }
 }
 
 /** Writes an export file and opens the system share sheet. Platform-provided. */
 expect object Exporter {
-    suspend fun exportAndShare(tab: EditorTab, kind: ExportKind): Boolean
+    suspend fun exportAndShare(tab: EditorTab, kind: ExportKind, pages: List<Int>): Boolean
 }

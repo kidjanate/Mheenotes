@@ -61,6 +61,8 @@ import kotlinx.coroutines.delay
 
 internal class ModalEntry(val key: Any, content: @Composable () -> Unit) {
     var content by mutableStateOf(content)
+    /** False while the modal plays its exit animation, so the backdrop can clear immediately. */
+    var visible by mutableStateOf(true)
 }
 
 @Stable
@@ -82,8 +84,8 @@ val LocalOverlays = staticCompositionLocalOf<OverlayController> { error("Overlay
 @Composable
 fun OverlayHost(content: @Composable () -> Unit) {
     val controller = remember { OverlayController() }
-    val blurred = controller.modals.isNotEmpty()
-    val blur by animateFloatAsState(if (blurred) 1f else 0f, Motion.gentle(), label = "blur")
+    val blurred = controller.modals.any { it.visible }
+    val blur by animateFloatAsState(if (blurred) 1f else 0f, androidx.compose.animation.core.tween(160), label = "blur")
     CompositionLocalProvider(LocalOverlays provides controller) {
         Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().then(if (blur > 0.01f) Modifier.blur((10 * blur).dp) else Modifier)) { content() }
@@ -167,7 +169,7 @@ fun Modal(
     }
     if (show) {
         val entry = remember { ModalEntry(key, body) }
-        SideEffect { entry.content = body }
+        SideEffect { entry.content = body; entry.visible = visible }
         DisposableEffect(Unit) {
             controller.modals += entry
             onDispose { controller.modals -= entry }

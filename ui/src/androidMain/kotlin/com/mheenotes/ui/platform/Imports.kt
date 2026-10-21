@@ -67,6 +67,22 @@ object Imports {
         Notebook(id, title, folderId, 0, now, now, now, pageCount = pages.size)
     }
 
+    /**
+     * Files shared or opened from another app. Each becomes its own notebook; PDFs are detected
+     * by type or extension, anything else is tried as a notebook file.
+     */
+    suspend fun importShared(uris: List<Uri>, mimeType: String?): List<Notebook> = uris.mapNotNull { uri ->
+        val name = displayName(uri).orEmpty()
+        val type = AndroidContext.app.contentResolver.getType(uri) ?: mimeType
+        runCatching {
+            when {
+                type == "application/pdf" || name.endsWith(".pdf", true) -> importPdf(uri, null)
+                name.endsWith(".mynote", true) -> LegacyImport.import(uri, null)
+                else -> importArchive(uri, null, name)
+            }
+        }.onFailure { it.printStackTrace() }.getOrNull()?.also { AppGraph.library.upsert(it) }
+    }
+
     /** Imports `.mheenote` archives and legacy `.mynote` files. */
     suspend fun importArchives(uris: List<Uri>, folderId: Id?): Int {
         var count = 0

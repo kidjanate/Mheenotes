@@ -26,6 +26,9 @@ actual fun rememberImporter(onResult: (Int) -> Unit): Importer {
             override fun pdf(folderId: Id?) { folder = folderId; pdf.launch(arrayOf("application/pdf")) }
             override fun notebook(folderId: Id?) { folder = folderId; file.launch(arrayOf("*/*")) }
             override fun share(notebookId: Id) { scope.launch { Exports.shareNotebook(AndroidContext.app, notebookId) } }
+            override fun sharePdf(notebookId: Id) {
+                scope.launch { runCatching { com.mheenotes.ui.editor.Exporter.sharePdfFromLibrary(notebookId) }.onFailure { it.printStackTrace(); callback.value(-1) } }
+            }
         }
     }
 }

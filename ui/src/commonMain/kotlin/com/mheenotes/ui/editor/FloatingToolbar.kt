@@ -63,6 +63,9 @@ import com.mheenotes.core.model.ShapeKind
 import com.mheenotes.ui.AppGraph
 import com.mheenotes.ui.design.Card
 import com.mheenotes.ui.design.ColorDot
+import com.mheenotes.ui.design.ColorPicker
+import com.composables.icons.lucide.Plus
+import androidx.compose.foundation.layout.Box
 import com.mheenotes.ui.design.Icon
 import com.mheenotes.ui.design.IconButton
 import com.mheenotes.ui.design.ListRow
@@ -115,18 +118,23 @@ fun FloatingToolbar(tab: EditorTab, doc: NotebookDocument, topInsetPx: Int) {
         }
         val pos = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
         var dragging by remember { mutableStateOf(false) }
-        LaunchedEffect(dock, size, area, topInsetPx) {
+        // A side dock that no longer fits (short window) falls back to the top edge. The length
+        // is computed from the content, not measured, so the choice cannot oscillate.
+        val sideLength = with(density) { (TOOL_BUTTON * 8 + 24.dp * 3 + 36.dp).roundToPx() }
+        val sideFits = area.height - topInsetPx - margin * 2 >= sideLength
+        val effective = if ((dock == Dock.Left || dock == Dock.Right) && !sideFits) Dock.Top else dock
+        LaunchedEffect(effective, size, area, topInsetPx) {
             if (size != IntSize.Zero && !dragging) {
-                if (pos.value == Offset.Zero) pos.snapTo(target(dock)) else pos.animateTo(target(dock), Motion.bouncy())
+                if (pos.value == Offset.Zero) pos.snapTo(target(effective)) else pos.animateTo(target(effective), Motion.bouncy())
             }
         }
-        val vertical = dock == Dock.Left || dock == Dock.Right
+        val vertical = effective == Dock.Left || effective == Dock.Right
         Card(
             Modifier
                 .offset { IntOffset(pos.value.x.roundToInt(), pos.value.y.roundToInt()) }
                 .onSizeChanged { size = it }
                 .graphicsLayer { this.alpha = if (size == IntSize.Zero) 0f else alpha },
-            shape = RoundedCornerShape(26.dp),
+            shape = RoundedCornerShape(19.dp),
             color = M.colors.elevated,
             elevation = 16.dp,
         ) {
@@ -152,18 +160,18 @@ fun FloatingToolbar(tab: EditorTab, doc: NotebookDocument, topInsetPx: Int) {
                 }
             }
             val content: @Composable () -> Unit = {
-                Box(grip.size(if (vertical) 40.dp else 22.dp, if (vertical) 22.dp else 40.dp), contentAlignment = Alignment.Center) {
-                    Icon(Lucide.GripVertical, Modifier.graphicsLayer { rotationZ = if (vertical) 90f else 0f }, tint = M.colors.textTertiary, size = 16.dp)
+                Box(grip.size(if (vertical) 30.dp else 16.dp, if (vertical) 16.dp else 30.dp), contentAlignment = Alignment.Center) {
+                    Icon(Lucide.GripVertical, Modifier.graphicsLayer { rotationZ = if (vertical) 90f else 0f }, tint = M.colors.textTertiary, size = 12.dp)
                 }
                 listOf(ToolKind.Pen, ToolKind.Pencil, ToolKind.Highlighter, ToolKind.Eraser, ToolKind.Lasso, ToolKind.Shape, ToolKind.Text).forEach { k ->
-                    ToolButton(k, if (vertical) PopoverSide.End else if (dock == Dock.Bottom) PopoverSide.Above else PopoverSide.Below, tab)
+                    ToolButton(k, if (vertical) (if (effective == Dock.Right) PopoverSide.Start else PopoverSide.End) else if (effective == Dock.Bottom) PopoverSide.Above else PopoverSide.Below, tab)
                 }
                 ImageInsertButton(tab, doc)
-                Spacer(Modifier.size(if (vertical) 0.dp else 6.dp, if (vertical) 6.dp else 0.dp))
+                Spacer(Modifier.size(if (vertical) 0.dp else 4.dp, if (vertical) 4.dp else 0.dp))
                 QuickColors(vertical)
             }
-            if (vertical) Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) { content() }
-            else Row(Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically) { content() }
+            if (vertical) Column(Modifier.padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) { content() }
+            else Row(Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) { content() }
         }
     }
 }
@@ -180,8 +188,8 @@ private fun ToolButton(k: ToolKind, side: PopoverSide, tab: EditorTab) {
                 else { tab.canvas?.commitSelection(); Tools.select(k) }
             },
             selected = selected,
-            size = 44.dp,
-            iconSize = 21.dp,
+            size = TOOL_BUTTON,
+            iconSize = TOOL_ICON,
             tint = if (selected && (k == ToolKind.Pen || k == ToolKind.Pencil || k == ToolKind.Highlighter)) Color(Tools.colorOf(k) or 0xFF000000.toInt()) else null,
         )
         Popover(options, { options = false }, side = side, width = 300.dp) { ToolOptions(k) }
@@ -221,6 +229,7 @@ private fun ToolOptions(k: ToolKind) {
                     ColorDot(Color(col or 0xFF000000.toInt()), Tools.colorOf(k) == col, { Tools.setColor(k, col) }, size = 32.dp)
                 }
             }
+            CustomColors(k)
             Spacer(Modifier.height(14.dp))
         }
         if (k == ToolKind.Text) {
@@ -237,6 +246,32 @@ private fun ToolOptions(k: ToolKind) {
                 Spacer(Modifier.height(8.dp))
                 StrokePreview(k)
             }
+        }
+    }
+}
+
+/** The user's own colors plus a "+" that opens the picker. Highlighters keep their translucency. */
+@Composable
+private fun CustomColors(k: ToolKind) {
+    val c = M.colors
+    var picking by remember { mutableStateOf(false) }
+    fun forTool(argb: Int) = if (k == ToolKind.Highlighter) (argb and 0x00FFFFFF) or 0x66000000 else argb or 0xFF000000.toInt()
+    Spacer(Modifier.height(6.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Tools.customColors.take(7).forEach { col ->
+            ColorDot(Color(col), Tools.colorOf(k) == forTool(col), { Tools.setColor(k, forTool(col)) }, size = 32.dp)
+        }
+        Box(
+            Modifier.size(32.dp).pressable(pressedScale = 0.85f) { picking = !picking }.clip(CircleShape).background(c.fill),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Lucide.Plus, tint = c.textSecondary, size = 16.dp) }
+    }
+    androidx.compose.animation.AnimatedVisibility(picking) {
+        Column(Modifier.padding(top = 10.dp)) {
+            var chosen by remember { mutableStateOf(Tools.colorOf(k) or 0xFF000000.toInt()) }
+            ColorPicker(chosen, { chosen = it; Tools.setColor(k, forTool(it)) }, Modifier.fillMaxWidth())
+            Spacer(Modifier.height(10.dp))
+            com.mheenotes.ui.design.Button(S.done, { Tools.addCustomColor(chosen); picking = false }, Modifier.fillMaxWidth(), style = com.mheenotes.ui.design.ButtonStyle.Secondary, compact = true)
         }
     }
 }
@@ -276,12 +311,16 @@ private fun QuickColors(vertical: Boolean) {
     val alpha by animateFloatAsState(if (enabled) 1f else 0.25f, Motion.fade(), label = "qc")
     val content: @Composable () -> Unit = {
         palette.forEach { col ->
-            ColorDot(Color(col or 0xFF000000.toInt()), enabled && Tools.colorOf(k) == col, { if (enabled) Tools.setColor(k, col) }, size = 34.dp)
+            ColorDot(Color(col or 0xFF000000.toInt()), enabled && Tools.colorOf(k) == col, { if (enabled) Tools.setColor(k, col) }, size = 24.dp)
         }
     }
     val m = Modifier.graphicsLayer { this.alpha = alpha }
     if (vertical) Column(m) { content() } else Row(m) { content() }
 }
+
+/** Toolbar button and icon sizes (30% smaller than the first version). */
+val TOOL_BUTTON = 32.dp
+val TOOL_ICON = 16.dp
 
 @Composable
 expect fun ImageInsertButton(tab: EditorTab, doc: NotebookDocument)

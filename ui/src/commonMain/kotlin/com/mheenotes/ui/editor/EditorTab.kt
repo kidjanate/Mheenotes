@@ -172,14 +172,22 @@ interface CanvasController {
 fun EditorTab.captureTarget(): Pair<Id, FloatArray>? {
     selection?.let { sel ->
         val t = sel.transform
-        val b = sel.bounds
-        val src = sel.lasso ?: floatArrayOf(b.left, b.top, b.right, b.top, b.right, b.bottom, b.left, b.bottom)
-        return sel.pageId to FloatArray(src.size) { i ->
+        val src = sel.lasso ?: sel.bounds.let { b -> floatArrayOf(b.left, b.top, b.right, b.top, b.right, b.bottom, b.left, b.bottom) }
+        val moved = FloatArray(src.size) { i ->
             val x = src[i - i % 2]; val y = src[i - i % 2 + 1]
             if (i % 2 == 0) t.mapX(x, y) else t.mapY(x, y)
         }
+        return sel.pageId to boundingRect(moved)
     }
     return captureArea?.let { it.pageId to it.lasso }
+}
+
+/** Captures are rectangular: the bounding box of the lasso, as a 4-corner polygon. */
+fun boundingRect(xy: FloatArray): FloatArray {
+    var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
+    var i = 0
+    while (i < xy.size) { l = minOf(l, xy[i]); r = maxOf(r, xy[i]); t = minOf(t, xy[i + 1]); b = maxOf(b, xy[i + 1]); i += 2 }
+    return floatArrayOf(l, t, r, t, r, b, l, b)
 }
 
 /** Screen bounds of a capture area, for placing its bar. */

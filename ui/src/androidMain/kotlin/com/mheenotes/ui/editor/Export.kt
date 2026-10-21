@@ -23,22 +23,27 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 actual object Exporter {
-    actual suspend fun exportAndShare(tab: EditorTab, kind: ExportKind): Boolean {
+    actual suspend fun exportAndShare(tab: EditorTab, kind: ExportKind, pages: List<Int>): Boolean {
         val doc = tab.doc ?: return false
         val title = AppGraph.library.notebook(tab.notebookId)?.title?.ifBlank { null } ?: "Notebook"
-        val file = when (kind) {
-            ExportKind.Pdf -> exportPdf(tab.notebookId, doc, title)
-            ExportKind.PagePng -> exportPng(tab.notebookId, doc, tab.currentPage, title)
-            ExportKind.Notebook -> NotebookArchive.write(tab.notebookId, title, doc)
+        when (kind) {
+            ExportKind.Pdf -> share(AndroidContext.app, exportPdf(tab.notebookId, doc, title, pages), "application/pdf")
+            ExportKind.Png -> shareAll(AndroidContext.app, pages.map { exportPng(tab.notebookId, doc, it, title) }, "image/png")
+            ExportKind.Notebook -> share(AndroidContext.app, NotebookArchive.write(tab.notebookId, title, doc), "application/octet-stream")
         }
-        share(AndroidContext.app, file, mime(kind))
         return true
     }
 
-    private fun mime(k: ExportKind) = when (k) {
-        ExportKind.Pdf -> "application/pdf"
-        ExportKind.PagePng -> "image/png"
-        ExportKind.Notebook -> "application/octet-stream"
+    /** "Share as PDF" from the library: opens the notebook briefly if it is not open in a tab. */
+    suspend fun sharePdfFromLibrary(notebookId: Id) {
+        val title = AppGraph.library.notebook(notebookId)?.title?.ifBlank { null } ?: "Notebook"
+        val open = com.mheenotes.ui.AppState.shared.tabs.firstOrNull { it.notebookId == notebookId }?.doc
+        val doc = open ?: com.mheenotes.core.doc.NotebookDocument.open(com.mheenotes.core.store.NotebookStore(notebookId, AppGraph.files), AppGraph.scope)
+        try {
+            share(AndroidContext.app, exportPdf(notebookId, doc, title, doc.pages.value.indices.toList()), "application/pdf")
+        } finally {
+            if (open == null) doc.close()
+        }
     }
 
     fun exportDir(): File = File(AndroidContext.app.cacheDir, "exports").apply { mkdirs() }
@@ -46,8 +51,9 @@ actual object Exporter {
     fun safeName(title: String) = title.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(80)
 
     /** Vector PDF: ink and shapes stay vectors; imported PDF pages are embedded as 2x images. */
-    suspend fun exportPdf(notebookId: Id, doc: NotebookDocument, title: String): File {
-        val pages = doc.pages.value
+    suspend fun exportPdf(notebookId: Id, doc: NotebookDocument, title: String, indices: List<Int>): File {
+        val all = doc.pages.value
+        val pages = indices.mapNotNull { all.getOrNull(it) }
         val contents = pages.map { doc.load(it.id).snapshot.items }
         val r = Rasterizer.shared ?: error("renderer not ready")
         return withContext(Dispatchers.Default) {
@@ -91,6 +97,17 @@ actual object Exporter {
             bmp.recycle()
             out
         }
+    }
+
+    fun shareAll(context: Context, files: List<File>, mime: String) {
+        if (files.size == 1) return share(context, files.single(), mime)
+        val uris = ArrayList(files.map { FileProvider.getUriForFile(context, context.packageName + ".files", it) })
+        val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = mime
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     fun share(context: Context, file: File, mime: String) {

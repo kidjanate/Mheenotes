@@ -80,7 +80,11 @@ actual fun InkCanvas(tab: EditorTab, doc: NotebookDocument, topInset: Dp, modifi
     chrome.topInset = with(density) { topInset.toPx() }
     chrome.bottomInset = with(density) { 24.dp.toPx() }
     val view = remember(tab, doc) { InkCanvasView(context, tab, doc, rasterizer(fonts), chrome) }
-    val lowLatency = AppGraph.settings.lowLatencyInk
+    // Split screen and floating windows resize the surface underneath us; the front buffer can
+    // then show stale frames above the app. Use the normal path there.
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val multiWindow = remember(configuration) { (context as? android.app.Activity)?.isInMultiWindowMode == true }
+    val lowLatency = AppGraph.settings.lowLatencyInk && !multiWindow
     val container = remember(view, lowLatency) {
         android.widget.FrameLayout(context).apply {
             (view.parent as? android.view.ViewGroup)?.removeView(view)
@@ -198,7 +202,7 @@ actual fun ImageInsertButton(tab: EditorTab, doc: NotebookDocument) {
     IconButton(Lucide.ImagePlus, {
         tab.canvas?.commitSelection()
         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-    }, size = 44.dp, iconSize = 21.dp)
+    }, size = TOOL_BUTTON, iconSize = TOOL_ICON)
 }
 
 /** Copies a picked image into the notebook (capped at 2560 px), places it and selects it. */

@@ -163,6 +163,11 @@ open class Strings {
     open val developer = "Developer"
     open val inkActivity = "Ink this week"
     open val capture = "Capture"
+    open val imageFormat = "Image"
+    open val exportRange = "Pages…"
+    open val rangeInvalid = "Enter pages like 1-3, 5"
+    open val sharePdf = "Share as PDF"
+    open val shareNotebook = "Share as Mheenotes file"
     open val captureTitle = "Lasso capture"
     open val insertIntoNote = "Insert into note"
     open val saveToPhotos = "Save to Photos"
@@ -326,6 +331,11 @@ object Th : Strings() {
     override val developer = "นักพัฒนา"
     override val inkActivity = "การเขียนสัปดาห์นี้"
     override val capture = "จับภาพ"
+    override val imageFormat = "รูปภาพ"
+    override val exportRange = "เลือกหน้า…"
+    override val rangeInvalid = "ใส่หน้า เช่น 1-3, 5"
+    override val sharePdf = "แชร์เป็น PDF"
+    override val shareNotebook = "แชร์เป็นไฟล์ Mheenotes"
     override val captureTitle = "จับภาพพื้นที่ที่เลือก"
     override val insertIntoNote = "แทรกลงในโน้ต"
     override val saveToPhotos = "บันทึกลงรูปภาพ"
@@ -336,6 +346,9 @@ object Th : Strings() {
     override val denseFixture = "สร้างสมุดโน้ต 20,000 เส้น"
 }
 
+/** Strings for the current locale, usable outside composition. */
+fun strings(): Strings = if (Locale.current.language == "th") Th else En
+
 val S: Strings
     @Composable @ReadOnlyComposable
-    get() = if (Locale.current.language == "th") Th else En
+    get() = strings()

@@ -143,3 +143,16 @@ class RecognizerTest {
         assertTrue(!lasso.selects(line(80f, 50f, 300f, 50f)))
     }
 }
+
+class PageRangeTest {
+    @Test
+    fun parsesRanges() {
+        val p = { t: String, n: Int -> com.mheenotes.core.doc.parsePageRange(t, n) }
+        assertEquals(listOf(0, 1, 2, 4), p("1-3, 5", 10))
+        assertEquals(listOf(7, 8, 9), p("8-", 10))
+        assertEquals(listOf(0, 1), p("2-1", 10))
+        assertEquals(listOf(9), p("10, 11, 50", 10))
+        assertNull(p("abc", 10))
+        assertNull(p("", 10))
+    }
+}

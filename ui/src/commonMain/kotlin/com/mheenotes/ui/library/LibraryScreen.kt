@@ -212,6 +212,7 @@ fun LibraryScreen(app: AppState) {
                         onRenameFolder = { renameFolder = it },
                         onDeleteFolder = { confirmFolder = it },
                         onExport = { importer.share(it.id) },
+                        onSharePdf = { overlays.toast(s.exporting); importer.sharePdf(it.id) },
                     )
                 }
             }
@@ -563,12 +564,13 @@ private fun NotebookCollection(
     onRenameFolder: (Folder) -> Unit,
     onDeleteFolder: (Folder) -> Unit,
     onExport: (Notebook) -> Unit,
+    onSharePdf: (Notebook) -> Unit,
 ) {
     val state = rememberLazyGridState()
     LaunchedEffect(ui.section) { state.scrollToItem(0) }
     val actions = NotebookActions(
         open = { n -> if (ui.selecting) ui.toggle(n.id) else if (!trash) app.open(n.id) },
-        rename = onRename, move = onMove, deleteForever = onDeleteForever, export = onExport,
+        rename = onRename, move = onMove, deleteForever = onDeleteForever, export = onExport, sharePdf = onSharePdf,
     )
     LazyVerticalGrid(
         columns = if (grid) GridCells.Adaptive(176.dp) else GridCells.Fixed(1),

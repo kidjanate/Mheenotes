@@ -18,7 +18,7 @@ object ShapeRecognizer {
         val ys = FloatArray(n) { points[it * 3 + 1] }
         var length = 0f
         for (i in 1 until n) length += StrokeGeometry.dist(xs[i - 1], ys[i - 1], xs[i], ys[i])
-        if (length < 12f) return null
+        if (length < 24f) return null
         val bounds = Rect(xs.min(), ys.min(), xs.max(), ys.max())
         val diag = StrokeGeometry.dist(bounds.left, bounds.top, bounds.right, bounds.bottom)
         val gap = StrokeGeometry.dist(xs[0], ys[0], xs[n - 1], ys[n - 1])
@@ -41,7 +41,8 @@ object ShapeRecognizer {
         return when (corners) {
             3 -> RecognizedShape(ShapeKind.Triangle, bounds)
             4 -> RecognizedShape(ShapeKind.Rectangle, bounds)
-            else -> if (corners > 4 || roundness(xs, ys, bounds) < 0.22f) RecognizedShape(ShapeKind.Ellipse, bounds) else null
+            // Only clearly round loops become ellipses; wobbly or jagged ones stay ink.
+            else -> if (roundness(xs, ys, bounds) < 0.16f) RecognizedShape(ShapeKind.Ellipse, bounds) else null
         }
     }
 
