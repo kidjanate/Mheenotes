@@ -156,3 +156,23 @@ class PageRangeTest {
         assertNull(p("", 10))
     }
 }
+
+class AngleSnapTest {
+    private fun angle(x: Float, y: Float) = kotlin.math.atan2(y, x) * 180f / kotlin.math.PI.toFloat()
+
+    @Test
+    fun snapsNearFortyFiveDegreeSteps() {
+        val s = com.mheenotes.core.geometry.AngleSnap
+        // 4° off horizontal -> horizontal, length kept.
+        val (hx, hy) = s.snapEnd(0f, 0f, 100f, 7f)
+        assertTrue(kotlin.math.abs(hy) < 0.01f && kotlin.math.abs(hx - kotlin.math.sqrt(100f * 100f + 49f)) < 0.01f)
+        // Near 45°, 90°, 135° and -45°.
+        assertTrue(kotlin.math.abs(angle(s.snapEnd(0f, 0f, 100f, 92f).first, s.snapEnd(0f, 0f, 100f, 92f).second) - 45f) < 0.01f)
+        assertTrue(kotlin.math.abs(s.snapEnd(0f, 0f, 5f, 100f).first) < 0.01f)
+        assertTrue(kotlin.math.abs(angle(s.snapEnd(0f, 0f, -100f, 95f).first, s.snapEnd(0f, 0f, -100f, 95f).second) - 135f) < 0.01f)
+        // 22° is between steps and stays as drawn.
+        assertEquals(100f to 40f, s.snapEnd(0f, 0f, 100f, 40f))
+        assertEquals(90f, s.snapRotation(87f))
+        assertEquals(60f, s.snapRotation(60f))
+    }
+}

@@ -462,10 +462,17 @@ fun ListRow(
 }
 
 @Composable
-fun ColorDot(color: Color, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 30.dp) {
+fun ColorDot(
+    color: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 30.dp,
+    onLongClick: (() -> Unit)? = null,
+) {
     val c = M.colors
     val ring by animateFloatAsState(if (selected) 1f else 0f, Motion.bouncy(), label = "ring")
-    Box(modifier.pressable(pressedScale = 0.85f, onClick = onClick).size(size), contentAlignment = Alignment.Center) {
+    Box(modifier.pressable(pressedScale = 0.85f, onLongClick = onLongClick, onClick = onClick).size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(size)) {
             val r = this.size.minDimension / 2
             if (ring > 0f) drawCircle(c.accent, r, style = Stroke(2.dp.toPx() * ring))

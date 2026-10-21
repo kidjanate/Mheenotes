@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import com.mheenotes.core.doc.NotebookDocument
+import com.mheenotes.core.geometry.AngleSnap
 import com.mheenotes.core.geometry.FloatList
 import com.mheenotes.core.geometry.InkSmoother
 import com.mheenotes.core.geometry.Lasso
@@ -684,8 +685,10 @@ class InkCanvasView(
                 val pi = layout.indexOf(wetPage ?: return)
                 val (_, x, y) = toPage(e.x, e.y, pi)
                 val (sx, sy) = shapeStart ?: return
+                // Lines and arrows lock to 45° steps when drawn close to one.
+                val (ex, ey) = if (Tools.shapeKind == ShapeKind.Line || Tools.shapeKind == ShapeKind.Arrow) AngleSnap.snapEnd(sx, sy, x, y) else x to y
                 shapeDraft = ShapeItem(
-                    "draft", 0, Tools.shapeKind, Rect(sx, sy, x, y), Tools.shapeColor, Tools.shapeWidth,
+                    "draft", 0, Tools.shapeKind, Rect(sx, sy, ex, ey), Tools.shapeColor, Tools.shapeWidth,
                     if (Tools.shapeFill) (Tools.shapeColor and 0x00FFFFFF) or 0x33000000 else null,
                 )
                 invalidate()
@@ -1012,11 +1015,8 @@ class InkCanvasView(
             }
             Mode.SelRotate -> {
                 val a0 = atan2(y0 - cy, x0 - cx); val a1 = atan2(y - cy, x - cx)
-                var rot = start.rotation + Math.toDegrees((a1 - a0).toDouble()).toFloat()
-                // Gentle snapping to right angles.
-                val snap = Math.round(rot / 90f) * 90f
-                if (abs(rot - snap) < 4f) rot = snap
-                start.copy(rotation = rot)
+                val rot = start.rotation + Math.toDegrees((a1 - a0).toDouble()).toFloat()
+                start.copy(rotation = AngleSnap.snapRotation(rot))
             }
             else -> start
         }

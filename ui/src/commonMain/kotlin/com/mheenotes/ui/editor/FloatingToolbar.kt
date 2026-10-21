@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -250,28 +251,62 @@ private fun ToolOptions(k: ToolKind) {
     }
 }
 
-/** The user's own colors plus a "+" that opens the picker. Highlighters keep their translucency. */
+/**
+ * The user's own colors. Tap to use, long-press to edit or delete, "+" to add a new one.
+ * Highlighters apply their usual translucency to whatever color is picked.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun CustomColors(k: ToolKind) {
     val c = M.colors
-    var picking by remember { mutableStateOf(false) }
+    val s = S
+    // null = closed, -1 = adding a new color, otherwise the index being edited.
+    var editing by remember { mutableStateOf<Int?>(null) }
     fun forTool(argb: Int) = if (k == ToolKind.Highlighter) (argb and 0x00FFFFFF) or 0x66000000 else argb or 0xFF000000.toInt()
     Spacer(Modifier.height(6.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Tools.customColors.take(7).forEach { col ->
-            ColorDot(Color(col), Tools.colorOf(k) == forTool(col), { Tools.setColor(k, forTool(col)) }, size = 32.dp)
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Tools.customColors.forEachIndexed { i, col ->
+            ColorDot(
+                Color(col), editing == i || (editing == null && Tools.colorOf(k) == forTool(col)),
+                { Tools.setColor(k, forTool(col)); if (editing != null) editing = i },
+                size = 32.dp,
+                onLongClick = { Tools.setColor(k, forTool(col)); editing = i },
+            )
         }
         Box(
-            Modifier.size(32.dp).pressable(pressedScale = 0.85f) { picking = !picking }.clip(CircleShape).background(c.fill),
+            Modifier.size(32.dp).pressable(pressedScale = 0.85f) { editing = if (editing == -1) null else -1 }.clip(CircleShape)
+                .background(if (editing == -1) c.accentSoft else c.fill),
             contentAlignment = Alignment.Center,
-        ) { Icon(Lucide.Plus, tint = c.textSecondary, size = 16.dp) }
+        ) { Icon(Lucide.Plus, tint = if (editing == -1) c.accent else c.textSecondary, size = 16.dp) }
     }
-    androidx.compose.animation.AnimatedVisibility(picking) {
-        Column(Modifier.padding(top = 10.dp)) {
-            var chosen by remember { mutableStateOf(Tools.colorOf(k) or 0xFF000000.toInt()) }
-            ColorPicker(chosen, { chosen = it; Tools.setColor(k, forTool(it)) }, Modifier.fillMaxWidth())
-            Spacer(Modifier.height(10.dp))
-            com.mheenotes.ui.design.Button(S.done, { Tools.addCustomColor(chosen); picking = false }, Modifier.fillMaxWidth(), style = com.mheenotes.ui.design.ButtonStyle.Secondary, compact = true)
+    if (Tools.customColors.isNotEmpty() && editing == null) {
+        Text(s.customColorHint, Modifier.padding(top = 4.dp), style = M.type.caption, color = c.textTertiary)
+    }
+    androidx.compose.animation.AnimatedVisibility(editing != null) {
+        val target = editing ?: return@AnimatedVisibility
+        val original = remember(target) { Tools.colorOf(k) }
+        key(target) {
+            Column(Modifier.padding(top = 10.dp)) {
+                Text(if (target == -1) s.newColor else s.editColor, style = M.type.calloutStrong, color = c.textSecondary)
+                Spacer(Modifier.height(8.dp))
+                val start = if (target >= 0) Tools.customColors.getOrNull(target) ?: original else original or 0xFF000000.toInt()
+                var chosen by remember { mutableStateOf(start) }
+                ColorPicker(start, { chosen = it; Tools.setColor(k, forTool(it)) }, Modifier.fillMaxWidth())
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (target >= 0) {
+                        com.mheenotes.ui.design.Button(s.delete, {
+                            Tools.removeCustomColor(target); Tools.setColor(k, original); editing = null
+                        }, style = com.mheenotes.ui.design.ButtonStyle.Danger, compact = true)
+                    } else {
+                        com.mheenotes.ui.design.Button(s.cancel, { Tools.setColor(k, original); editing = null }, compact = true)
+                    }
+                    com.mheenotes.ui.design.Button(s.done, {
+                        if (target >= 0) Tools.updateCustomColor(target, chosen) else Tools.addCustomColor(chosen)
+                        editing = null
+                    }, Modifier.weight(1f), style = com.mheenotes.ui.design.ButtonStyle.Primary, compact = true)
+                }
+            }
         }
     }
 }

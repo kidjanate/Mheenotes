@@ -58,6 +58,18 @@ object Tools {
         save()
     }
 
+    fun updateCustomColor(index: Int, argb: Int) {
+        if (index !in customColors.indices) return
+        customColors[index] = argb or 0xFF000000.toInt()
+        save()
+    }
+
+    fun removeCustomColor(index: Int) {
+        if (index !in customColors.indices) return
+        customColors.removeAt(index)
+        save()
+    }
+
     var eraserMode by mutableStateOf(EraserMode.Whole)
     var shapeKind by mutableStateOf(ShapeKind.Rectangle)
     var shapeFill by mutableStateOf(false)

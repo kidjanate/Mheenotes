@@ -27,7 +27,9 @@ object ShapeRecognizer {
         if (gap > length * 0.22f) {
             var maxDev = 0f
             for (i in 0 until n) maxDev = max(maxDev, StrokeGeometry.segmentDistance(xs[i], ys[i], xs[0], ys[0], xs[n - 1], ys[n - 1]))
-            return if (maxDev < max(4f, gap * 0.09f)) RecognizedShape(ShapeKind.Line, Rect(xs[0], ys[0], xs[n - 1], ys[n - 1])) else null
+            if (maxDev >= max(4f, gap * 0.09f)) return null
+            val (ex, ey) = AngleSnap.snapEnd(xs[0], ys[0], xs[n - 1], ys[n - 1])
+            return RecognizedShape(ShapeKind.Line, Rect(xs[0], ys[0], ex, ey))
         }
 
         // Closed stroke: count corners on a simplified outline.
@@ -137,5 +139,29 @@ object ScribbleDetector {
                 StrokeGeometry.hitsSegment(s, scribble[i * 3], scribble[i * 3 + 1], scribble[i * 3 + 3], scribble[i * 3 + 4], scribbleWidth / 2)
             }
         }
+    }
+}
+
+/** Pulls nearly straight lines onto the nearest 45° direction (0°, 45°, 90°, 135°, …). */
+object AngleSnap {
+    const val STEP = 45f
+    const val TOLERANCE = 7f
+
+    /** End point moved so start→end lies on the nearest multiple of [step] when within [tolerance]. */
+    fun snapEnd(x0: Float, y0: Float, x1: Float, y1: Float, step: Float = STEP, tolerance: Float = TOLERANCE): Pair<Float, Float> {
+        val dx = x1 - x0; val dy = y1 - y0
+        val len = sqrt(dx * dx + dy * dy)
+        if (len == 0f) return x1 to y1
+        val deg = kotlin.math.atan2(dy, dx) * 180f / kotlin.math.PI.toFloat()
+        val target = kotlin.math.round(deg / step) * step
+        if (abs(deg - target) > tolerance) return x1 to y1
+        val rad = target * kotlin.math.PI.toFloat() / 180f
+        return x0 + kotlin.math.cos(rad) * len to y0 + kotlin.math.sin(rad) * len
+    }
+
+    /** Rotation in degrees snapped to the nearest multiple of [step] when within [tolerance]. */
+    fun snapRotation(degrees: Float, step: Float = STEP, tolerance: Float = 4f): Float {
+        val target = kotlin.math.round(degrees / step) * step
+        return if (abs(degrees - target) <= tolerance) target else degrees
     }
 }
