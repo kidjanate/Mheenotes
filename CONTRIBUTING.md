@@ -57,6 +57,11 @@ Do not escape apostrophes: write `Don't`, not `Don\'t`.
 - [ ] No new dependencies without a reason in the PR description; licenses added to
       `ui/.../settings/Licenses.kt`
 
+## License of contributions
+
+Mheenotes is licensed under the [GNU General Public License v3.0](LICENSE). By sending a pull
+request, you agree that your contribution is released under the same license.
+
 ## Code of conduct
 
 Be kind and patient. Assume good intent, keep feedback about the work, and help newcomers.

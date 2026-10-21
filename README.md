@@ -11,6 +11,9 @@ No account, no ads, no network. Your notes stay on your tablet.
 
 [**Download the latest APK**](https://github.com/kidjanate/Mheenotes/releases/latest) · Android 10+ · English and ไทย
 
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-3A63F0)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/kidjanate/Mheenotes?include_prereleases&color=3A63F0)](https://github.com/kidjanate/Mheenotes/releases)
+
 <img src="docs/media/library-light.jpg" width="49%" alt="Library in light mode" />
 <img src="docs/media/library-dark.jpg" width="49%" alt="Library in dark mode" />
 
@@ -132,7 +135,11 @@ ask for them.
 
 ## License
 
-<!-- TODO: choose a license and add the LICENSE file before publishing. -->
+Copyright © 2026 kidjanate.
+
+Mheenotes is free software, released under the [GNU General Public License v3.0](LICENSE). You can
+use, study, change and share it. If you distribute the app or a modified version of it, you must
+make its source code available under the same license.
 
 Third-party libraries and fonts are listed, with their licenses, in the app under
 **Settings → Open-source licenses**.
