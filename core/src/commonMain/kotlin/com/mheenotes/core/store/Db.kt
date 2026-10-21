@@ -23,14 +23,23 @@ class Db(path: String, schema: List<String>) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val queue = Channel<suspend () -> Unit>(Channel.UNLIMITED)
     private lateinit var conn: SQLiteConnection
+    private var openError: Throwable? = null
+    var onError: (Throwable) -> Unit = { it.printStackTrace() }
 
     init {
         // Opening happens on the worker too, so constructing a Db never blocks the caller.
         queue.trySend {
-            conn = BundledSQLiteDriver().open(path)
-            conn.execSQL("PRAGMA journal_mode=WAL")
-            conn.execSQL("PRAGMA synchronous=NORMAL")
-            for (sql in schema) conn.execSQL(sql)
+            try {
+                conn = BundledSQLiteDriver().open(path)
+                // A second connection to the same file (e.g. one still closing) waits instead of failing.
+                conn.query("PRAGMA busy_timeout=5000") { }
+                conn.query("PRAGMA journal_mode=WAL") { }
+                conn.execSQL("PRAGMA synchronous=NORMAL")
+                for (sql in schema) conn.execSQL(sql)
+            } catch (t: Throwable) {
+                openError = t
+                onError(t)
+            }
         }
         scope.launch { for (job in queue) job() }
     }
@@ -38,22 +47,21 @@ class Db(path: String, schema: List<String>) {
     /** Runs [block] on the DB worker and returns its result. */
     suspend fun <T> run(block: SQLiteConnection.() -> T): T {
         val result = CompletableDeferred<T>()
-        queue.send { result.completeWith(runCatching { conn.block() }) }
+        queue.send { result.completeWith(runCatching { openError?.let { throw it }; conn.block() }) }
         return result.await()
     }
 
     /** Fire-and-forget write, ordered after everything submitted earlier. */
     fun post(block: SQLiteConnection.() -> Unit) {
-        queue.trySend { runCatching { conn.block() }.onFailure { onError(it) } }
+        queue.trySend { runCatching { openError?.let { throw it }; conn.block() }.onFailure { onError(it) } }
     }
 
-    var onError: (Throwable) -> Unit = { it.printStackTrace() }
 
     /** Waits for every queued write. */
     suspend fun flush() = run { }
 
     suspend fun close() {
-        run { conn.close() }
+        run { if (openError == null) conn.close() }
         queue.close()
         scope.cancel()
     }

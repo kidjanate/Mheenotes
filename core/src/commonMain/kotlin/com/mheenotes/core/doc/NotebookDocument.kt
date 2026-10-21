@@ -48,8 +48,11 @@ class NotebookDocument private constructor(
     val canUndo: StateFlow<Boolean> = _canUndo
     val canRedo: StateFlow<Boolean> = _canRedo
 
-    /** Called after any change with the number of strokes added (for activity stats). */
+    /** Called after any recorded change with the number of strokes added (for activity stats). */
     var onChanged: (Change, strokesAdded: Int) -> Unit = { _, _ -> }
+
+    /** Called whenever in-memory items change, so renderers can repaint just those areas. */
+    var onContent: (pageId: Id, removed: List<Item>, added: List<Item>) -> Unit = { _, _, _ -> }
 
     fun nextSeq(): Long = ++seq
 
@@ -88,6 +91,26 @@ class NotebookDocument private constructor(
         val change = Change.Pages(_pages.value, after.sortedBy { it.ord })
         applyPages(change.before, change.after)
         if (record) push(change)
+    }
+
+    /**
+     * Memory-only change for live feedback (erasing as the pen moves, lifting a selection).
+     * Nothing is persisted or recorded until [commit].
+     */
+    fun preview(pageId: Id, removed: List<Item>, added: List<Item>) {
+        if (removed.isEmpty() && added.isEmpty()) return
+        contents[pageId]?.apply(removed, added)
+        _revision.value++
+        onContent(pageId, removed, added)
+    }
+
+    /** Persists and records a change whose memory effect was already applied by [preview]. */
+    fun commit(pageId: Id, removed: List<Item>, added: List<Item>) {
+        if (removed.isEmpty() && added.isEmpty()) return
+        val change = Change.Items(pageId, removed, added)
+        store.writeItems(pageId, removed.map { it.id }, added)
+        push(change)
+        onChanged(change, added.count { it is Stroke })
     }
 
     /** Groups several changes into one undo step. */
@@ -148,6 +171,7 @@ class NotebookDocument private constructor(
         contents[c.pageId]?.apply(removed, added)
         store.writeItems(c.pageId, removed.map { it.id }, added)
         _revision.value++
+        onContent(c.pageId, removed, added)
         onChanged(c, if (forward) added.count { it is Stroke } else 0)
     }
 

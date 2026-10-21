@@ -104,3 +104,42 @@ class CoreTest {
         assertEquals("Physics", lib2.state.value.notebooks.single().title)
     }
 }
+
+class RecognizerTest {
+    private fun pts(vararg xy: Float): FloatArray {
+        // Densify polyline so recognizers see realistic sampling.
+        val out = ArrayList<Float>()
+        for (i in 0 until xy.size / 2 - 1) {
+            val x0 = xy[i * 2]; val y0 = xy[i * 2 + 1]; val x1 = xy[i * 2 + 2]; val y1 = xy[i * 2 + 3]
+            for (k in 0 until 10) { val t = k / 10f; out += x0 + (x1 - x0) * t; out += y0 + (y1 - y0) * t; out += 0.5f }
+        }
+        out += xy[xy.size - 2]; out += xy[xy.size - 1]; out += 0.5f
+        return out.toFloatArray()
+    }
+
+    @Test
+    fun recognizesBasicShapes() {
+        val sr = com.mheenotes.core.geometry.ShapeRecognizer
+        assertEquals(com.mheenotes.core.model.ShapeKind.Line, sr.recognize(pts(0f, 0f, 100f, 3f))?.kind)
+        assertEquals(com.mheenotes.core.model.ShapeKind.Rectangle, sr.recognize(pts(0f, 0f, 100f, 0f, 100f, 60f, 0f, 60f, 0f, 1f))?.kind)
+        assertEquals(com.mheenotes.core.model.ShapeKind.Triangle, sr.recognize(pts(50f, 0f, 100f, 80f, 0f, 80f, 49f, 1f))?.kind)
+        val circle = FloatArray(60 * 3) { i -> val k = i / 3; val a = k / 59f * 6.2832f; when (i % 3) { 0 -> 50 + 40 * kotlin.math.cos(a); 1 -> 50 + 40 * kotlin.math.sin(a); else -> 0.5f } }
+        assertEquals(com.mheenotes.core.model.ShapeKind.Ellipse, sr.recognize(circle)?.kind)
+    }
+
+    @Test
+    fun scribbleErasesCoveredStroke() {
+        val word = line(10f, 50f, 60f, 50f)
+        val zigzag = pts(5f, 45f, 65f, 55f, 5f, 46f, 65f, 54f, 5f, 47f, 65f, 53f, 5f, 48f, 65f, 52f)
+        assertTrue(com.mheenotes.core.geometry.ScribbleDetector.isScribble(zigzag))
+        assertEquals(listOf(word.id), com.mheenotes.core.geometry.ScribbleDetector.victims(zigzag, 2f, listOf(word, line(200f, 200f, 300f, 200f))).map { it.id })
+        assertTrue(!com.mheenotes.core.geometry.ScribbleDetector.isScribble(pts(0f, 0f, 100f, 0f)))
+    }
+
+    @Test
+    fun lassoSelectsMostlyInsideStrokes() {
+        val lasso = com.mheenotes.core.geometry.Lasso(floatArrayOf(0f, 0f, 100f, 0f, 100f, 100f, 0f, 100f))
+        assertTrue(lasso.selects(line(10f, 10f, 90f, 90f)))
+        assertTrue(!lasso.selects(line(80f, 50f, 300f, 50f)))
+    }
+}
