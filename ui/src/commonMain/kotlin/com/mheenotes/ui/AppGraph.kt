@@ -49,6 +49,7 @@ object AppGraph {
 
     private fun purgeOldTrash() {
         val cutoff = nowMillis() - TRASH_DAYS * 86_400_000L
+        library.state.value.folders.filter { (it.trashedAt ?: Long.MAX_VALUE) < cutoff && isTrashRoot(it) }.forEach { deleteFolderForever(it.id) }
         library.state.value.notebooks.filter { (it.trashedAt ?: Long.MAX_VALUE) < cutoff }.forEach { deleteForever(it.id) }
     }
 
@@ -75,6 +76,7 @@ object AppGraph {
 
     fun restore(ids: Collection<Id>) = ids.forEach { id ->
         library.update(id) { n ->
+            if (n.trashedAt == null) return@update n
             // A notebook whose folder was deleted comes back at the top level.
             val folderAlive = n.folderId == null || library.state.value.folders.any { it.id == n.folderId && it.trashedAt == null }
             n.copy(trashedAt = null, folderId = if (folderAlive) n.folderId else null)
@@ -106,24 +108,93 @@ object AppGraph {
     }
 
     fun createFolder(name: String, parentId: Id?): Folder {
-        val f = Folder(newId(), name, parentId, nowMillis())
+        val f = Folder(newId(), uniqueFolderName(name, parentId), parentId, nowMillis())
         library.upsertFolder(f)
         return f
     }
 
     fun renameFolder(id: Id, name: String) {
-        library.state.value.folders.firstOrNull { it.id == id }?.let { library.upsertFolder(it.copy(name = name)) }
+        library.state.value.folders.firstOrNull { it.id == id }?.let { library.upsertFolder(it.copy(name = uniqueFolderName(name, it.parentId, except = id))) }
     }
 
-    /** Deletes a folder and its subfolders; their notebooks go to Trash. */
-    fun deleteFolder(id: Id) {
-        val s = library.state.value
-        val doomed = HashSet<Id>().apply {
-            fun collect(f: Id) { add(f); s.folders.filter { it.parentId == f }.forEach { collect(it.id) } }
+    /** "Name", or "Name (2)", "Name (3)"… when a sibling already uses it. */
+    fun uniqueFolderName(name: String, parentId: Id?, except: Id? = null): String {
+        val taken = library.state.value.folders.filter { it.parentId == parentId && it.trashedAt == null && it.id != except }.map { it.name.lowercase() }.toSet()
+        if (name.lowercase() !in taken) return name
+        var n = 2
+        while ("$name ($n)".lowercase() in taken) n++
+        return "$name ($n)"
+    }
+
+    private fun subtree(id: Id): Set<Id> {
+        val folders = library.state.value.folders
+        return HashSet<Id>().apply {
+            fun collect(f: Id) { add(f); folders.filter { it.parentId == f }.forEach { collect(it.id) } }
             collect(id)
         }
-        trash(s.notebooks.filter { it.folderId in doomed && it.trashedAt == null }.map { it.id })
-        doomed.forEach { library.deleteFolderForever(it) }
+    }
+
+    /** A trashed folder whose parent was not trashed in the same operation (shown in Trash). */
+    fun isTrashRoot(f: Folder): Boolean {
+        val t = f.trashedAt ?: return false
+        val parent = library.state.value.folders.firstOrNull { it.id == f.parentId }
+        return parent == null || parent.trashedAt != t
+    }
+
+    /**
+     * Moves a folder, its subfolders and their active notebooks to Trash as one unit. The shared
+     * timestamp marks what this operation trashed, so restore brings back exactly that.
+     */
+    fun deleteFolder(id: Id) {
+        val now = nowMillis()
+        val tree = subtree(id)
+        val s = library.state.value
+        s.folders.filter { it.id in tree && it.trashedAt == null }.forEach { library.upsertFolder(it.copy(trashedAt = now)) }
+        s.notebooks.filter { it.folderId in tree && it.trashedAt == null }.forEach { n -> library.upsert(n.copy(trashedAt = now)) }
+    }
+
+    fun restoreFolder(id: Id) {
+        val s = library.state.value
+        val root = s.folders.firstOrNull { it.id == id } ?: return
+        val t = root.trashedAt ?: return
+        val tree = subtree(id)
+        val parentAlive = root.parentId == null || s.folders.any { it.id == root.parentId && it.trashedAt == null }
+        s.folders.filter { it.id in tree && it.trashedAt == t }.forEach { f ->
+            library.upsertFolder(f.copy(trashedAt = null, parentId = if (f.id == id && !parentAlive) null else f.parentId,
+                name = if (f.id == id) uniqueFolderName(f.name, if (parentAlive) f.parentId else null, except = f.id) else f.name))
+        }
+        // Notebooks trashed on their own before the folder stay in Trash.
+        s.notebooks.filter { it.folderId in tree && it.trashedAt == t }.forEach { library.upsert(it.copy(trashedAt = null)) }
+    }
+
+    fun deleteFolderForever(id: Id) {
+        val tree = subtree(id)
+        val s = library.state.value
+        s.notebooks.filter { it.folderId in tree && it.trashedAt != null }.forEach { deleteForever(it.id) }
+        // Notebooks restored or never trashed (should not happen) move to the top level.
+        s.notebooks.filter { it.folderId in tree && it.trashedAt == null }.forEach { library.upsert(it.copy(folderId = null)) }
+        tree.forEach { library.deleteFolderForever(it) }
+    }
+
+    /** Moves a folder under [parentId] (null = top level), refusing to move it into itself. */
+    fun moveFolder(id: Id, parentId: Id?) {
+        if (parentId != null && parentId in subtree(id)) return
+        library.state.value.folders.firstOrNull { it.id == id }?.let { f ->
+            library.upsertFolder(f.copy(parentId = parentId, name = uniqueFolderName(f.name, parentId, except = id)))
+        }
+    }
+
+    /** "Parent / Child" path of a folder, for search. */
+    fun folderPath(id: Id?): String {
+        val folders = library.state.value.folders
+        val parts = ArrayList<String>()
+        var cur = id
+        while (cur != null) {
+            val f = folders.firstOrNull { it.id == cur } ?: break
+            parts.add(0, f.name)
+            cur = f.parentId
+        }
+        return parts.joinToString(" / ")
     }
 
     const val TRASH_DAYS = 30

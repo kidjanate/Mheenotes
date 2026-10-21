@@ -349,7 +349,7 @@ fun PageDialogs(tab: EditorTab, doc: NotebookDocument, pdfTools: PdfTools) {
     val lib by AppGraph.library.state.collectAsState()
     Modal(copyMove != null, close, width = 420.dp) {
         ModalTitle(if (copyMove?.move == true) s.moveToNotebook else s.copyToNotebook)
-        val others = AppState.shared.tabs.filter { it !== tab && it.doc != null }
+        val others = AppState.allTabs().filter { it !== tab && it.doc != null }
         if (others.isEmpty()) Text(s.openAnotherNotebook, style = M.type.callout, color = M.colors.textSecondary)
         Card(Modifier.fillMaxWidth().heightIn(max = 320.dp), color = M.colors.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
             LazyColumn {

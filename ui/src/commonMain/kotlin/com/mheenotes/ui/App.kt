@@ -36,11 +36,17 @@ class AppState {
 
     val activeTab: EditorTab? get() = tabs.firstOrNull { it.notebookId == activeTabId }
 
-    fun open(notebookId: Id) {
+    /**
+     * Opens a notebook in this window. Returns false when another window already has it open:
+     * two live editors on one notebook would overwrite each other's view of the page.
+     */
+    fun open(notebookId: Id): Boolean {
+        if (windows.any { it !== this && it.tabs.any { t -> t.notebookId == notebookId } }) return false
         AppGraph.library.update(notebookId) { it.copy(openedAt = nowMillis()) }
         if (tabs.none { it.notebookId == notebookId }) tabs += EditorTab(notebookId)
         activeTabId = notebookId
         screen = Screen.Editor
+        return true
     }
 
     fun closeTab(notebookId: Id) {
@@ -59,7 +65,11 @@ class AppState {
     }
 
     companion object {
-        val shared by lazy { AppState() }
+        /** One state per window; the first is the main window. */
+        val windows = mutableStateListOf<AppState>()
+        val shared by lazy { AppState().also { windows.add(0, it) } }
+
+        fun allTabs(): List<EditorTab> = windows.flatMap { it.tabs }
     }
 }
 

@@ -14,6 +14,7 @@ interface Importer {
     fun notebook(folderId: Id?)
     fun share(notebookId: Id)
     fun sharePdf(notebookId: Id)
+    fun openInNewWindow(notebookId: Id)
 }
 
 /** [onResult] receives the number of notebooks imported, or -1 on failure. */

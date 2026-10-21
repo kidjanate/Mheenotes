@@ -183,6 +183,12 @@ private fun TopBar(app: AppState, tab: EditorTab, rail: Boolean, onRail: () -> U
     val lib by AppGraph.library.state.collectAsState()
     var more by remember { mutableStateOf(false) }
     var export by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    val currentTitle = lib.notebooks.firstOrNull { it.id == tab.notebookId }?.title.orEmpty()
+    com.mheenotes.ui.library.NameModal(renaming, s.rename, s.notebookName, currentTitle, s.save, { renaming = false }) {
+        AppGraph.rename(tab.notebookId, it)
+        renaming = false
+    }
     Column(modifier.fillMaxWidth().background(c.surface.copy(alpha = 0.94f)).windowInsetsPadding(WindowInsets.statusBars)) {
         Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(Lucide.ChevronLeft, { app.backToLibrary() })
@@ -222,7 +228,11 @@ private fun TopBar(app: AppState, tab: EditorTab, rail: Boolean, onRail: () -> U
                                     }
                                 },
                         ) {
-                            TabPill(title, t.notebookId == app.activeTabId, app.tabs.size > 1, { tab.canvas?.commitSelection(); app.activeTabId = t.notebookId }) { app.closeTab(t.notebookId) }
+                            // Tapping the active tab renames the notebook; tapping another switches to it.
+                            TabPill(title, t.notebookId == app.activeTabId, app.tabs.size > 1, {
+                                if (t.notebookId == app.activeTabId) renaming = true
+                                else { tab.canvas?.commitSelection(); app.activeTabId = t.notebookId }
+                            }) { app.closeTab(t.notebookId) }
                         }
                     }
                 }

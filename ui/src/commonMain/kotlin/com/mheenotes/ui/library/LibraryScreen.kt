@@ -47,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.ArrowUpDown
@@ -129,19 +131,25 @@ fun LibraryScreen(app: AppState) {
     val s = S
 
     val visible by remember(lib, ui.section, ui.query, settings.librarySort) {
-        derivedStateOf { filterNotebooks(lib.notebooks, ui.section, ui.query, settings.librarySort) }
+        derivedStateOf { filterNotebooks(lib.notebooks, ui.section, ui.query, settings.librarySort, lib.folders) }
     }
     val childFolders = remember(lib.folders, ui.section, ui.query) {
         if (ui.query.isNotBlank()) emptyList()
         else when (val sec = ui.section) {
-            Section.All -> lib.folders.filter { it.parentId == null }
-            is Section.InFolder -> lib.folders.filter { it.parentId == sec.id }
+            Section.All -> lib.folders.filter { it.parentId == null && it.trashedAt == null }
+            is Section.InFolder -> lib.folders.filter { it.parentId == sec.id && it.trashedAt == null }
+            Section.Trash -> lib.folders.filter { AppGraph.isTrashRoot(it) }
             else -> emptyList()
         }.sortedBy { it.name.lowercase() }
     }
-    val counts = remember(lib.notebooks) {
-        lib.notebooks.filter { it.trashedAt == null }.groupingBy { it.folderId }.eachCount()
+    val counts = remember(lib.notebooks, lib.folders, ui.section) {
+        if (ui.section == Section.Trash) {
+            // Trashed folders count the notebooks that went to Trash with them.
+            lib.folders.filter { it.trashedAt != null }.associate { f -> f.id as Id? to lib.notebooks.count { it.folderId == f.id && it.trashedAt == f.trashedAt } }
+        } else lib.notebooks.filter { it.trashedAt == null }.groupingBy { it.folderId }.eachCount()
     }
+    var confirmFolderForever by remember { mutableStateOf<Folder?>(null) }
+    var rootOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
     PlatformBackHandler(ui.selecting) { ui.endSelection() }
     PlatformBackHandler(!ui.selecting && ui.section is Section.InFolder) {
@@ -164,6 +172,7 @@ fun LibraryScreen(app: AppState) {
     }
     val currentFolderId = (ui.section as? Section.InFolder)?.id
 
+    Box(Modifier.fillMaxSize().onGloballyPositioned { rootOffset = it.positionInWindow() }) {
     Row(Modifier.fillMaxSize().background(M.colors.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
         AnimatedVisibility(
             ui.sidebar,
@@ -212,6 +221,8 @@ fun LibraryScreen(app: AppState) {
                         onRenameFolder = { renameFolder = it },
                         onDeleteFolder = { confirmFolder = it },
                         onExport = { importer.share(it.id) },
+                        onOpenInNewWindow = { importer.openInNewWindow(it.id) },
+                        onDeleteFolderForever = { confirmFolderForever = it },
                         onSharePdf = { overlays.toast(s.exporting); importer.sharePdf(it.id) },
                     )
                 }
@@ -225,6 +236,9 @@ fun LibraryScreen(app: AppState) {
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    }
+
+    DragPreview(LibraryDrag.shared, rootOffset)
     }
 
     NewNotebookModal(showNew, onDismiss = { showNew = false }) { title, template, size, paper ->
@@ -264,7 +278,10 @@ fun LibraryScreen(app: AppState) {
     )
     ConfirmModal(
         confirmEmpty, s.emptyTrashConfirm, s.cannotUndo, s.emptyTrash, s.cancel, danger = true,
-        onConfirm = { lib.notebooks.filter { it.trashedAt != null }.forEach { AppGraph.deleteForever(it.id) } },
+        onConfirm = {
+            lib.folders.filter { AppGraph.isTrashRoot(it) }.forEach { AppGraph.deleteFolderForever(it.id) }
+            AppGraph.library.state.value.notebooks.filter { it.trashedAt != null }.forEach { AppGraph.deleteForever(it.id) }
+        },
         onDismiss = { confirmEmpty = false },
     )
     ConfirmModal(
@@ -277,14 +294,27 @@ fun LibraryScreen(app: AppState) {
         },
         onDismiss = { confirmFolder = null },
     )
+    ConfirmModal(
+        confirmFolderForever != null, s.deleteForeverConfirm, s.cannotUndo, s.deleteForever, s.cancel, danger = true,
+        onConfirm = { confirmFolderForever?.let { AppGraph.deleteFolderForever(it.id) } },
+        onDismiss = { confirmFolderForever = null },
+    )
     SettingsModal(showSettings) { showSettings = false }
 }
 
-fun filterNotebooks(all: List<Notebook>, section: Section, query: String, sort: LibrarySort): List<Notebook> {
+fun filterNotebooks(all: List<Notebook>, section: Section, query: String, sort: LibrarySort, folders: List<Folder> = emptyList()): List<Notebook> {
     val q = query.trim().lowercase()
+    val byId = folders.associateBy { it.id }
+    fun path(id: Id?): String {
+        val parts = ArrayList<String>()
+        var cur = id
+        while (cur != null) { val f = byId[cur] ?: break; parts.add(0, f.name); cur = f.parentId }
+        return parts.joinToString(" / ").lowercase()
+    }
     val base = all.asSequence().filter { n ->
         when (section) {
-            Section.Trash -> n.trashedAt != null
+            // Notebooks that went to Trash with their folder appear inside that folder's tile.
+            Section.Trash -> n.trashedAt != null && byId[n.folderId]?.trashedAt != n.trashedAt
             else -> n.trashedAt == null && when (section) {
                 Section.All -> q.isNotEmpty() || n.folderId == null
                 Section.Favorites -> n.favorite
@@ -293,7 +323,7 @@ fun filterNotebooks(all: List<Notebook>, section: Section, query: String, sort: 
                 Section.Trash -> false
             }
         }
-    }.filter { q.isEmpty() || it.title.lowercase().contains(q) }
+    }.filter { q.isEmpty() || it.title.lowercase().contains(q) || path(it.folderId).contains(q) }
     val sorted = when {
         section == Section.Trash -> base.sortedByDescending { it.trashedAt }
         section == Section.Recents -> base.sortedByDescending { it.openedAt }.take(60)
@@ -302,6 +332,7 @@ fun filterNotebooks(all: List<Notebook>, section: Section, query: String, sort: 
             LibrarySort.Opened -> base.sortedByDescending { it.openedAt }
             LibrarySort.Title -> base.sortedBy { it.title.lowercase() }
             LibrarySort.Created -> base.sortedByDescending { it.createdAt }
+            LibrarySort.Pages -> base.sortedByDescending { it.pageCount }
         }
     }
     return sorted.toList()
@@ -352,7 +383,7 @@ private fun Sidebar(
             Text(s.appName, Modifier.weight(1f), style = M.type.headline)
             IconButton(Lucide.Settings, onSettings, size = 36.dp, iconSize = 19.dp, tint = c.textSecondary)
         }
-        SidebarItem(Lucide.LibraryBig, s.allNotes, ui.section == Section.All) { ui.section = Section.All; ui.endSelection() }
+        SidebarItem(Lucide.LibraryBig, s.allNotes, ui.section == Section.All, dropKey = "root") { ui.section = Section.All; ui.endSelection() }
         SidebarItem(Lucide.Clock, s.recents, ui.section == Section.Recents) { ui.section = Section.Recents; ui.endSelection() }
         SidebarItem(Lucide.Star, s.favorites, ui.section == Section.Favorites) { ui.section = Section.Favorites; ui.endSelection() }
         SidebarItem(Lucide.Trash2, s.trash, ui.section == Section.Trash, badge = trashCount.takeIf { it > 0 }) { ui.section = Section.Trash; ui.endSelection() }
@@ -398,16 +429,19 @@ private fun flattenFolders(all: List<Folder>, expanded: Set<Id>): List<Pair<Fold
 }
 
 @Composable
-private fun SidebarItem(icon: ImageVector, label: String, selected: Boolean, badge: Int? = null, onClick: () -> Unit) {
+private fun SidebarItem(icon: ImageVector, label: String, selected: Boolean, badge: Int? = null, dropKey: String? = null, onClick: () -> Unit) {
     val c = M.colors
+    val drag = LibraryDrag.shared
+    val hovered = dropKey != null && drag.hovered == dropKey
     Row(
         Modifier
             .fillMaxWidth()
+            .then(if (dropKey != null) Modifier.dropZone(drag, dropKey, null) else Modifier)
             .padding(vertical = 1.dp)
             .pressable(pressedScale = 0.97f, onClick = onClick)
             .height(40.dp)
             .clip(RoundedCornerShape(Radii.sm))
-            .background(if (selected) c.fillStrong else androidx.compose.ui.graphics.Color.Transparent)
+            .background(if (hovered) c.accentSoft else if (selected) c.fillStrong else androidx.compose.ui.graphics.Color.Transparent)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -437,14 +471,18 @@ private fun FolderRow(
     var menu by remember { mutableStateOf(false) }
     val rot by androidx.compose.animation.core.animateFloatAsState(if (expanded) 90f else 0f, Motion.standard(), label = "chev")
     Box(modifier) {
+        val drag = LibraryDrag.shared
+        val hovered = drag.hovered == "side:${folder.id}" && (drag.item as? Dragged.FolderItem)?.id != folder.id
         Row(
             Modifier
                 .fillMaxWidth()
+                .dropZone(drag, "side:${folder.id}", folder.id)
                 .padding(vertical = 1.dp)
-                .pressable(pressedScale = 0.97f, onLongClick = { menu = true }, onClick = onClick)
+                .pressable(pressedScale = 0.97f, onClick = onClick)
+                .libraryDraggable(drag, { Dragged.FolderItem(folder.id, folder.name) }) { menu = true }
                 .height(38.dp)
                 .clip(RoundedCornerShape(Radii.sm))
-                .background(if (selected) c.fillStrong else androidx.compose.ui.graphics.Color.Transparent)
+                .background(if (hovered) c.accentSoft else if (selected) c.fillStrong else androidx.compose.ui.graphics.Color.Transparent)
                 .padding(start = (4 + depth * 16).dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -501,6 +539,7 @@ private fun Header(
                             LibrarySort.Opened -> s.sortOpened
                             LibrarySort.Title -> s.sortTitle
                             LibrarySort.Created -> s.sortCreated
+                            LibrarySort.Pages -> s.sortPages
                         }
                         MenuItem(label, icon = if (settings.librarySort == o) Lucide.Check else null) { settings.updateSort(o); sortMenu = false }
                     }
@@ -565,12 +604,17 @@ private fun NotebookCollection(
     onDeleteFolder: (Folder) -> Unit,
     onExport: (Notebook) -> Unit,
     onSharePdf: (Notebook) -> Unit,
+    onOpenInNewWindow: (Notebook) -> Unit,
+    onDeleteFolderForever: (Folder) -> Unit,
 ) {
     val state = rememberLazyGridState()
     LaunchedEffect(ui.section) { state.scrollToItem(0) }
+    val overlays = LocalOverlays.current
+    val alreadyOpen = S.alreadyOpen
     val actions = NotebookActions(
-        open = { n -> if (ui.selecting) ui.toggle(n.id) else if (!trash) app.open(n.id) },
+        open = { n -> if (ui.selecting) ui.toggle(n.id) else if (!trash && !app.open(n.id)) overlays.toast(alreadyOpen) },
         rename = onRename, move = onMove, deleteForever = onDeleteForever, export = onExport, sharePdf = onSharePdf,
+        openInNewWindow = onOpenInNewWindow,
     )
     LazyVerticalGrid(
         columns = if (grid) GridCells.Adaptive(176.dp) else GridCells.Fixed(1),
@@ -588,6 +632,8 @@ private fun NotebookCollection(
                     onRename = { onRenameFolder(f) },
                     onDelete = { onDeleteFolder(f) },
                     modifier = Modifier.animateItem(),
+                    trashed = trash,
+                    onDeleteForever = { onDeleteFolderForever(f) },
                 )
             }
             item(key = "divider", span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(0.dp)) }

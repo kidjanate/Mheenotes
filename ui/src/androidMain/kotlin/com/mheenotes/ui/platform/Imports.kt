@@ -134,7 +134,7 @@ object Imports {
 object Exports {
     suspend fun shareNotebook(context: Context, notebookId: Id) {
         val title = AppGraph.library.notebook(notebookId)?.title ?: "Notebook"
-        val doc = AppState.shared.tabs.firstOrNull { it.notebookId == notebookId }?.doc
+        val doc = AppState.allTabs().firstOrNull { it.notebookId == notebookId }?.doc
         val file = NotebookArchive.write(notebookId, title, doc)
         Exporter.share(context, file, "application/octet-stream")
     }

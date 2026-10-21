@@ -39,7 +39,7 @@ actual object Exporter {
     /** "Share as PDF" from the library: opens the notebook briefly if it is not open in a tab. */
     suspend fun sharePdfFromLibrary(notebookId: Id) {
         val title = AppGraph.library.notebook(notebookId)?.title?.ifBlank { null } ?: "Notebook"
-        val open = com.mheenotes.ui.AppState.shared.tabs.firstOrNull { it.notebookId == notebookId }?.doc
+        val open = com.mheenotes.ui.AppState.allTabs().firstOrNull { it.notebookId == notebookId }?.doc
         val doc = open ?: com.mheenotes.core.doc.NotebookDocument.open(com.mheenotes.core.store.NotebookStore(notebookId, AppGraph.files), AppGraph.scope)
         try {
             share(AndroidContext.app, exportPdf(notebookId, doc, title, doc.pages.value.indices.toList()), "application/pdf")

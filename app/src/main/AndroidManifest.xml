@@ -37,6 +37,13 @@
                 <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".WindowActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:documentLaunchMode="always"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize" />
         <receiver android:name=".widget.RecentNotesReceiver" android:exported="true" android:label="@string/widget_recent">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

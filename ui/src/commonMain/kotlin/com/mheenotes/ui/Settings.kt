@@ -6,7 +6,7 @@ import androidx.compose.runtime.setValue
 import com.mheenotes.core.store.Library
 import com.mheenotes.ui.design.ThemeMode
 
-enum class LibrarySort { Edited, Opened, Title, Created }
+enum class LibrarySort { Edited, Opened, Title, Created, Pages }
 
 /** User preferences, persisted as key/value rows in the library database. */
 class Settings {

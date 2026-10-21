@@ -1,5 +1,6 @@
 package com.mheenotes.ui.library
 
+import com.composables.icons.lucide.AppWindow
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -71,6 +72,7 @@ class NotebookActions(
     val deleteForever: (Notebook) -> Unit,
     val export: (Notebook) -> Unit,
     val sharePdf: (Notebook) -> Unit,
+    val openInNewWindow: (Notebook) -> Unit,
 )
 
 /** Cover aspect for the grid. Thumbnails letterbox inside it. */
@@ -95,7 +97,8 @@ fun NotebookCard(
                     .fillMaxWidth()
                     .aspectRatio(COVER_ASPECT)
                     .graphicsLayer { scaleX = lift; scaleY = lift }
-                    .pressable(pressedScale = 0.96f, onLongClick = { menu = true }) { actions.open(n) }
+                    .pressable(pressedScale = 0.96f) { actions.open(n) }
+                    .libraryDraggable(LibraryDrag.shared, { Dragged.NotebookItem(n) }) { menu = true }
                     .shadow(if (c.isDark) 0.dp else 6.dp, RoundedCornerShape(Radii.md), ambientColor = c.shadow, spotColor = c.shadow)
                     .clip(RoundedCornerShape(Radii.md))
                     .background(c.surface)
@@ -150,7 +153,8 @@ fun NotebookRow(
         Row(
             Modifier
                 .fillMaxWidth()
-                .pressable(pressedScale = 0.985f, onLongClick = { menu = true }) { actions.open(n) }
+                .pressable(pressedScale = 0.985f) { actions.open(n) }
+                .libraryDraggable(LibraryDrag.shared, { Dragged.NotebookItem(n) }) { menu = true }
                 .clip(RoundedCornerShape(Radii.md))
                 .background(if (selected) c.accentSoft else Color.Transparent)
                 .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -189,6 +193,7 @@ private fun NotebookMenu(n: Notebook, trash: Boolean, expanded: Boolean, onDismi
             MenuItem(s.restore, icon = Lucide.ArchiveRestore) { onDismiss(); AppGraph.restore(listOf(n.id)) }
             MenuItem(s.deleteForever, icon = Lucide.Trash2, danger = true) { onDismiss(); a.deleteForever(n) }
         } else {
+            MenuItem(s.openInNewWindow, icon = Lucide.AppWindow) { onDismiss(); a.openInNewWindow(n) }
             MenuItem(s.rename, icon = Lucide.PenLine) { onDismiss(); a.rename(n) }
             MenuItem(if (n.favorite) s.unfavorite else s.favorite, icon = if (n.favorite) Lucide.StarOff else Lucide.Star) {
                 onDismiss(); AppGraph.setFavorite(listOf(n.id), !n.favorite)
@@ -212,18 +217,26 @@ fun FolderTile(
     onRename: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
+    trashed: Boolean = false,
+    onDeleteForever: () -> Unit = {},
 ) {
     val c = M.colors
     val s = S
     var menu by remember { mutableStateOf(false) }
+    val drag = LibraryDrag.shared
+    val hovered = drag.hovered == "grid:${f.id}" && (drag.item as? Dragged.FolderItem)?.id != f.id
+    val lift by animateFloatAsState(if (hovered) 1.05f else 1f, Motion.bouncy(), label = "drop")
     Box(modifier) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .pressable(pressedScale = 0.96f, onLongClick = { menu = true }, onClick = onOpen)
+                .graphicsLayer { scaleX = lift; scaleY = lift }
+                .dropZone(drag, "grid:${f.id}", f.id)
+                .pressable(pressedScale = 0.96f, onClick = onOpen)
+                .then(if (trashed) Modifier else Modifier.libraryDraggable(drag, { Dragged.FolderItem(f.id, f.name) }) { menu = true })
                 .clip(RoundedCornerShape(Radii.md))
-                .background(if (grid) c.surface else Color.Transparent)
-                .then(if (grid) Modifier.border(0.75.dp, c.separator, RoundedCornerShape(Radii.md)) else Modifier)
+                .background(if (hovered) c.accentSoft else if (grid) c.surface else Color.Transparent)
+                .then(if (grid || hovered) Modifier.border(if (hovered) 2.dp else 0.75.dp, if (hovered) c.accent else c.separator, RoundedCornerShape(Radii.md)) else Modifier)
                 .padding(horizontal = 14.dp, vertical = if (grid) 14.dp else 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -233,12 +246,16 @@ fun FolderTile(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(f.name, style = M.type.calloutStrong, maxLines = 1)
-                Text(s.notebooksCount(count), style = M.type.caption, color = c.textTertiary, maxLines = 1)
+                Text(if (trashed) s.folderTrashed(count) else s.notebooksCount(count), style = M.type.caption, color = c.textTertiary, maxLines = 1)
+            }
+            if (trashed) {
+                IconButton(Lucide.ArchiveRestore, { AppGraph.restoreFolder(f.id) }, size = 32.dp, iconSize = 16.dp, tint = c.textSecondary)
+                IconButton(Lucide.Trash2, onDeleteForever, size = 32.dp, iconSize = 16.dp, tint = c.danger)
             }
         }
         Popover(menu, { menu = false }) {
             MenuItem(s.rename, icon = Lucide.PenLine) { menu = false; onRename() }
-            MenuItem(s.delete, icon = Lucide.Trash2, danger = true) { menu = false; onDelete() }
+            MenuItem(s.moveToTrash, icon = Lucide.Trash2, danger = true) { menu = false; onDelete() }
         }
     }
 }
