@@ -1,5 +1,7 @@
 package com.mheenotes.ui.library
 
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.FileText
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -194,6 +196,7 @@ fun MoveModal(targets: Set<Id>?, folders: List<Folder>, onDismiss: () -> Unit, o
 @Composable
 fun SettingsModal(visible: Boolean, onDismiss: () -> Unit) {
     val s = S
+    var showLicenses by remember { mutableStateOf(false) }
     val c = M.colors
     val st = AppGraph.settings
     Modal(visible, onDismiss, width = 520.dp) {
@@ -237,6 +240,15 @@ fun SettingsModal(visible: Boolean, onDismiss: () -> Unit) {
                 Button(s.denseFixture, { Fixtures.densePage(20_000); onDismiss() }, compact = true)
             }
         }
+        Spacer(Modifier.height(22.dp))
+        Text(s.about, style = M.type.calloutStrong, color = c.textSecondary)
+        Spacer(Modifier.height(8.dp))
+        Card(Modifier.fillMaxWidth(), color = c.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
+            ListRow(s.licenses, icon = Lucide.FileText, onClick = { showLicenses = true }) {
+                com.mheenotes.ui.design.Icon(Lucide.ChevronRight, tint = c.textTertiary, size = 16.dp)
+            }
+        }
         ModalActions { Button(s.done, onDismiss, style = ButtonStyle.Primary) }
     }
+    com.mheenotes.ui.settings.LicensesModal(showLicenses) { showLicenses = false }
 }

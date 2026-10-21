@@ -8,7 +8,6 @@ kotlinx-io = "0.9.1"
 activity = "1.13.0"
 core-ktx = "1.19.0"
 graphics-core = "1.0.4"
-motionprediction = "1.0.0"
 glance = "1.2.0"
 lucide = "2.2.1"
 profileinstaller = "1.4.1"
@@ -29,7 +28,6 @@ lucide = { module = "com.composables:icons-lucide-cmp", version.ref = "lucide" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "core-ktx" }
 androidx-graphics-core = { module = "androidx.graphics:graphics-core", version.ref = "graphics-core" }
-androidx-motionprediction = { module = "androidx.input:input-motionprediction", version.ref = "motionprediction" }
 androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }
 androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
 

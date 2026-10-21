@@ -27,7 +27,6 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.graphics.core)
-            implementation(libs.androidx.motionprediction)
         }
     }
 }

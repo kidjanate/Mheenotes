@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -163,7 +164,10 @@ fun Modal(
                     shape = RoundedCornerShape(Radii.xl),
                     color = M.colors.elevated,
                     elevation = 28.dp,
-                ) { Column(Modifier.padding(24.dp), content = content) }
+                ) {
+                    // Tall dialogs scroll instead of running off the screen.
+                    Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(24.dp), content = content)
+                }
             }
         }
     }
