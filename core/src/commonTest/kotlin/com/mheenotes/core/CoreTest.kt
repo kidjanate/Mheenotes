@@ -11,6 +11,7 @@ import com.mheenotes.core.model.ShapeKind
 import com.mheenotes.core.model.Stroke
 import com.mheenotes.core.model.Tool
 import com.mheenotes.core.model.newId
+import com.mheenotes.core.model.withCrop
 import com.mheenotes.core.store.AppFiles
 import com.mheenotes.core.store.ItemCodec
 import com.mheenotes.core.store.Library
