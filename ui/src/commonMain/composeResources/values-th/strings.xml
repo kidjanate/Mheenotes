@@ -234,4 +234,10 @@
     <string name="low_latency_hint">วาดเส้นปากกาลงจอโดยตรง ปิดหากหมึกกะพริบ</string>
     <string name="deletes_tomorrow">จะถูกลบพรุ่งนี้</string>
     <string name="deletes_in_days">จะถูกลบใน %1$d วัน</string>
+    <string name="performance">ประสิทธิภาพ</string>
+    <string name="render_memory">หน่วยความจำสำหรับแสดงผล</string>
+    <string name="render_memory_hint">ใช้หน่วยความจำมากขึ้นเพื่อให้หน้ากระดาษคมชัดเมื่อเลื่อนและซูม แลกกับการใช้ RAM</string>
+    <string name="render_memory_low">ต่ำ</string>
+    <string name="render_memory_balanced">สมดุล</string>
+    <string name="render_memory_high">สูง</string>
 </resources>

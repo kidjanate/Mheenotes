@@ -7,6 +7,7 @@ import com.mheenotes.core.doc.PageContent
 import com.mheenotes.core.geometry.Rect
 import com.mheenotes.core.model.Id
 import com.mheenotes.core.model.Page
+import com.mheenotes.ui.AppGraph
 import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -17,6 +18,9 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 
 const val TILE_PX = 512
+
+/** Render threads; leaves cores for the UI and ink threads. */
+private val WORKERS = (Runtime.getRuntime().availableProcessors() - 2).coerceIn(2, 4)
 
 /**
  * Zoom bucket: tiles at level L are rasterized at 2^L px per page unit. Always at or above the
@@ -66,11 +70,12 @@ class TileCache(
     private val free = ArrayDeque<Bitmap>()
     private val retired = ArrayDeque<Pair<Long, Bitmap>>()
     val frame = AtomicLong(0)
-    private val budget = 170 * 1024 * 1024 / (TILE_PX * TILE_PX * 4)
+    /** Tiles that fit in the user's render memory setting (each tile is 1 MB). */
+    private val budget: Int get() = AppGraph.settings.renderMemory.megabytes * 1024 * 1024 / (TILE_PX * TILE_PX * 4)
     private var closed = false
 
     private val pool = ThreadPoolExecutor(
-        3, 3, 30, TimeUnit.SECONDS, PriorityBlockingQueue(),
+        WORKERS, WORKERS, 30, TimeUnit.SECONDS, PriorityBlockingQueue(),
     ) { r -> Thread(r, "mheenotes-tiles").apply { priority = Thread.NORM_PRIORITY - 1; isDaemon = true } }
 
     private inner class Job(val tile: Tile, val page: Page, val content: PageContent, val priority: Float, val seq: Long) :

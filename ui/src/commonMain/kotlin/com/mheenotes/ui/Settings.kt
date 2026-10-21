@@ -16,6 +16,9 @@ expect fun applyAppLanguage(language: AppLanguage)
 @androidx.compose.runtime.Composable
 expect fun ProvideAppLanguage(language: AppLanguage, content: @androidx.compose.runtime.Composable () -> Unit)
 
+/** Memory for rendered page tiles. More keeps more of the notebook sharp while moving around. */
+enum class RenderMemory(val megabytes: Int) { Low(128), Balanced(256), High(512) }
+
 enum class LibrarySort { Edited, Opened, Title, Created, Pages }
 
 /** User preferences, persisted as key/value rows in the library database. */
@@ -44,6 +47,8 @@ class Settings {
         private set
     var toolbarDock by mutableStateOf("Top")
         private set
+    var renderMemory by mutableStateOf(RenderMemory.Balanced)
+        private set
     /** False until the welcome tour has been finished or skipped once. */
     var onboarded by mutableStateOf(true)
         private set
@@ -65,6 +70,7 @@ class Settings {
         lib.setting("askInsert")?.let { askInsertPage = it == "1" }
         lib.setting("language")?.let { v -> AppLanguage.entries.firstOrNull { it.name == v }?.let { language = it } }
         lib.setting("pressure")?.let { pressure = it == "1" }
+        lib.setting("renderMemory")?.let { v -> RenderMemory.entries.firstOrNull { it.name == v }?.let { renderMemory = it } }
         onboarded = lib.setting("onboarded") == "1"
         applyAppLanguage(language)
     }
@@ -84,5 +90,6 @@ class Settings {
     fun updateAskInsert(v: Boolean) { askInsertPage = v; put("askInsert", v.s()) }
     fun updateLanguage(v: AppLanguage) { language = v; applyAppLanguage(v); put("language", v.name) }
     fun updatePressure(v: Boolean) { pressure = v; put("pressure", v.s()) }
+    fun updateRenderMemory(v: RenderMemory) { renderMemory = v; put("renderMemory", v.name) }
     fun finishOnboarding() { onboarded = true; put("onboarded", "1") }
 }

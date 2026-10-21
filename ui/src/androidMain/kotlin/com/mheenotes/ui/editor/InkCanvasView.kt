@@ -222,6 +222,7 @@ class InkCanvasView(
     private val pagePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val dst = RectF()
+    private val src = android.graphics.Rect()
 
     override fun onDraw(canvas: Canvas) {
         if (scroller.computeScrollOffset()) {
@@ -302,14 +303,41 @@ class InkCanvasView(
             val left = (pl + tx0 * span) * scale + tx
             val top = (pt + ty0 * span) * scale + ty
             val size = span * scale
-            tile.bitmap?.let { bmp ->
+            val bmp = tile.bitmap
+            if (bmp != null) {
                 dst.set(TileCache.snap(left), TileCache.snap(top), TileCache.snap(left + size), TileCache.snap(top + size))
                 canvas.drawBitmap(bmp, null, dst, bitmapPaint)
                 tile.lastDrawn = frame
+            } else if (!preview) {
+                drawFallback(canvas, page.id, level, tx0, ty0, left, top, size, frame)
             }
             val d = hypot(left + size / 2 - cx, top + size / 2 - cy)
             tiles.request(tile, page, content, basePriority + d)
             if (preview) tile.lastDrawn = frame
+        }
+    }
+
+    /**
+     * Until a tile is rendered at this zoom, shows what the cache already has from the zoom just
+     * below (one quarter of its parent, upscaled) and just above (its four children, downscaled).
+     */
+    private fun drawFallback(canvas: Canvas, pageId: Id, level: Int, tx0: Int, ty0: Int, left: Float, top: Float, size: Float, frame: Long) {
+        tiles.get(TileKey(pageId, level - 1, tx0 / 2, ty0 / 2))?.let { parent ->
+            parent.bitmap?.let { bmp ->
+                val hx = (tx0 % 2) * TILE_PX / 2; val hy = (ty0 % 2) * TILE_PX / 2
+                src.set(hx, hy, hx + TILE_PX / 2, hy + TILE_PX / 2)
+                dst.set(TileCache.snap(left), TileCache.snap(top), TileCache.snap(left + size), TileCache.snap(top + size))
+                canvas.drawBitmap(bmp, src, dst, bitmapPaint)
+                parent.lastDrawn = frame
+            }
+        }
+        val half = size / 2
+        for (cy in 0..1) for (cx in 0..1) {
+            val child = tiles.get(TileKey(pageId, level + 1, tx0 * 2 + cx, ty0 * 2 + cy)) ?: continue
+            val bmp = child.bitmap ?: continue
+            dst.set(TileCache.snap(left + cx * half), TileCache.snap(top + cy * half), TileCache.snap(left + (cx + 1) * half), TileCache.snap(top + (cy + 1) * half))
+            canvas.drawBitmap(bmp, null, dst, bitmapPaint)
+            child.lastDrawn = frame
         }
     }
 

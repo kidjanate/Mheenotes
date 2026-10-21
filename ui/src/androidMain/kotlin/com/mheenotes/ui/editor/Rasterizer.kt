@@ -30,7 +30,7 @@ import kotlin.math.max
 
 /**
  * Draws a region of a page (paper, PDF, template, items) into a bitmap. Thread-safe: every
- * worker thread gets its own text measurer, and PDF pages are rendered under a per-file lock.
+ * worker thread gets its own text measurer and PDF renderer.
  */
 class Rasterizer(context: Context, private val fonts: FontFamily?, private val boldFonts: FontFamily?) {
     private val app = context.applicationContext
@@ -81,17 +81,58 @@ class Rasterizer(context: Context, private val fonts: FontFamily?, private val b
 
 /** Opened PDF assets. PdfRenderer allows one open page at a time, so each file has a lock. */
 object PdfPages {
-    private class Doc(val pfd: ParcelFileDescriptor, val renderer: PdfRenderer)
+    /**
+     * One renderer on its own file descriptor. It keeps its last page open, so consecutive tiles
+     * of that page reuse pdfium's parsed content and decoded images instead of redoing them.
+     */
+    private class Slot(val pfd: ParcelFileDescriptor, val renderer: PdfRenderer) {
+        private var page: PdfRenderer.Page? = null
+        var index = -1
+            private set
 
+        fun open(i: Int): PdfRenderer.Page {
+            if (index != i || page == null) {
+                page?.close()
+                page = null
+                page = renderer.openPage(i)
+                index = i
+            }
+            return page!!
+        }
+
+        fun close() {
+            runCatching { page?.close() }
+            runCatching { renderer.close() }
+            runCatching { pfd.close() }
+        }
+    }
+
+    /** Idle renderers for one file. Several threads render the same PDF in parallel. */
+    private class Doc {
+        val free = ArrayList<Slot>()
+        var closed = false
+    }
+
+    private const val MAX_IDLE = 4
     private val docs = HashMap<String, Doc>()
 
     private fun path(notebookId: Id, assetId: Id): String = AppGraph.files.asset(notebookId, "$assetId.pdf")
 
-    private fun open(path: String): Doc? = synchronized(docs) {
-        docs[path] ?: runCatching {
+    private fun checkout(path: String, index: Int): Pair<Doc, Slot>? {
+        val doc = synchronized(docs) { docs.getOrPut(path) { Doc() } }
+        synchronized(doc) {
+            // Prefer a renderer that already has this page open.
+            val i = doc.free.indexOfFirst { it.index == index }.takeIf { it >= 0 } ?: doc.free.lastIndex
+            if (i >= 0) return doc to doc.free.removeAt(i)
+        }
+        return runCatching {
             val pfd = ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
-            Doc(pfd, PdfRenderer(pfd))
-        }.getOrNull()?.also { docs[path] = it }
+            doc to Slot(pfd, PdfRenderer(pfd))
+        }.getOrNull()
+    }
+
+    private fun release(doc: Doc, slot: Slot) = synchronized(doc) {
+        if (doc.closed || doc.free.size >= MAX_IDLE) slot.close() else doc.free += slot
     }
 
     /**
@@ -99,24 +140,27 @@ object PdfPages {
      * mapped through [matrix] (page units to bitmap pixels).
      */
     fun render(notebookId: Id, assetId: Id, index: Int, bitmap: Bitmap, matrix: Matrix, pageWidth: Float, pageHeight: Float, rotation: Int = 0) {
-        val doc = open(path(notebookId, assetId)) ?: return
-        synchronized(doc) {
-            if (index !in 0 until doc.renderer.pageCount) return
-            doc.renderer.openPage(index).use { p ->
-                val r = ((rotation % 360) + 360) % 360
-                val k = pageWidth / (if (r % 180 == 0) p.width else p.height)
-                val m = Matrix().apply {
-                    setScale(k, k)
-                    postRotate(r.toFloat())
-                    when (r) {
-                        90 -> postTranslate(pageWidth, 0f)
-                        180 -> postTranslate(pageWidth, pageHeight)
-                        270 -> postTranslate(0f, pageHeight)
-                    }
-                    postConcat(matrix)
+        val (doc, slot) = checkout(path(notebookId, assetId), index) ?: return
+        var ok = false
+        try {
+            if (index !in 0 until slot.renderer.pageCount) { ok = true; return }
+            val p = slot.open(index)
+            val r = ((rotation % 360) + 360) % 360
+            val k = pageWidth / (if (r % 180 == 0) p.width else p.height)
+            val m = Matrix().apply {
+                setScale(k, k)
+                postRotate(r.toFloat())
+                when (r) {
+                    90 -> postTranslate(pageWidth, 0f)
+                    180 -> postTranslate(pageWidth, pageHeight)
+                    270 -> postTranslate(0f, pageHeight)
                 }
-                p.render(bitmap, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                postConcat(matrix)
             }
+            p.render(bitmap, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            ok = true
+        } finally {
+            if (ok) release(doc, slot) else slot.close()
         }
     }
 
@@ -132,7 +176,7 @@ object PdfPages {
     fun closeAll(notebookId: Id) = synchronized(docs) {
         val prefix = AppGraph.files.assetsDir(notebookId)
         docs.keys.filter { it.startsWith(prefix) }.forEach { k ->
-            docs.remove(k)?.let { d -> synchronized(d) { d.renderer.close(); d.pfd.close() } }
+            docs.remove(k)?.let { d -> synchronized(d) { d.closed = true; d.free.forEach { it.close() }; d.free.clear() } }
         }
     }
 }
