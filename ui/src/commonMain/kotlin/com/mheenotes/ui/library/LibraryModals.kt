@@ -253,21 +253,16 @@ fun SettingsModal(visible: Boolean, onDismiss: () -> Unit, onTour: () -> Unit = 
         LanguagePicker(Modifier.fillMaxWidth())
         Spacer(Modifier.height(22.dp))
         Text(stringResource(Res.string.performance), style = M.type.calloutStrong, color = c.textSecondary)
-        Spacer(Modifier.height(8.dp))
-        Card(Modifier.fillMaxWidth(), color = c.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
-            Column(Modifier.padding(16.dp)) {
-                Text(stringResource(Res.string.render_memory), style = M.type.body)
-                Text(stringResource(Res.string.render_memory_hint), style = M.type.callout, color = c.textSecondary)
-                Spacer(Modifier.height(12.dp))
-                Segmented(com.mheenotes.ui.RenderMemory.entries, st.renderMemory, st::updateRenderMemory, Modifier.fillMaxWidth()) { o, sel ->
-                    val name = when (o) {
-                        com.mheenotes.ui.RenderMemory.Low -> stringResource(Res.string.render_memory_low)
-                        com.mheenotes.ui.RenderMemory.Balanced -> stringResource(Res.string.render_memory_balanced)
-                        com.mheenotes.ui.RenderMemory.High -> stringResource(Res.string.render_memory_high)
-                    }
-                    Text("$name · ${o.megabytes} MB", style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary, maxLines = 1)
-                }
+        Spacer(Modifier.height(6.dp))
+        Text(stringResource(Res.string.render_memory_hint), style = M.type.callout, color = c.textTertiary)
+        Spacer(Modifier.height(10.dp))
+        Segmented(com.mheenotes.ui.RenderMemory.entries, st.renderMemory, st::updateRenderMemory, Modifier.fillMaxWidth()) { o, sel ->
+            val name = when (o) {
+                com.mheenotes.ui.RenderMemory.Low -> stringResource(Res.string.render_memory_low)
+                com.mheenotes.ui.RenderMemory.Balanced -> stringResource(Res.string.render_memory_balanced)
+                com.mheenotes.ui.RenderMemory.High -> stringResource(Res.string.render_memory_high)
             }
+            Text("$name · ${o.megabytes} MB", style = M.type.calloutStrong, color = if (sel) c.text else c.textSecondary, maxLines = 1)
         }
         Spacer(Modifier.height(22.dp))
         Text(stringResource(Res.string.about), style = M.type.calloutStrong, color = c.textSecondary)

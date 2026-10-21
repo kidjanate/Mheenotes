@@ -246,7 +246,6 @@
     <string name="deletes_tomorrow">Deletes tomorrow</string>
     <string name="deletes_in_days">Deletes in %1$d days</string>
     <string name="performance">Performance</string>
-    <string name="render_memory">Render memory</string>
     <string name="render_memory_hint">More memory keeps more of your pages sharp while you scroll and zoom, at the cost of RAM.</string>
     <string name="render_memory_low">Low</string>
     <string name="render_memory_balanced">Balanced</string>
