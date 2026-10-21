@@ -1,0 +1,52 @@
+package com.mheenotes.ui
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.mheenotes.core.store.Library
+import com.mheenotes.ui.design.ThemeMode
+
+enum class LibrarySort { Edited, Opened, Title, Created }
+
+/** User preferences, persisted as key/value rows in the library database. */
+class Settings {
+    private var library: Library? = null
+
+    var theme by mutableStateOf(ThemeMode.System)
+        private set
+    var librarySort by mutableStateOf(LibrarySort.Edited)
+        private set
+    var libraryGrid by mutableStateOf(true)
+        private set
+    var fingerDraws by mutableStateOf(false)
+        private set
+    var scribbleErase by mutableStateOf(true)
+        private set
+    var holdToShape by mutableStateOf(true)
+        private set
+    /** Serialized tool presets, owned by the editor. */
+    var toolPresets by mutableStateOf("")
+        private set
+
+    suspend fun load(lib: Library) {
+        library = lib
+        lib.setting("theme")?.let { v -> ThemeMode.entries.firstOrNull { it.name == v }?.let { theme = it } }
+        lib.setting("sort")?.let { v -> LibrarySort.entries.firstOrNull { it.name == v }?.let { librarySort = it } }
+        lib.setting("grid")?.let { libraryGrid = it == "1" }
+        lib.setting("finger")?.let { fingerDraws = it == "1" }
+        lib.setting("scribble")?.let { scribbleErase = it == "1" }
+        lib.setting("holdShape")?.let { holdToShape = it == "1" }
+        lib.setting("tools")?.let { toolPresets = it }
+    }
+
+    private fun put(k: String, v: String) = library?.putSetting(k, v)
+    private fun Boolean.s() = if (this) "1" else "0"
+
+    fun updateTheme(v: ThemeMode) { theme = v; put("theme", v.name) }
+    fun updateSort(v: LibrarySort) { librarySort = v; put("sort", v.name) }
+    fun updateGrid(v: Boolean) { libraryGrid = v; put("grid", v.s()) }
+    fun updateFingerDraws(v: Boolean) { fingerDraws = v; put("finger", v.s()) }
+    fun updateScribble(v: Boolean) { scribbleErase = v; put("scribble", v.s()) }
+    fun updateHoldShape(v: Boolean) { holdToShape = v; put("holdShape", v.s()) }
+    fun updateTools(v: String) { toolPresets = v; put("tools", v) }
+}
