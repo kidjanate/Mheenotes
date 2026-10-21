@@ -30,7 +30,7 @@ No account, no ads, no network. Your notes stay on your tablet.
 - **Hold at the end of a stroke to snap it** into a clean line, ellipse, triangle or rectangle; lines snap to 45° steps
 - Smooth on huge pages: tens of thousands of strokes still scroll and zoom without hitches
 
-<!-- TODO(media): docs/media/scribble-shapes.gif — scribble to erase, hold to snap a circle -->
+<img src="docs/media/scribble-erase.gif" width="100%" alt="Scribbling over a word erases it" />
 
 ### Lasso, text and images
 
