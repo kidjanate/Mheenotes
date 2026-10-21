@@ -22,7 +22,7 @@ declined even if they are good ideas.
 
 ## Working on the code
 
-1. Fork the repository and create a branch from `main`: `fix/short-name` or `feature/short-name`.
+1. Fork the repository and create a branch from `next` (the default branch): `fix/short-name` or `feature/short-name`.
 2. Build and run with `./gradlew :app:installDebug` on a tablet or emulator.
 3. Keep the change focused: one fix or feature per pull request.
 4. Run `./gradlew :core:allTests` and `./gradlew :app:assembleRelease` before pushing.
