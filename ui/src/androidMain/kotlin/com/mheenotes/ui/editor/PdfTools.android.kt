@@ -92,3 +92,6 @@ private suspend fun searchPdfText(tab: EditorTab, doc: NotebookDocument, query: 
         out.sortedBy { it.first }
     }
 }
+
+actual suspend fun loadImageAsset(notebookId: String, assetId: String, maxPixels: Int): androidx.compose.ui.graphics.ImageBitmap? =
+    withContext(Dispatchers.IO) { ImageAssets.get(notebookId, assetId, maxPixels) }

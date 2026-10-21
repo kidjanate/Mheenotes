@@ -106,6 +106,7 @@ actual fun InkCanvas(tab: EditorTab, doc: NotebookDocument, topInset: Dp, modifi
             override fun replaceSelection(transform: (Item) -> Item) = view.replaceSelection(transform)
             override fun selectionItems(): List<Item> = view.currentSelectionItems()
             override fun select(pageId: Id, items: List<Item>) = view.select(pageId, items)
+            override fun moveSelectionToPage(delta: Int) = view.moveSelectionToPage(delta)
         }
         onDispose {
             view.commitSelection()

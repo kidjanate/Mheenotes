@@ -1,5 +1,13 @@
 package com.mheenotes.ui.editor
 
+import com.composables.icons.lucide.ArrowDown
+import com.composables.icons.lucide.ArrowUp
+import com.composables.icons.lucide.Crop
+import com.composables.icons.lucide.Lock
+import com.composables.icons.lucide.LockOpen
+import com.composables.icons.lucide.PenLine
+import com.composables.icons.lucide.SlidersHorizontal
+import com.composables.icons.lucide.Type
 import com.composables.icons.lucide.Bookmark
 import com.composables.icons.lucide.FileInput
 import com.composables.icons.lucide.Files
@@ -89,7 +97,12 @@ import com.mheenotes.core.model.TextItem
 import com.mheenotes.core.model.newId
 import com.mheenotes.ui.AppGraph
 import com.mheenotes.ui.AppState
+import com.mheenotes.ui.design.Button
+import com.mheenotes.ui.design.ButtonStyle
 import com.mheenotes.ui.design.Card
+import com.mheenotes.ui.design.ListRow
+import com.mheenotes.ui.design.Slider
+import com.mheenotes.ui.design.Toggle
 import com.mheenotes.ui.design.ColorDot
 import com.mheenotes.ui.design.Divider
 import com.mheenotes.ui.design.IconButton
@@ -367,46 +380,127 @@ private fun SelectionBar(tab: EditorTab, doc: NotebookDocument, onCapture: () ->
                 shape = RoundedCornerShape(Radii.lg), color = c.elevated, elevation = 14.dp,
             ) {
                 Row(Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val canvas = tab.canvas
-                    IconButton(Lucide.Copy, { ItemClipboard.items = canvas?.selectionItems().orEmpty() })
-                    IconButton(Lucide.Scissors, { ItemClipboard.items = canvas?.selectionItems().orEmpty(); canvas?.deleteSelection() })
-                    IconButton(Lucide.CopyPlus, {
-                        val items = canvas?.selectionItems().orEmpty()
-                        val pageId = sel?.pageId ?: return@IconButton
-                        canvas?.commitSelection()
-                        val off = com.mheenotes.core.geometry.Similarity(0f, 0f, dx = 18f, dy = 18f)
-                        val placed = items.map { reId(transformItem(it, off), doc.nextSeq()) }
-                        doc.edit(pageId, emptyList(), placed)
-                        canvas?.select(pageId, placed)
-                    })
-                    if (sel?.items?.any { it is Stroke || it is ShapeItem || it is TextItem } == true) {
-                        Box {
-                            val first = sel.items.firstOrNull { it is Stroke || it is ShapeItem || it is TextItem }
-                            val argb = when (first) { is Stroke -> first.argb; is ShapeItem -> first.argb; is TextItem -> first.argb; else -> 0 }
-                            Box(Modifier.size(40.dp).pressable(pressedScale = 0.88f) { colors = true }, contentAlignment = Alignment.Center) {
-                                Box(Modifier.size(20.dp).clip(RoundedCornerShape(50)).background(Color(argb or 0xFF000000.toInt())))
-                            }
-                            Popover(colors, { colors = false }) {
-                                Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    INK_COLORS.forEach { col ->
-                                        ColorDot(Color(col), false, {
-                                            colors = false
-                                            canvas?.replaceSelection { recolor(it, col) }
-                                        })
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    IconButton(Lucide.Camera, onCapture)
-                    IconButton(Lucide.ArrowUpToLine, { canvas?.replaceSelection { reSeq(it, doc.nextSeq()) } })
-                    IconButton(Lucide.ArrowDownToLine, { canvas?.replaceSelection { reSeq(it, -doc.nextSeq()) } })
-                    Spacer(Modifier.width(2.dp))
-                    Box(Modifier.width(0.75.dp).height(24.dp).background(c.separator))
-                    IconButton(Lucide.Trash2, { canvas?.deleteSelection() }, tint = c.danger)
+                    SelectionActions(tab, doc, sel ?: return@Row, onCapture)
                 }
             }
         }
+    }
+}
+
+/** Context-aware actions: what shows depends on what kind of items are selected. */
+@Composable
+private fun SelectionActions(tab: EditorTab, doc: NotebookDocument, sel: Selection, onCapture: () -> Unit) {
+    val s = S
+    val c = M.colors
+    val canvas = tab.canvas
+    val images = sel.items.filterIsInstance<ImageItem>()
+    val texts = sel.items.filterIsInstance<TextItem>()
+    val shapes = sel.items.filterIsInstance<ShapeItem>()
+    // A locked image only offers unlocking.
+    if (images.any { it.locked }) {
+        Button(s.unlock, { canvas?.replaceSelection { if (it is ImageItem) it.copy(locked = false) else it } }, icon = Lucide.LockOpen, style = ButtonStyle.Ghost, compact = true)
+        return
+    }
+    var colors by remember { mutableStateOf(false) }
+    var textStyle by remember { mutableStateOf(false) }
+    var shapeStyle by remember { mutableStateOf(false) }
+    var more by remember { mutableStateOf(false) }
+    var crop by remember { mutableStateOf<ImageItem?>(null) }
+    IconButton(Lucide.Copy, { ItemClipboard.items = canvas?.selectionItems().orEmpty() })
+    IconButton(Lucide.Scissors, { ItemClipboard.items = canvas?.selectionItems().orEmpty(); canvas?.deleteSelection() })
+    IconButton(Lucide.CopyPlus, {
+        val items = canvas?.selectionItems().orEmpty()
+        canvas?.commitSelection()
+        val off = com.mheenotes.core.geometry.Similarity(0f, 0f, dx = 18f, dy = 18f)
+        val placed = items.map { reId(transformItem(it, off), doc.nextSeq()) }
+        doc.edit(sel.pageId, emptyList(), placed)
+        canvas?.select(sel.pageId, placed)
+    })
+    if (sel.items.any { it is Stroke || it is ShapeItem || it is TextItem }) {
+        Box {
+            val first = sel.items.firstOrNull { it is Stroke || it is ShapeItem || it is TextItem }
+            val argb = when (first) { is Stroke -> first.argb; is ShapeItem -> first.argb; is TextItem -> first.argb; else -> 0 }
+            Box(Modifier.size(40.dp).pressable(pressedScale = 0.88f) { colors = true }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(20.dp).clip(RoundedCornerShape(50)).background(Color(argb or 0xFF000000.toInt())))
+            }
+            Popover(colors, { colors = false }) {
+                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                androidx.compose.foundation.layout.FlowRow(Modifier.padding(6.dp).width(270.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    (INK_COLORS + Tools.customColors).distinct().forEach { col ->
+                        ColorDot(Color(col), false, { colors = false; canvas?.replaceSelection { recolor(it, col) } })
+                    }
+                }
+            }
+        }
+    }
+    if (texts.isNotEmpty()) {
+        Box {
+            IconButton(Lucide.Type, { textStyle = true })
+            Popover(textStyle, { textStyle = false }, width = 360.dp) {
+                TextStyleControls(texts.first(), { proto ->
+                    canvas?.replaceSelection { if (it is TextItem) it.copy(bold = proto.bold, italic = proto.italic, underline = proto.underline, align = proto.align, font = proto.font, fontSize = if (proto.fontSize != texts.first().fontSize) proto.fontSize else it.fontSize, argb = if (proto.argb != texts.first().argb) proto.argb else it.argb) else it }
+                })
+            }
+        }
+    }
+    if (shapes.isNotEmpty()) {
+        Box {
+            IconButton(Lucide.SlidersHorizontal, { shapeStyle = true })
+            Popover(shapeStyle, { shapeStyle = false }, width = 280.dp) {
+                Column(Modifier.padding(10.dp)) {
+                    val first = shapes.first()
+                    Text(s.width, style = M.type.caption, color = c.textSecondary)
+                    Slider(first.strokeWidth, { w -> canvas?.replaceSelection { if (it is ShapeItem) it.copy(strokeWidth = w) else it } }, Modifier.fillMaxWidth(), range = 0.5f..12f)
+                    ListRow(s.fill) {
+                        Toggle(first.fillArgb != null, { on ->
+                            canvas?.replaceSelection { if (it is ShapeItem) it.copy(fillArgb = if (on) (it.argb and 0x00FFFFFF) or 0x33000000 else null) else it }
+                        })
+                    }
+                }
+            }
+        }
+    }
+    if (images.size == 1) {
+        IconButton(Lucide.Crop, { crop = images.single() })
+    }
+    if (images.isNotEmpty() || texts.isNotEmpty() || shapes.isNotEmpty()) {
+        IconButton(Lucide.RotateCw, {
+            val b = sel.bounds
+            canvas?.replaceSelection { transformItem(it, com.mheenotes.core.geometry.Similarity(b.centerX, b.centerY, rotation = 90f)) }
+        })
+    }
+    IconButton(Lucide.Camera, onCapture)
+    Box {
+        IconButton(Lucide.Ellipsis, { more = true })
+        Popover(more, { more = false }) {
+            MenuItem(s.applyPen, icon = Lucide.PenLine) { more = false; canvas?.replaceSelection { applyPen(it) } }
+            MenuItem(s.bringToFront, icon = Lucide.ArrowUpToLine) { more = false; canvas?.replaceSelection { reSeq(it, doc.nextSeq()) } }
+            MenuItem(s.sendToBack, icon = Lucide.ArrowDownToLine) { more = false; canvas?.replaceSelection { reSeq(it, -doc.nextSeq()) } }
+            MenuDivider()
+            MenuItem(s.previousPage, icon = Lucide.ArrowUp, enabled = doc.pages.value.indexOfFirst { it.id == sel.pageId } > 0) { more = false; canvas?.moveSelectionToPage(-1) }
+            MenuItem(s.nextPage, icon = Lucide.ArrowDown, enabled = doc.pages.value.indexOfFirst { it.id == sel.pageId } < doc.pages.value.lastIndex) { more = false; canvas?.moveSelectionToPage(1) }
+            if (images.isNotEmpty()) {
+                MenuDivider()
+                MenuItem(s.lock, icon = Lucide.Lock) { more = false; canvas?.replaceSelection { if (it is ImageItem) it.copy(locked = true) else it }; canvas?.commitSelection() }
+            }
+        }
+    }
+    Spacer(Modifier.width(2.dp))
+    Box(Modifier.width(0.75.dp).height(24.dp).background(c.separator))
+    IconButton(Lucide.Trash2, { canvas?.deleteSelection() }, tint = c.danger)
+    CropModal(tab, crop, onDismiss = { crop = null }) { cropped -> canvas?.replaceSelection { if (it.id == cropped.id) cropped else it } }
+}
+
+/** The current ink tool's color and width applied to strokes, shapes and text. */
+private fun applyPen(item: Item): Item {
+    val tool = Tools.previousInk
+    val argb = Tools.colorOf(tool)
+    val width = Tools.widthOf(tool)
+    return when (item) {
+        is Stroke -> item.copy(argb = if (item.tool == com.mheenotes.core.model.Tool.Highlighter) (argb and 0x00FFFFFF) or 0x66000000 else argb or 0xFF000000.toInt(), width = width)
+        is ShapeItem -> item.copy(argb = argb or 0xFF000000.toInt(), strokeWidth = width)
+        is TextItem -> item.copy(argb = argb or 0xFF000000.toInt())
+        else -> item
     }
 }
 

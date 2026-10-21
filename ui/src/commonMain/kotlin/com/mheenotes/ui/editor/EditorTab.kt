@@ -167,6 +167,8 @@ interface CanvasController {
     fun replaceSelection(transform: (Item) -> Item)
     fun selectionItems(): List<Item>
     fun select(pageId: Id, items: List<Item>)
+    /** Moves the selection to the page [delta] away, keeping its position on the page. */
+    fun moveSelectionToPage(delta: Int)
 }
 
 /**

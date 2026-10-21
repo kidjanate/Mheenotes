@@ -200,3 +200,14 @@ class FormatTest {
         assertEquals(page, NotebookStore(id, files).let { s -> s.pages().single().also { s.close() } })
     }
 }
+
+class CropTest {
+    @Test
+    fun cropKeepsScaleAndPosition() {
+        val img = com.mheenotes.core.model.ImageItem("i", 1, "a", Rect(100f, 100f, 300f, 200f), aspect = 2f)
+        val half = img.withCrop(Rect(0.5f, 0f, 1f, 1f))
+        assertEquals(Rect(200f, 100f, 300f, 200f), half.frame)
+        // Undoing the crop restores the original frame.
+        assertEquals(img.frame, half.withCrop(Rect(0f, 0f, 1f, 1f)).frame)
+    }
+}

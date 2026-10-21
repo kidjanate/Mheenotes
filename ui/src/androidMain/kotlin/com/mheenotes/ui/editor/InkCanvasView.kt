@@ -927,7 +927,8 @@ class InkCanvasView(
         val lasso = Lasso(xy)
         if (!lasso.isUsable) return
         val content = doc.content(pageId) ?: return
-        val items = content.snapshot.query(lasso.bounds).filter { lasso.selects(it) }
+        // Locked images stay put; tap one to unlock it.
+        val items = content.snapshot.query(lasso.bounds).filter { lasso.selects(it) && !(it is com.mheenotes.core.model.ImageItem && it.locked) }
         // Nothing to move: keep the area so it can still be captured as an image.
         if (items.isEmpty()) { tab.captureArea = CaptureArea(pageId, boundingRect(xy)); return }
         select(pageId, items, xy)
@@ -958,6 +959,26 @@ class InkCanvasView(
         invalidate()
     }
 
+    /** Moves the selection [delta] pages away at the same spot (clamped to the new page). */
+    fun moveSelectionToPage(delta: Int) {
+        val sel = tab.selection ?: return
+        val from = layout.indexOf(sel.pageId)
+        val target = layout.pages.getOrNull(from + delta) ?: return
+        val moved0 = sel.items.map { transformItem(it, sel.transform) }
+        val b = moved0.map { it.bounds }.reduce { a, c -> a.union(c) }
+        val dx = (-b.left).coerceAtLeast(0f) - (b.right - target.width).coerceAtLeast(0f)
+        val dy = (-b.top).coerceAtLeast(0f) - (b.bottom - target.height).coerceAtLeast(0f)
+        val moved = moved0.map { transformItem(it, Similarity(0f, 0f, dx = dx, dy = dy)) }
+        tab.selection = null
+        tab.scope.launch {
+            doc.load(target.id)
+            // One undo step: gone from the old page, present on the new one.
+            doc.batch(listOf(com.mheenotes.core.doc.Change.Items(sel.pageId, sel.items, emptyList()), com.mheenotes.core.doc.Change.Items(target.id, emptyList(), moved)))
+            scrollToPage(from + delta, true)
+            select(target.id, moved)
+        }
+    }
+
     /** Removes the selection's items from the page for good. */
     fun deleteSelection() {
         val sel = tab.selection ?: return
@@ -986,6 +1007,7 @@ class InkCanvasView(
     private fun selectionHit(sel: Selection, sx: Float, sy: Float): Mode? {
         val i = layout.indexOf(sel.pageId)
         if (i < 0) return null
+        if (sel.items.any { it is com.mheenotes.core.model.ImageItem && it.locked }) return null
         val (_, x, y) = toPage(sx, sy, i)
         val pad = 8 * density / scale
         val tol = 22 * density / scale

@@ -167,3 +167,13 @@ data class ShapeItem(
 }
 
 data class Asset(val id: Id, val mime: String, val fileName: String)
+
+/** New crop window, keeping the image's scale and the uncropped image's position on the page. */
+fun ImageItem.withCrop(newCrop: Rect): ImageItem {
+    val fullW = frame.width / crop.width
+    val fullH = frame.height / crop.height
+    val ox = frame.left - crop.left * fullW
+    val oy = frame.top - crop.top * fullH
+    val f = Rect(ox + newCrop.left * fullW, oy + newCrop.top * fullH, ox + newCrop.right * fullW, oy + newCrop.bottom * fullH)
+    return copy(crop = newCrop, frame = f, aspect = f.width / f.height)
+}
