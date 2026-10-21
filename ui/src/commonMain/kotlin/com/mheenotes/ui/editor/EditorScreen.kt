@@ -162,6 +162,7 @@ fun EditorScreen(app: AppState) {
                         TextEditorOverlay(tab, doc)
                         FloatingToolbar(tab, doc, topBarPx)
                         PageIndicator(tab, doc, Modifier.align(Alignment.BottomEnd)) { rail = !rail }
+                        PdfSearchBar(tab, doc, pdfTools, topBarPx)
                     }
                 }
             }
@@ -250,7 +251,7 @@ private fun TopBar(app: AppState, tab: EditorTab, rail: Boolean, onRail: () -> U
                     MenuItem(s.resetZoom, icon = Lucide.Maximize) { more = false; tab.scrollRequest = ScrollRequest.FitWidth }
                     MenuItem(s.goToPage, icon = Lucide.Hash) { more = false; tab.pageDialog = PageDialog.GoTo }
                     if (doc?.pages?.value?.any { it.pdf != null } == true) {
-                        MenuItem(s.searchPdf, icon = Lucide.Search) { more = false; tab.pageDialog = PageDialog.PdfSearch }
+                        MenuItem(s.searchPdf, icon = Lucide.Search) { more = false; tab.search = tab.search ?: PdfSearchState() }
                     }
                     if (ItemClipboard.items.isNotEmpty()) MenuItem(s.paste, icon = Lucide.ClipboardPaste) { more = false; doc?.let { paste(tab, it) } }
                     MenuDivider()

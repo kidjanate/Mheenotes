@@ -119,6 +119,7 @@ actual fun InkCanvas(tab: EditorTab, doc: NotebookDocument, topInset: Dp, modifi
         when (val r = tab.scrollRequest) {
             is ScrollRequest.ToPage -> { delay(16); view.scrollToPage(r.index, r.animate) }
             ScrollRequest.FitWidth -> view.fitWidth()
+            is ScrollRequest.Reveal -> { delay(16); view.reveal(r.index, r.rect) }
             null -> Unit
         }
         tab.scrollRequest = null
@@ -128,6 +129,7 @@ actual fun InkCanvas(tab: EditorTab, doc: NotebookDocument, topInset: Dp, modifi
     }
     AndroidView({ container }, modifier, update = {
         tab.captureArea // repaint when the capture outline appears or goes away
+        tab.search?.let { it.hits; it.current; it.boxes.size } // and when search highlights change
         view.invalidate()
     })
 }

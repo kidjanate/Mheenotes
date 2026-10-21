@@ -88,6 +88,8 @@ class EditorTab(val notebookId: Id) {
     var textEdit by mutableStateOf<TextEdit?>(null)
     var captureArea by mutableStateOf<CaptureArea?>(null)
     var pageDialog by mutableStateOf<PageDialog?>(null)
+    /** Open find-in-PDF bar; null when closed. */
+    var search by mutableStateOf<PdfSearchState?>(null)
     var pdfTools: PdfTools? = null
     /** Rail filter: show only bookmarked pages. */
     var bookmarksOnly by mutableStateOf(false)
@@ -224,6 +226,8 @@ fun EditorTab.selectionScreenBounds(): Rect? {
 sealed interface ScrollRequest {
     data class ToPage(val index: Int, val animate: Boolean = true) : ScrollRequest
     data object FitWidth : ScrollRequest
+    /** Brings [rect] (page units on page [index]) into view, centring it if it is off screen. */
+    data class Reveal(val index: Int, val rect: Rect) : ScrollRequest
 }
 
 /** Renders a notebook's first page into its cover file. Platform-provided. */

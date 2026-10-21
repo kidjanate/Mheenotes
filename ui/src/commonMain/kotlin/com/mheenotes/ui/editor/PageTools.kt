@@ -29,6 +29,7 @@ import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Lucide
 import com.mheenotes.core.doc.Change
 import com.mheenotes.core.doc.NotebookDocument
+import com.mheenotes.core.geometry.Rect
 import com.mheenotes.core.geometry.Similarity
 import com.mheenotes.core.model.ImageItem
 import com.mheenotes.core.model.Item
@@ -67,7 +68,6 @@ sealed interface PageDialog {
     data class Insert(val afterIndex: Int) : PageDialog
     data object GoTo : PageDialog
     data class CopyMove(val index: Int, val move: Boolean) : PageDialog
-    data object PdfSearch : PageDialog
 }
 
 enum class PaperPreset { A4, Letter, A5, A3, Square, Wide, Screen, Custom }
@@ -263,8 +263,14 @@ interface PdfTools {
     /** Picks a PDF and inserts its pages after [afterIndex]. */
     fun insertPages(afterIndex: Int)
 
-    /** Pages (0-based notebook indices) whose PDF text contains [query], with match counts. Null when unsupported. */
-    suspend fun search(query: String): List<Pair<Int, Int>>
+    /** Every occurrence of [query] in the notebook's PDF text, in page order. */
+    suspend fun search(query: String): List<PdfHit>
+
+    /** Highlight boxes in page units (one per line a hit spans) for [hits], all on [page]. */
+    suspend fun boxes(page: Page, hits: List<PdfHit>): List<List<Rect>>
+
+    /** Frees text-layer resources kept open while searching. */
+    fun endSearch()
 }
 
 @Composable
@@ -365,30 +371,5 @@ fun PageDialogs(tab: EditorTab, doc: NotebookDocument, pdfTools: PdfTools) {
             }
         }
         ModalActions { Button(s.cancel, close) }
-    }
-
-    // PDF text search
-    val scope = rememberCoroutineScope()
-    var query by remember(dialog) { mutableStateOf("") }
-    var results by remember(dialog) { mutableStateOf<List<Pair<Int, Int>>>(emptyList()) }
-    var searching by remember(dialog) { mutableStateOf(false) }
-    Modal(dialog == PageDialog.PdfSearch, close, width = 480.dp) {
-        ModalTitle(s.searchPdf)
-        TextField(query, { query = it }, Modifier.fillMaxWidth(), placeholder = s.search, onSubmit = {
-            if (query.isNotBlank()) scope.launch { searching = true; results = pdfTools.search(query.trim()); searching = false }
-        })
-        Spacer(Modifier.height(12.dp))
-        when {
-            searching -> Spinner()
-            results.isEmpty() && query.isNotBlank() -> Text(s.noMatches, style = M.type.callout, color = M.colors.textSecondary)
-            else -> Card(Modifier.fillMaxWidth().heightIn(max = 300.dp), color = M.colors.fill, border = false, shape = RoundedCornerShape(Radii.md)) {
-                LazyColumn {
-                    items(results) { (page, count) ->
-                        ListRow(s.pageOf(page + 1, pages.size), subtitle = "$count", onClick = { tab.scrollRequest = ScrollRequest.ToPage(page); close() })
-                    }
-                }
-            }
-        }
-        ModalActions { Button(s.close, close) }
     }
 }

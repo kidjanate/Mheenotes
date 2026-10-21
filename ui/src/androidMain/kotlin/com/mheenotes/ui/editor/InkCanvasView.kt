@@ -12,6 +12,7 @@ import android.view.VelocityTracker
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.widget.OverScroller
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -177,6 +178,17 @@ class InkCanvasView(
         animateTo(scale, tx, target, animate)
     }
 
+    fun reveal(index: Int, r: Rect) {
+        if (index !in layout.pages.indices) return
+        val l = layout.left(index) + r.left; val rr = layout.left(index) + r.right
+        val t = layout.tops[index] + r.top; val b = layout.tops[index] + r.bottom
+        val top = chrome.topInset; val margin = 56 * density
+        var tx1 = tx; var ty1 = ty
+        if (t * scale + ty < top + margin || b * scale + ty > height - margin) ty1 = (top + height) / 2f - (t + b) / 2f * scale
+        if (l * scale + tx < margin || rr * scale + tx > width - margin) tx1 = width / 2f - (l + rr) / 2f * scale
+        if (tx1 != tx || ty1 != ty) animateTo(scale, tx1, ty1, true)
+    }
+
     fun fitWidth() {
         val docY = (height / 2f - ty) / scale
         val s = fitScale
@@ -271,6 +283,7 @@ class InkCanvasView(
         }
         if (tiles.frame.get() % 60 == 0L) doc.retainOnly(keep + loading + pendingPages())
 
+        drawSearchHits(canvas, first, last)
         drawOverlays(canvas, level)
         armFrontClear()
         tiles.endFrame()
@@ -379,6 +392,25 @@ class InkCanvasView(
             val r = Tools.eraserWidth / 2
             drawCircle(Color(0x22000000), r, Offset(x, y))
             drawCircle(Color(0x66000000), r, Offset(x, y), style = DrawStroke(1f / scale * density))
+        }
+    }
+
+    private fun drawSearchHits(canvas: Canvas, first: Int, last: Int) {
+        val search = tab.search ?: return
+        if (search.hits.isEmpty()) return
+        for (i in first..last) {
+            val range = search.byPage[layout.pages[i].id] ?: continue
+            pageSpace(canvas, layout.pages[i].id) {
+                val corner = CornerRadius(2f * density / scale)
+                for (h in range) {
+                    val current = h == search.current
+                    for (b in search.boxes[h] ?: continue) {
+                        val o = Offset(b.left, b.top); val sz = Size(b.width, b.height)
+                        drawRoundRect(if (current) HIT_CURRENT else HIT, o, sz, corner)
+                        if (current) drawRoundRect(HIT_CURRENT_EDGE, o, sz, corner, style = DrawStroke(1.5f * density / scale))
+                    }
+                }
+            }
         }
     }
 
@@ -1121,3 +1153,7 @@ private fun FloatArray.minX(): Float { var m = Float.MAX_VALUE; var i = 0; while
 private fun FloatArray.maxX(): Float { var m = -Float.MAX_VALUE; var i = 0; while (i < size) { m = max(m, this[i]); i += 3 }; return m }
 private fun FloatArray.minY(): Float { var m = Float.MAX_VALUE; var i = 1; while (i < size) { m = min(m, this[i]); i += 3 }; return m }
 private fun FloatArray.maxY(): Float { var m = -Float.MAX_VALUE; var i = 1; while (i < size) { m = max(m, this[i]); i += 3 }; return m }
+
+private val HIT = Color(0x66FFD60A)
+private val HIT_CURRENT = Color(0x80FF9F0A)
+private val HIT_CURRENT_EDGE = Color(0xFFFF9F0A)
